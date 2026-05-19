@@ -4,32 +4,49 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>Notas</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23c9922a'/%3E%3Crect x='8' y='8' width='16' height='16' rx='2' fill='%23f0e8d8'/%3E%3Cellipse cx='8' cy='16' rx='3' ry='7' fill='%23d4a870'/%3E%3Cellipse cx='24' cy='16' rx='3' ry='7' fill='%23d4a870'/%3E%3Cpath d='M11 13h10M11 16h10M11 19h7' stroke='%23c9922a' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" />
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --bg:        #141416;
-      --surface:   #1e1e21;
-      --surface2:  #272729;
-      --surface3:  #333336;
-      --border:    #3a3a3d;
-      --text:      #f0f0f5;
-      --text2:     #c7c7cf;
-      --muted:     #8c8c95;
-      --accent:    #0a84ff;
-      --accent-h:  #3399ff;
-      --danger:    #ff453a;
-      --success:   #32d74b;
-      --warn:      #ff9f0a;
-      --radius:    14px;
-      --radius-sm: 10px;
-      --radius-xs: 7px;
+      --bg:               #000000;
+      --surface:          #100e0a;
+      --surface2:         #1c1812;
+      --surface3:         #28221a;
+      --border:           #3d3020;
+      --text:             #f0e8d8;
+      --text2:            #d4c4a8;
+      --muted:            #8a7055;
+      --accent:           #c9922a;
+      --accent-h:         #e0ac40;
+      --editor-font-size: 15px;
+      --danger:           #ff453a;
+      --success:          #32d74b;
+      --warn:             #ff9f0a;
+      --radius:           14px;
+      --radius-sm:        10px;
+      --radius-xs:        7px;
       --font:  -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', Arial, sans-serif;
       --mono:  'SF Mono', ui-monospace, 'Fira Code', Menlo, monospace;
-      --shadow:    0 2px 10px rgba(0,0,0,.45), 0 1px 3px rgba(0,0,0,.35);
-      --shadow-lg: 0 16px 56px rgba(0,0,0,.65), 0 4px 14px rgba(0,0,0,.45);
+      --shadow:    0 2px 10px rgba(0,0,0,.55), 0 1px 3px rgba(0,0,0,.45);
+      --shadow-lg: 0 16px 56px rgba(0,0,0,.75), 0 4px 14px rgba(0,0,0,.55);
       --mob-h: 52px;
+    }
+
+    body.light-mode {
+      --bg:        #fdf8f0;
+      --surface:   #f5ede0;
+      --surface2:  #ede0cc;
+      --surface3:  #dfd0b8;
+      --border:    #c8aa88;
+      --text:      #1e1208;
+      --text2:     #3a2a18;
+      --muted:     #7a5535;
+      --accent:    #a07428;
+      --accent-h:  #c9922a;
+      --shadow:    0 2px 10px rgba(0,0,0,.1), 0 1px 3px rgba(0,0,0,.08);
+      --shadow-lg: 0 16px 56px rgba(0,0,0,.18), 0 4px 14px rgba(0,0,0,.12);
     }
 
     html, body {
@@ -42,7 +59,7 @@
     #mob-header {
       display: none; position: fixed;
       top: 0; left: 0; right: 0; height: var(--mob-h);
-      background: rgba(30,30,33,.9);
+      background: rgba(10,8,0,.92);
       -webkit-backdrop-filter: blur(20px) saturate(180%);
       backdrop-filter: blur(20px) saturate(180%);
       border-bottom: 1px solid var(--border);
@@ -66,7 +83,7 @@
     .new-note-btn:hover { background: var(--accent); color: #fff; }
     .sidebar-search { padding: 0 12px 12px; flex-shrink: 0; }
     .sidebar-search input { width: 100%; padding: 8px 12px 8px 30px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--surface2); color: var(--text); font-size: 13px; font-family: var(--font); outline: none; transition: border-color .14s, box-shadow .14s; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='13' height='13' viewBox='0 0 24 24' fill='none' stroke='%238c8c95' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cline x1='21' y1='21' x2='16.65' y2='16.65'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: 9px center; }
-    .sidebar-search input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(10,132,255,.18); }
+    .sidebar-search input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(201,146,42,.18); }
     .sidebar-search input::placeholder { color: var(--muted); }
     .sidebar-section-label { padding: 2px 16px 6px; font-size: 10.5px; font-weight: 600; color: var(--muted); letter-spacing: .04em; flex-shrink: 0; }
     .sidebar-list { flex: 1; overflow-y: auto; padding: 2px 8px 8px; }
@@ -112,7 +129,7 @@
 
     /* WYSIWYG Editor */
     .editor-area { flex: 1; margin: 12px 24px 0; border-radius: var(--radius); overflow: hidden; background: var(--surface); border: 1px solid var(--border); display: flex; min-height: 0; box-shadow: var(--shadow); position: relative; }
-    .editor { flex: 1; padding: 26px 30px; outline: none; overflow-y: auto; font-size: 15px; line-height: 1.75; color: var(--text2); caret-color: var(--accent); cursor: text; word-wrap: break-word; }
+    .editor { flex: 1; padding: 26px 30px; outline: none; overflow-y: auto; font-size: var(--editor-font-size, 15px); line-height: 1.75; color: var(--text2); caret-color: var(--accent); cursor: text; word-wrap: break-word; }
     .editor.is-empty::before { content: attr(data-placeholder); color: var(--muted); opacity: .4; pointer-events: none; position: absolute; top: 26px; left: 30px; }
 
     /* Content styles */
@@ -124,7 +141,7 @@
     .editor ul, .editor ol { margin: 0 0 12px 22px; }
     .editor li { margin: 4px 0; }
     .editor blockquote { border-left: 3px solid var(--accent); padding: 3px 0 3px 18px; color: var(--muted); margin: 0 0 12px; font-style: italic; }
-    .editor code { font-family: var(--mono); font-size: 12.5px; background: var(--surface2); color: #d9a8f7; padding: 2px 6px; border-radius: 5px; }
+    .editor code { font-family: var(--mono); font-size: 12.5px; background: var(--surface2); color: var(--accent-h); padding: 2px 6px; border-radius: 5px; }
     .editor pre { background: var(--surface2); border: 1px solid var(--border); padding: 16px 20px; border-radius: var(--radius-sm); overflow-x: auto; margin: 0 0 12px; }
     .editor pre code { background: none; padding: 0; color: var(--text2); font-size: 13px; }
     .editor hr { border: none; border-top: 1px solid var(--border); margin: 24px 0; }
@@ -156,7 +173,7 @@
     .modal-overlay.open .modal { transform: scale(1) translateY(0); }
     .modal-title { font-size: 16px; font-weight: 600; margin-bottom: 18px; letter-spacing: -.2px; }
     .modal-input { width: 100%; padding: 11px 14px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--surface2); color: var(--text); font-size: 14px; font-family: var(--font); outline: none; margin-bottom: 20px; transition: border-color .14s, box-shadow .14s; }
-    .modal-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(10,132,255,.2); }
+    .modal-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(201,146,42,.2); }
     .modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
     .modal-btn { padding: 9px 18px; border-radius: var(--radius-xs); border: 1px solid var(--border); background: var(--surface2); color: var(--text); font-size: 13px; font-family: var(--font); font-weight: 500; cursor: pointer; transition: background .12s; }
     .modal-btn:hover { background: var(--surface3); }
@@ -176,6 +193,22 @@
     ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
     #import-input { display: none; }
 
+    /* Settings Modal */
+    .settings-rows { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; margin-bottom: 20px; }
+    .settings-row { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; background: var(--surface2); }
+    .settings-row + .settings-row { border-top: 1px solid var(--border); }
+    .settings-label { font-size: 14px; color: var(--text2); display: flex; align-items: center; gap: 8px; }
+    .toggle { position: relative; width: 42px; height: 24px; cursor: pointer; flex-shrink: 0; }
+    .toggle input { opacity: 0; width: 0; height: 0; position: absolute; }
+    .toggle-slider { position: absolute; inset: 0; background: var(--surface3); border-radius: 12px; transition: background .2s; }
+    .toggle-slider::before { content: ''; position: absolute; width: 18px; height: 18px; left: 3px; top: 3px; background: var(--muted); border-radius: 50%; transition: transform .2s, background .2s; }
+    .toggle input:checked + .toggle-slider { background: var(--accent); }
+    .toggle input:checked + .toggle-slider::before { transform: translateX(18px); background: #fff; }
+    .font-size-controls { display: flex; align-items: center; gap: 10px; }
+    .fs-btn { width: 28px; height: 28px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface3); color: var(--text2); font-size: 12px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background .12s, color .12s, border-color .12s; }
+    .fs-btn:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .fs-val { font-size: 13px; color: var(--text2); min-width: 30px; text-align: center; font-variant-numeric: tabular-nums; }
+
     /* Mobile */
     @media (max-width: 767px) {
       #mob-header { display: flex; }
@@ -187,7 +220,7 @@
       .doc-title-input { font-size: 19px; }
       .tb-btn { height: 32px; min-width: 32px; font-size: 13px; }
       .editor-area { margin: 8px 14px 0; border-radius: var(--radius-sm); }
-      .editor { padding: 18px 20px; font-size: 14px; }
+      .editor { padding: 18px 20px; font-size: var(--editor-font-size, 14px); }
       .editor.is-empty::before { top: 18px; left: 20px; }
       .item-del { opacity: .55; }
       .status-bar { padding: 0 14px; font-size: 10.5px; }
@@ -198,7 +231,7 @@
 
   <header id="mob-header">
     <button class="mob-btn" id="drawer-btn"><i class="fa-solid fa-bars"></i></button>
-    <span class="mob-logo">Notas</span>
+    <span class="mob-logo"><i class="fa-solid fa-scroll"></i> Notas</span>
     <button class="mob-btn accent" id="mob-new-btn"><i class="fa-solid fa-plus"></i></button>
   </header>
 
@@ -207,7 +240,7 @@
   <div id="app">
     <aside id="sidebar">
       <div class="sidebar-header">
-        <div class="app-logo">Notas</div>
+        <div class="app-logo"><i class="fa-solid fa-scroll"></i> Notas</div>
         <button class="new-note-btn" id="new-note-btn"><i class="fa-solid fa-plus"></i></button>
       </div>
       <div class="sidebar-search">
@@ -217,6 +250,7 @@
       <div class="sidebar-list" id="sidebar-list"></div>
       <div class="sidebar-bottom">
         <input type="file" id="import-input" accept=".json" />
+        <button class="bottom-btn" id="settings-btn"><i class="fa-solid fa-gear"></i> Settings</button>
       </div>
     </aside>
 
@@ -245,16 +279,9 @@
             </div>
             <div class="toolbar-sep"></div>
             <div class="toolbar-group">
-              <button class="tb-btn" data-action="ul"    title="Bullet List"><i class="fa-solid fa-list-ul"></i></button>
-              <button class="tb-btn" data-action="ol"    title="Numbered List"><i class="fa-solid fa-list-ol"></i></button>
-              <button class="tb-btn" data-action="quote" title="Blockquote"><i class="fa-solid fa-quote-left"></i></button>
-            </div>
-            <div class="toolbar-sep"></div>
-            <div class="toolbar-group">
-              <button class="tb-btn" data-action="code"      title="Inline Code"><i class="fa-solid fa-code"></i></button>
-              <button class="tb-btn" data-action="codeblock" title="Code Block"><i class="fa-solid fa-terminal"></i></button>
-              <button class="tb-btn" data-action="link"      title="Link"><i class="fa-solid fa-link"></i></button>
-              <button class="tb-btn" data-action="hr"        title="Divider"><i class="fa-solid fa-minus"></i></button>
+              <button class="tb-btn" data-action="ul" title="Bullet List"><i class="fa-solid fa-list-ul"></i></button>
+              <button class="tb-btn" data-action="ol" title="Numbered List"><i class="fa-solid fa-list-ol"></i></button>
+              <button class="tb-btn" data-action="hr" title="Divider"><i class="fa-solid fa-minus"></i></button>
             </div>
           </div>
         </div>
@@ -293,6 +320,32 @@
   </div>
 
   <div id="toast"></div>
+
+  <div class="modal-overlay" id="settings-modal">
+    <div class="modal">
+      <div class="modal-title"><i class="fa-solid fa-gear" style="margin-right:8px;opacity:.7;"></i>Settings</div>
+      <div class="settings-rows">
+        <div class="settings-row">
+          <span class="settings-label"><i class="fa-solid fa-sun"></i>Light Mode</span>
+          <label class="toggle">
+            <input type="checkbox" id="theme-toggle" />
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="settings-row">
+          <span class="settings-label"><i class="fa-solid fa-font"></i>Text Size</span>
+          <div class="font-size-controls">
+            <button class="fs-btn" id="fs-dec"><i class="fa-solid fa-minus"></i></button>
+            <span class="fs-val" id="fs-val">15</span>
+            <button class="fs-btn" id="fs-inc"><i class="fa-solid fa-plus"></i></button>
+          </div>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="modal-btn primary" id="settings-close">Done</button>
+      </div>
+    </div>
+  </div>
 
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 
@@ -640,6 +693,55 @@
     closeModal(); createNote(t);
   }
 
+  /* Settings */
+  const FONT_MIN = 12, FONT_MAX = 24;
+  let editorFontSize = parseInt(localStorage.getItem('notas_font_size') || '15');
+  let isLightMode = localStorage.getItem('notas_theme') === 'light';
+
+  function applyTheme() {
+    document.body.classList.toggle('light-mode', isLightMode);
+  }
+
+  function applyFontSize() {
+    document.documentElement.style.setProperty('--editor-font-size', editorFontSize + 'px');
+    const val = document.getElementById('fs-val');
+    if (val) val.textContent = editorFontSize;
+  }
+
+  function initSettings() {
+    applyTheme();
+    applyFontSize();
+    document.getElementById('settings-btn').addEventListener('click', () => {
+      document.getElementById('theme-toggle').checked = isLightMode;
+      document.getElementById('settings-modal').classList.add('open');
+    });
+    document.getElementById('settings-modal').addEventListener('click', e => {
+      if (e.target === e.currentTarget) document.getElementById('settings-modal').classList.remove('open');
+    });
+    document.getElementById('settings-close').addEventListener('click', () => {
+      document.getElementById('settings-modal').classList.remove('open');
+    });
+    document.getElementById('theme-toggle').addEventListener('change', e => {
+      isLightMode = e.target.checked;
+      localStorage.setItem('notas_theme', isLightMode ? 'light' : 'dark');
+      applyTheme();
+    });
+    document.getElementById('fs-inc').addEventListener('click', () => {
+      if (editorFontSize < FONT_MAX) {
+        editorFontSize++;
+        localStorage.setItem('notas_font_size', String(editorFontSize));
+        applyFontSize();
+      }
+    });
+    document.getElementById('fs-dec').addEventListener('click', () => {
+      if (editorFontSize > FONT_MIN) {
+        editorFontSize--;
+        localStorage.setItem('notas_font_size', String(editorFontSize));
+        applyFontSize();
+      }
+    });
+  }
+
   /* Event Wiring */
   document.getElementById('drawer-btn').addEventListener('click',     openDrawer);
   document.getElementById('mob-new-btn').addEventListener('click',    openModal);
@@ -722,8 +824,8 @@
     scheduleSave();
   });
 
-  document.getElementById('export-btn').addEventListener('click', exportJSON);
-  document.getElementById('import-btn').addEventListener('click', () => document.getElementById('import-input').click());
+  document.getElementById('export-btn')?.addEventListener('click', exportJSON);
+  document.getElementById('import-btn')?.addEventListener('click', () => document.getElementById('import-input').click());
   document.getElementById('import-input').addEventListener('change', e => {
     if (e.target.files[0]) importJSON(e.target.files[0]);
     e.target.value = '';
@@ -736,7 +838,6 @@
     if (document.activeElement === editorEl) {
       if (e.key === 'b') { e.preventDefault(); cmd('bold');  }
       if (e.key === 'i') { e.preventDefault(); cmd('italic'); }
-      if (e.key === 'k') { e.preventDefault(); insertLink(); }
     }
     if (e.key === 'n') { e.preventDefault(); openModal(); }
   });
@@ -750,6 +851,7 @@
 
   document.execCommand('defaultParagraphSeparator', false, 'p');
   renderSidebar();
+  initSettings();
   </script>
 
 </body>
