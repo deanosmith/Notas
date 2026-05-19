@@ -221,7 +221,7 @@
     </aside>
 
     <main id="main">
-      <div class="empty-state" id="empty-state">
+      <div class="empty-state" id="empty-state" style="display:none">
         <div class="empty-icon"><i class="fa-regular fa-note-sticky"></i></div>
         <div class="empty-title">No Note Selected</div>
         <div class="empty-sub">Select A Note Or Create A New One</div>
@@ -302,17 +302,17 @@
   import { getAuth, signInAnonymously, onAuthStateChanged }   from 'https://www.gstatic.com/firebasejs/12.13.0/firebase-auth.js';
   import {
     getFirestore, collection, doc, setDoc, deleteDoc,
-    onSnapshot, query, where, Timestamp, writeBatch, serverTimestamp
+    onSnapshot, Timestamp, writeBatch, serverTimestamp
   } from 'https://www.gstatic.com/firebasejs/12.13.0/firebase-firestore.js';
 
   const firebaseConfig = {
-    apiKey:            '__FIREBASE_API_KEY__',
-    authDomain:        '__FIREBASE_AUTH_DOMAIN__',
-    projectId:         '__FIREBASE_PROJECT_ID__',
-    storageBucket:     '__FIREBASE_STORAGE_BUCKET__',
-    messagingSenderId: '__FIREBASE_MESSAGING_SENDER_ID__',
-    appId:             '__FIREBASE_APP_ID__',
-    measurementId:     '__FIREBASE_MEASUREMENT_ID__'
+    apiKey:            'AIzaSyD_51gnyyMaqjZDcB6UsTbQoL6fdW7QVB4',
+    authDomain:        'notas-96adc.firebaseapp.com',
+    projectId:         'notas-96adc',
+    storageBucket:     'notas-96adc.firebasestorage.app',
+    messagingSenderId: '98768869653',
+    appId:             '1:98768869653:web:2065a3db3a210a558c711c',
+    measurementId:     'G-LRMLJF0SNH'
   };
 
   const fbApp = initializeApp(firebaseConfig);
@@ -332,22 +332,19 @@
       userId = user.uid;
       migrateFromLocalStorage();
       listenToNotes();
-    } else {
-      setSaveState('error');
-      showToast('Authentication Failed', 'error');
     }
+    // null on initial load before sign-in resolves — not an error
   });
   signInAnonymously(auth).catch(err => {
     console.error('signInAnonymously:', err);
     setSaveState('error');
-    showToast('Could Not Connect To Firebase', 'error');
+    showToast('Auth Error: ' + (err.code || err.message), 'error');
   });
 
   /* Firestore Listener */
   function listenToNotes() {
     if (unsubscribe) unsubscribe();
-    const q = query(collection(fsDb, 'notes'), where('userId', '==', userId));
-    unsubscribe = onSnapshot(q, snap => {
+    unsubscribe = onSnapshot(collection(fsDb, 'notes'), snap => {
       snap.docChanges().forEach(ch => {
         const id = ch.doc.id;
         if (ch.type === 'removed') { delete notes[id]; return; }
@@ -384,8 +381,7 @@
         title:    note.title,
         content:  note.content,
         created:  Timestamp.fromDate(new Date(note.created)),
-        modified: serverTimestamp(),
-        userId
+        modified: serverTimestamp()
       });
       setSaveState('saved');
     } catch (err) {
@@ -419,8 +415,7 @@
           title:    n.title,
           content:  html,
           created:  Timestamp.fromDate(new Date(n.created)),
-          modified: Timestamp.fromDate(new Date(n.modified)),
-          userId
+          modified: Timestamp.fromDate(new Date(n.modified))
         });
       });
       await batch.commit();
