@@ -317,7 +317,8 @@
 
     /* Checklist */
     .editor ul.checklist { list-style: none; margin-left: 0; padding-left: 0; }
-    .editor ul.checklist > li { padding-left: 28px; position: relative; min-height: 22px; padding-top: 3px; padding-bottom: 3px; }
+    .editor ul.checklist > li { padding-left: 28px; position: relative; min-height: 1.75em; padding-top: 3px; padding-bottom: 3px; }
+    .editor ul.checklist > li::first-letter { text-transform: uppercase; }
     .editor ul.checklist > li::before {
       content: ''; position: absolute; left: 0; top: 50%; transform: translateY(-50%);
       width: 17px; height: 17px; border-radius: 50%;
@@ -402,8 +403,10 @@
       .doc-title-input { font-size: 19px; }
       .tb-btn { height: 32px; min-width: 32px; font-size: 13px; }
       .editor-area { margin: 8px 14px 0; border-radius: var(--radius-sm); }
-      .editor { padding: 18px 20px; font-size: var(--editor-font-size, 14px); }
+      .editor { padding: 18px 20px; font-size: max(var(--editor-font-size, 16px), 16px); }
       .editor.is-empty::before { top: 18px; left: 20px; }
+      .modal-input { font-size: 16px; }
+      .sidebar-search input { font-size: 16px; }
       .item-del { opacity: .55; }
       .status-bar { padding: 0 14px; font-size: 10.5px; }
     }
