@@ -1262,7 +1262,7 @@
   });
 
   editorEl.addEventListener('keydown', e => {
-    if (!e.metaKey && !e.ctrlKey && !e.altKey && e.key === ' ') {
+    if (!e.metaKey && !e.ctrlKey && !e.altKey && e.key === ' ' && !e.isComposing) {
       if (applyMarkdownShortcut()) {
         e.preventDefault();
         refreshEmpty(editorEl);
@@ -1271,14 +1271,23 @@
       }
       if (autoLinkTokenBeforeCaret()) {
         e.preventDefault();
-        document.execCommand('insertText', false, ' ');
+        const _sel = window.getSelection();
+        if (_sel && _sel.rangeCount) {
+          const _r = _sel.getRangeAt(0);
+          const _sp = document.createTextNode(' ');
+          _r.insertNode(_sp);
+          _r.setStartAfter(_sp);
+          _r.collapse(true);
+          _sel.removeAllRanges();
+          _sel.addRange(_r);
+        }
         refreshEmpty(editorEl);
         if (syncActiveNoteFromEditor()) scheduleSave();
         return;
       }
     }
 
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
       const li = ancestorOfType(['li']);
       if (li && li.closest('ul.checklist')) {
         e.preventDefault();
@@ -1310,7 +1319,18 @@
 
   editorEl.addEventListener('paste', e => {
     e.preventDefault();
-    document.execCommand('insertText', false, e.clipboardData.getData('text/plain'));
+    const text = e.clipboardData.getData('text/plain');
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount) return;
+    const range = sel.getRangeAt(0);
+    range.deleteContents();
+    const textNode = document.createTextNode(text);
+    range.insertNode(textNode);
+    range.setStartAfter(textNode);
+    range.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(range);
+    editorEl.dispatchEvent(new Event('input'));
   });
 
   document.getElementById('toolbar').addEventListener('mousedown', e => {
