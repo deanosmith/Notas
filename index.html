@@ -102,6 +102,14 @@
       background: linear-gradient(135deg, rgba(0,140,220,.16), rgba(0,140,220,.07));
       border-color: rgba(0,140,220,.28);
     }
+    body.light-mode .folder-row {
+      background: rgba(0,0,0,.03);
+      border-color: rgba(0,0,0,.04);
+    }
+    body.light-mode .folder-row:hover {
+      background: rgba(0,0,0,.06);
+      border-color: rgba(0,0,0,.08);
+    }
     body.light-mode .new-note-btn {
       background: rgba(0,0,0,.06);
       border-color: rgba(0,0,0,.1);
@@ -248,6 +256,37 @@
     .item-del { opacity: 0; border: none; background: none; color: var(--muted); font-size: 11px; cursor: pointer; padding: 4px 5px; border-radius: 6px; flex-shrink: 0; transition: opacity .12s, color .12s, background .12s; }
     .sidebar-item:hover .item-del { opacity: 1; }
     .item-del:hover { color: var(--danger); background: rgba(255,69,58,.14); }
+    .modal-btn.danger { background: linear-gradient(135deg, rgba(255,69,58,.45), rgba(180,30,24,.35)); color: #fff; border-color: rgba(255,69,58,.4); }
+    .modal-btn.danger:hover { background: linear-gradient(135deg, rgba(255,69,58,.65), rgba(180,30,24,.55)); border-color: rgba(255,69,58,.55); }
+    .item-move { opacity: 0; border: none; background: none; color: var(--muted); font-size: 11px; cursor: pointer; padding: 4px 5px; border-radius: 6px; flex-shrink: 0; transition: opacity .12s, color .12s, background .12s; }
+    .sidebar-item:hover .item-move { opacity: 1; }
+    .item-move:hover { color: var(--accent); background: rgba(0,180,255,.14); }
+    .sidebar-item[draggable="true"] { cursor: grab; }
+    .sidebar-item.dragging { opacity: .35; pointer-events: none; }
+    .folder-row.drag-over { background: linear-gradient(180deg, rgba(0,180,255,.22), rgba(0,180,255,.08)) !important; border-color: rgba(0,200,255,.45) !important; box-shadow: inset 0 0 0 2px rgba(0,180,255,.16); }
+    .uncat-drop-zone { border-radius: var(--radius-sm); border: 1px dashed transparent; transition: background .15s, border-color .15s, padding .15s; }
+    .uncat-drop-zone.drag-over { background: rgba(0,180,255,.06); border-color: rgba(0,200,255,.28); padding: 4px; }
+    .move-folder-item { padding: 10px 14px; border-radius: var(--radius-xs); cursor: pointer; display: flex; align-items: center; gap: 10px; color: var(--text2); font-size: 13px; transition: background .1s, color .1s; }
+    .move-folder-item:hover { background: rgba(0,180,255,.12); color: var(--text); }
+    .move-folder-item.is-current { color: var(--muted); pointer-events: none; font-style: italic; }
+    .move-folder-item .mfi { color: var(--accent); opacity: .8; font-size: 12px; width: 14px; flex-shrink: 0; }
+    .modal-note-info { font-size: 12.5px; color: var(--muted); margin-bottom: 16px; padding: 8px 12px; background: rgba(255,255,255,.04); border-radius: var(--radius-xs); border: 1px solid var(--glass-border); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    /* Folder items */
+    .folder-item { margin-bottom: 2px; }
+    .folder-row { display: flex; align-items: center; gap: 8px; padding: 9px 10px; border-radius: var(--radius-sm); cursor: pointer; transition: background .12s, border-color .12s; background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.025)); border: 1px solid transparent; }
+    .folder-row:hover { background: linear-gradient(180deg, rgba(255,255,255,.1), rgba(255,255,255,.04)); border-color: rgba(255,255,255,.08); }
+    .folder-chevron { color: var(--muted); font-size: 9px; width: 10px; flex-shrink: 0; transition: transform .16s; }
+    .folder-chevron.expanded { transform: rotate(90deg); }
+    .folder-shared-badge { color: var(--accent); font-size: 10px; flex-shrink: 0; opacity: .7; }
+    .item-action-btn { opacity: 0; border: none; background: none; color: var(--muted); font-size: 11px; cursor: pointer; padding: 4px 5px; border-radius: 6px; flex-shrink: 0; transition: opacity .12s, color .12s, background .12s; }
+    .folder-row:hover .item-action-btn { opacity: 1; }
+    .item-action-btn:hover { color: var(--accent); background: rgba(0,180,255,.14); }
+    .folder-notes { padding-left: 14px; margin-top: 2px; }
+    .folder-note-item { border-left: 2px solid var(--border); border-radius: 0 var(--radius-sm) var(--radius-sm) 0 !important; margin-left: 2px; }
+    .folder-note-item:hover { border-left-color: var(--accent); }
+    .folder-note-item.active { border-left-color: var(--accent) !important; }
+
     .sidebar-bottom { padding: 12px; border-top: 1px solid var(--border); display: flex; gap: 8px; flex-shrink: 0; }
     .bottom-btn { flex: 1; padding: 8px 10px; background: linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.01)); border: 1px solid var(--glass-border); border-radius: var(--radius-xs); color: var(--muted); font-size: 12px; font-family: var(--font); font-weight: 500; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 5px; transition: color .12s, border-color .12s, background .12s, transform .12s; -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); }
     .bottom-btn:hover { color: var(--accent-h); border-color: rgba(0, 200, 255, .34); background: linear-gradient(135deg, rgba(0, 180, 255, .14), rgba(255,255,255,.02)); transform: translateY(-1px); }
@@ -454,23 +493,21 @@
     <aside id="sidebar">
       <div class="sidebar-header">
         <div class="app-logo"><i class="fa-solid fa-scroll"></i> Notas</div>
-        <button class="new-note-btn" id="new-note-btn"><i class="fa-solid fa-plus"></i></button>
+        <div style="display:flex;gap:6px;">
+          <button class="new-note-btn" id="new-folder-btn" title="New Folder"><i class="fa-solid fa-folder-plus"></i></button>
+          <button class="new-note-btn" id="new-note-btn" title="New Note"><i class="fa-solid fa-plus"></i></button>
+        </div>
       </div>
       <div class="sidebar-search">
         <input type="text" id="search-input" placeholder="Search Notes" autocomplete="off" />
       </div>
-      <div class="sidebar-section-label">Notes</div>
       <div class="sidebar-list" id="sidebar-list"></div>
       <div class="sidebar-bottom">
         <input type="file" id="import-input" accept=".json" />
-        <div id="user-badge" style="display:none;width:100%;padding:0 0 8px;">
-          <div class="u-row">
-            <img id="user-avatar" src="" alt="" style="display:none;" />
-            <span id="user-name"></span>
-            <button id="signout-btn" title="Sign Out"><i class="fa-solid fa-arrow-right-from-bracket"></i></button>
-          </div>
-        </div>
-        <button class="bottom-btn" id="settings-btn"><i class="fa-solid fa-gear"></i> Settings</button>
+        <button class="bottom-btn" id="profile-settings-btn" style="gap:8px;">
+          <img id="user-avatar" src="" alt="" style="display:none;width:22px;height:22px;border-radius:50%;object-fit:cover;flex-shrink:0;" />
+          <i class="fa-solid fa-gear"></i>
+        </button>
       </div>
     </aside>
 
@@ -484,7 +521,10 @@
 
       <div id="editorView">
         <div class="main-header">
-          <input class="doc-title-input" id="doc-title" type="text" placeholder="Untitled Note" autocomplete="off" />
+          <div style="display:flex;align-items:center;gap:8px;">
+            <input class="doc-title-input" id="doc-title" type="text" placeholder="Untitled Note" autocomplete="off" />
+            <button class="new-note-btn" id="share-btn" title="Share Note" style="flex-shrink:0;width:32px;height:32px;"><i class="fa-solid fa-arrow-up-from-bracket"></i></button>
+          </div>
           <div class="toolbar" id="toolbar">
             <div class="toolbar-group">
               <button class="tb-btn" data-action="bold"          title="Bold"><b>B</b></button>
@@ -561,6 +601,10 @@
             <button class="fs-btn" id="fs-inc"><i class="fa-solid fa-plus"></i></button>
           </div>
         </div>
+        <div class="settings-row" id="signout-row" style="display:none;">
+          <span class="settings-label"><i class="fa-solid fa-arrow-right-from-bracket"></i>Sign Out</span>
+          <button id="signout-btn" style="padding:7px 14px;border-radius:var(--radius-xs);border:1px solid rgba(255,69,58,.3);background:rgba(255,69,58,.1);color:var(--danger);font-size:12px;font-family:var(--font);font-weight:500;cursor:pointer;transition:background .12s;">Sign Out</button>
+        </div>
       </div>
       <div class="modal-actions">
         <button class="modal-btn primary" id="settings-close">Done</button>
@@ -570,7 +614,7 @@
 
   <div class="modal-overlay" id="key-modal" style="display:none!important"></div>
 
-  <div id="auth-overlay">
+  <div id="auth-overlay" style="display:none">
     <div class="auth-card">
       <div class="auth-logo"><i class="fa-solid fa-scroll"></i></div>
       <h1 class="auth-title">Notas</h1>
@@ -588,6 +632,57 @@
     </div>
   </div>
 
+  <div class="modal-overlay" id="share-modal">
+    <div class="modal">
+      <div class="modal-title"><i class="fa-solid fa-arrow-up-from-bracket" style="margin-right:8px;opacity:.7;"></i><span id="share-modal-title">Share Note</span></div>
+      <div style="margin-bottom:16px;">
+        <input class="modal-input" id="share-link-input" type="text" readonly style="margin-bottom:8px;font-size:12px;cursor:text;" />
+        <div style="display:flex;gap:8px;">
+          <button class="modal-btn primary" id="copy-link-btn" style="flex:1;justify-content:center;display:flex;gap:6px;"><i class="fa-solid fa-copy"></i> Copy Link</button>
+          <button class="modal-btn primary" id="native-share-btn" style="flex:1;justify-content:center;display:none;gap:6px;"><i class="fa-solid fa-share-nodes"></i> Share</button>
+        </div>
+      </div>
+      <p style="font-size:12px;color:var(--muted);margin-bottom:20px;line-height:1.5;" id="share-modal-desc">Anyone with this link who signs in can view this note.</p>
+      <div class="modal-actions">
+        <button class="modal-btn" id="share-stop-btn" style="color:var(--danger);border-color:rgba(255,69,58,.3);background:rgba(255,69,58,.06);"><i class="fa-solid fa-link-slash"></i> Stop Sharing</button>
+        <button class="modal-btn primary" id="share-close">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="folder-modal">
+    <div class="modal">
+      <div class="modal-title"><i class="fa-solid fa-folder-plus" style="margin-right:8px;opacity:.7;"></i>New Folder</div>
+      <input class="modal-input" id="folder-modal-input" type="text" placeholder="Folder Name" maxlength="80" autocomplete="off" />
+      <div class="modal-actions">
+        <button class="modal-btn" id="folder-modal-cancel">Cancel</button>
+        <button class="modal-btn primary" id="folder-modal-create">Create Folder</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="delete-modal">
+    <div class="modal">
+      <div class="modal-title" id="delete-modal-title">Delete Note?</div>
+      <p class="modal-note-info" id="delete-modal-body"></p>
+      <div class="modal-actions">
+        <button class="modal-btn" id="delete-modal-cancel">Cancel</button>
+        <button class="modal-btn danger" id="delete-modal-confirm"><i class="fa-solid fa-trash" style="margin-right:6px;"></i>Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="move-modal">
+    <div class="modal">
+      <div class="modal-title"><i class="fa-solid fa-folder-open" style="margin-right:8px;opacity:.7;"></i>Move Note</div>
+      <p class="modal-note-info" id="move-modal-note-name"></p>
+      <div id="move-modal-list" style="max-height:220px;overflow-y:auto;margin-bottom:16px;display:flex;flex-direction:column;gap:3px;"></div>
+      <div class="modal-actions">
+        <button class="modal-btn" id="move-modal-cancel">Cancel</button>
+      </div>
+    </div>
+  </div>
+
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 
   <script type="module">
@@ -595,8 +690,8 @@
   import { getAnalytics }                                     from 'https://www.gstatic.com/firebasejs/12.13.0/firebase-analytics.js';
   import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/12.13.0/firebase-auth.js';
   import {
-    getFirestore, collection, doc, setDoc, deleteDoc, getDocs,
-    onSnapshot, query, where, Timestamp, writeBatch, serverTimestamp
+    getFirestore, collection, doc, setDoc, deleteDoc, getDocs, getDoc,
+    onSnapshot, query, where, Timestamp, writeBatch, serverTimestamp, deleteField
   } from 'https://www.gstatic.com/firebasejs/12.13.0/firebase-firestore.js';
 
   const firebaseConfig = {
@@ -614,11 +709,21 @@
   const auth  = getAuth(fbApp);
   const fsDb  = getFirestore(fbApp);
 
-  let notes       = {};
-  let activeId    = null;
-  let userId      = null;
-  let saveTimer   = null;
-  let unsubscribe = null;
+  let notes         = {};
+  let folders       = {};
+  let activeId      = null;
+  let activeFolderId = null;
+  let expandedFolders = new Set();
+  let userId        = null;
+  let saveTimer     = null;
+  let unsubscribe   = null;
+  let unsubFolders  = null;
+  let _deletePending  = null;
+  let _moveNoteId     = null;
+  let _capitalizeNext = false;
+  let _draggingNoteId = null;
+  const _sharedNoteId   = new URLSearchParams(location.search).get('note');
+  const _sharedFolderId = new URLSearchParams(location.search).get('folder');
 
   if (window.marked?.setOptions) {
     window.marked.setOptions({ gfm: true, breaks: true });
@@ -641,8 +746,8 @@
   }
 
   async function migrateVaultNotes(uid) {
-    if (localStorage.getItem('notas_vault_migrated_v1')) return;
-    const migKey = localStorage.getItem('notas_cipher_key') || 'daylee';
+    if (localStorage.getItem('notas_vault_migrated_v2')) return;
+    const migKey = 'daylee';
     try {
       const buf  = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(migKey));
       const hash = Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
@@ -653,6 +758,7 @@
           const v = d.data();
           batch.set(doc(fsDb, 'notes', d.id), {
             owner:    uid,
+            public:   false,
             title:    vigDecrypt(v.title   || '', migKey) || 'Untitled Note',
             content:  vigDecrypt(v.content || '', migKey),
             created:  v.created  || Timestamp.now(),
@@ -660,10 +766,10 @@
           });
         });
         await batch.commit();
-        showToast(snap.size + ' note' + (snap.size !== 1 ? 's' : '') + ' migrated', 'success');
+        showToast(snap.size + ' note' + (snap.size !== 1 ? 's' : '') + ' recovered', 'success');
       }
     } catch (err) { console.error('vault migration:', err); }
-    localStorage.setItem('notas_vault_migrated_v1', '1');
+    localStorage.setItem('notas_vault_migrated_v2', '1');
     localStorage.removeItem('notas_cipher_key');
   }
 
@@ -671,21 +777,29 @@
   onAuthStateChanged(auth, async user => {
     const overlay = document.getElementById('auth-overlay');
     if (user) {
-      userId = user.uid;
       overlay.style.display = 'none';
-      document.getElementById('user-badge').style.display = '';
-      document.getElementById('user-name').textContent = user.displayName || user.email || 'Signed In';
+      if (_sharedNoteId) { loadSharedNote(_sharedNoteId); return; }
+      if (_sharedFolderId) { loadSharedFolder(_sharedFolderId); return; }
+      userId = user.uid;
       const av = document.getElementById('user-avatar');
       if (user.photoURL) { av.src = user.photoURL; av.style.display = ''; }
       else av.style.display = 'none';
+      const signoutRow = document.getElementById('signout-row');
+      if (signoutRow) signoutRow.style.display = '';
       await migrateVaultNotes(user.uid);
       migrateFromLocalStorage();
       listenToNotes();
+      listenToFolders();
     } else {
       overlay.style.display = 'flex';
-      document.getElementById('user-badge').style.display = 'none';
+      const av = document.getElementById('user-avatar');
+      av.style.display = 'none';
+      const signoutRow = document.getElementById('signout-row');
+      if (signoutRow) signoutRow.style.display = 'none';
+      if (_sharedNoteId) return;
       if (unsubscribe) { unsubscribe(); unsubscribe = null; }
-      notes = {}; activeId = null;
+      if (unsubFolders) { unsubFolders(); unsubFolders = null; }
+      notes = {}; folders = {}; activeId = null; activeFolderId = null;
       showEditorView(false);
       renderSidebar();
     }
@@ -715,8 +829,10 @@
         const d = ch.doc.data();
         notes[id] = {
           id,
-          title:    d.title   || 'Untitled Note',
-          content:  d.content || '',
+          title:    d.title    || 'Untitled Note',
+          content:  d.content  || '',
+          public:   d.public   || false,
+          folderId: d.folderId || null,
           created:  d.created?.toDate?.()?.toISOString()  || new Date().toISOString(),
           modified: d.modified?.toDate?.()?.toISOString() || new Date().toISOString()
         };
@@ -736,23 +852,63 @@
     });
   }
 
+  /* Folder Listener */
+  function listenToFolders() {
+    if (unsubFolders) unsubFolders();
+    const q = query(collection(fsDb, 'folders'), where('owner', '==', userId));
+    unsubFolders = onSnapshot(q, snap => {
+      snap.docChanges().forEach(ch => {
+        const id = ch.doc.id;
+        if (ch.type === 'removed') { delete folders[id]; return; }
+        const d = ch.doc.data();
+        folders[id] = {
+          id,
+          title:    d.title   || 'Untitled Folder',
+          public:   d.public  || false,
+          created:  d.created?.toDate?.()?.toISOString()  || new Date().toISOString(),
+          modified: d.modified?.toDate?.()?.toISOString() || new Date().toISOString()
+        };
+      });
+      renderSidebar();
+    }, err => { console.error('onSnapshot folders:', err); });
+  }
+
   /* Write / Delete */
   async function saveDoc(note) {
     if (!userId) return;
     setSaveState('saving');
     try {
-      await setDoc(doc(fsDb, 'notes', note.id), {
+      const payload = {
         owner:    userId,
+        public:   note.public || false,
         title:    note.title,
         content:  note.content,
         created:  Timestamp.fromDate(new Date(note.created)),
         modified: serverTimestamp()
-      });
+      };
+      if (note.folderId) payload.folderId = note.folderId;
+      await setDoc(doc(fsDb, 'notes', note.id), payload);
       setSaveState('saved');
     } catch (err) {
       console.error('setDoc:', err);
       setSaveState('error');
       showToast('Failed To Save — Check Connection', 'error');
+    }
+  }
+
+  async function saveFolderDoc(folder) {
+    if (!userId) return;
+    try {
+      await setDoc(doc(fsDb, 'folders', folder.id), {
+        owner:    userId,
+        public:   folder.public || false,
+        title:    folder.title,
+        created:  Timestamp.fromDate(new Date(folder.created)),
+        modified: serverTimestamp()
+      });
+    } catch (err) {
+      console.error('setDoc folder:', err);
+      showToast('Failed To Save Folder', 'error');
     }
   }
 
@@ -798,21 +954,65 @@
   }
 
   /* CRUD */
-  function createNote(title) {
+  function createNote(title, folderId) {
     const id  = 'note_' + Date.now();
     const now = new Date().toISOString();
-    const note = { id, title: toTitleCase(title.trim()) || 'Untitled Note', content: '', created: now, modified: now };
+    const note = { id, title: toTitleCase(title.trim()) || 'Untitled Note', content: '', public: false, folderId: folderId || null, created: now, modified: now };
     notes[id] = note;
     activeId  = id;
+    if (folderId) expandedFolders.add(folderId);
     renderSidebar();
     openNote(id);
     saveDoc(note);
   }
 
+  function createFolder(title) {
+    const id  = 'folder_' + Date.now();
+    const now = new Date().toISOString();
+    const folder = { id, title: toTitleCase(title.trim()) || 'Untitled Folder', public: false, created: now, modified: now };
+    folders[id] = folder;
+    expandedFolders.add(id);
+    activeFolderId = id;
+    renderSidebar();
+    saveFolderDoc(folder);
+  }
+
+  async function deleteFolder(id) {
+    if (!folders[id]) return;
+    openDeleteModal('folder', id);
+  }
+
+  async function _execDeleteFolder(id) {
+    const folder = folders[id];
+    if (!folder) return;
+    const batch = writeBatch(fsDb);
+    Object.values(notes).filter(n => n.folderId === id).forEach(n => {
+      n.folderId = null;
+      batch.update(doc(fsDb, 'notes', n.id), { folderId: null });
+    });
+    batch.delete(doc(fsDb, 'folders', id));
+    delete folders[id];
+    expandedFolders.delete(id);
+    if (activeFolderId === id) activeFolderId = null;
+    try { await batch.commit(); } catch (err) { console.error('deleteFolder:', err); showToast('Failed To Delete Folder', 'error'); }
+    renderSidebar();
+  }
+
+  async function setFolderPublic(folderId, isPublic) {
+    if (!folders[folderId]) return;
+    folders[folderId].public = isPublic;
+    try { await setDoc(doc(fsDb, 'folders', folderId), { public: isPublic }, { merge: true }); }
+    catch (err) { console.error('setFolderPublic:', err); showToast('Failed To Update Folder Sharing', 'error'); }
+  }
+
   function deleteNote(id) {
+    if (!notes[id]) return;
+    openDeleteModal('note', id);
+  }
+
+  function _execDeleteNote(id) {
     const note = notes[id];
     if (!note) return;
-    if (!confirm('Delete "' + note.title + '"?\nThis Cannot Be Undone.')) return;
     delete notes[id];
     if (activeId === id) {
       const ids = sortedIds();
@@ -827,6 +1027,7 @@
     const note = notes[id];
     if (!note) return;
     activeId = id;
+    activeFolderId = note.folderId || null;
     document.getElementById('doc-title').value = note.title;
     const ed = document.getElementById('editor');
     ed.innerHTML = renderMarkdownContent(note.content || '');
@@ -874,6 +1075,24 @@
     const hasText = !!el.innerText.trim();
     const hasStructure = !!el.querySelector('ul, ol, hr, h1, h2, h3, h4, blockquote, pre, table');
     el.classList.toggle('is-empty', !hasText && !hasStructure);
+  }
+
+  function capitalizeCurrentChar(charLen) {
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount) return;
+    const node   = sel.anchorNode;
+    const offset = sel.anchorOffset;
+    if (!node || node.nodeType !== Node.TEXT_NODE || offset < charLen) return;
+    const text = node.textContent;
+    const pos  = offset - charLen;
+    if (/[a-z]/.test(text[pos])) {
+      node.textContent = text.slice(0, pos) + text[pos].toUpperCase() + text.slice(pos + 1);
+      const r = document.createRange();
+      r.setStart(node, offset);
+      r.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(r);
+    }
   }
 
   function placeCursorAtStart(el) {
@@ -968,6 +1187,96 @@
     document.getElementById('editorView').style.display  = show ? 'flex' : 'none';
   }
 
+  /* Delete Modal */
+  function openDeleteModal(type, id) {
+    const name = type === 'note' ? notes[id]?.title : folders[id]?.title;
+    if (!name) return;
+    _deletePending = { type, id };
+    document.getElementById('delete-modal-title').textContent =
+      type === 'note' ? 'Delete Note?' : 'Delete Folder?';
+    document.getElementById('delete-modal-body').textContent =
+      type === 'note'
+        ? '"' + name + '" will be permanently deleted and cannot be recovered.'
+        : '"' + name + '" will be deleted. Notes inside will be moved to uncategorised.';
+    document.getElementById('delete-modal').classList.add('open');
+  }
+  function closeDeleteModal() {
+    document.getElementById('delete-modal').classList.remove('open');
+    _deletePending = null;
+  }
+  async function confirmDelete() {
+    if (!_deletePending) return;
+    const { type, id } = _deletePending;
+    closeDeleteModal();
+    if (type === 'note') _execDeleteNote(id);
+    else await _execDeleteFolder(id);
+  }
+
+  /* Move Modal */
+  function openMoveModal(noteId) {
+    if (!notes[noteId]) return;
+    _moveNoteId = noteId;
+    const note  = notes[noteId];
+    document.getElementById('move-modal-note-name').textContent = note.title;
+    const list  = document.getElementById('move-modal-list');
+    list.innerHTML = '';
+
+    const noFolderItem = document.createElement('div');
+    const isNoFolder   = !note.folderId;
+    noFolderItem.className = 'move-folder-item' + (isNoFolder ? ' is-current' : '');
+    noFolderItem.innerHTML =
+      '<i class="mfi fa-solid fa-inbox"></i><span>No Folder' + (isNoFolder ? ' (current)' : '') + '</span>';
+    if (!isNoFolder) noFolderItem.addEventListener('click', () => { closeMoveModal(); moveNoteToFolder(noteId, null); });
+    list.appendChild(noFolderItem);
+
+    Object.values(folders)
+      .sort((a, b) => new Date(a.created) - new Date(b.created))
+      .forEach(folder => {
+        const isCurrent = note.folderId === folder.id;
+        const item = document.createElement('div');
+        item.className = 'move-folder-item' + (isCurrent ? ' is-current' : '');
+        item.innerHTML =
+          '<i class="mfi fa-solid fa-folder"></i><span>' + esc(folder.title) + (isCurrent ? ' (current)' : '') + '</span>';
+        if (!isCurrent) item.addEventListener('click', () => { closeMoveModal(); moveNoteToFolder(noteId, folder.id); });
+        list.appendChild(item);
+      });
+
+    if (!Object.keys(folders).length) {
+      const empty = document.createElement('div');
+      empty.style.cssText = 'padding:12px;color:var(--muted);font-size:12.5px;text-align:center;font-style:italic;';
+      empty.textContent = 'No folders yet — create one first';
+      list.appendChild(empty);
+    }
+
+    document.getElementById('move-modal').classList.add('open');
+  }
+  function closeMoveModal() {
+    document.getElementById('move-modal').classList.remove('open');
+    _moveNoteId = null;
+  }
+
+  async function moveNoteToFolder(noteId, folderId) {
+    const note = notes[noteId];
+    if (!note) return;
+    const prev = note.folderId;
+    if ((folderId || null) === (prev || null)) return;
+    note.folderId = folderId || null;
+    note.modified = new Date().toISOString();
+    if (folderId) expandedFolders.add(folderId);
+    renderSidebar();
+    try {
+      const payload = { modified: serverTimestamp() };
+      payload.folderId = folderId || deleteField();
+      await setDoc(doc(fsDb, 'notes', noteId), payload, { merge: true });
+      showToast('Note Moved', 'success');
+    } catch (err) {
+      console.error('moveNoteToFolder:', err);
+      note.folderId = prev;
+      renderSidebar();
+      showToast('Failed To Move Note', 'error');
+    }
+  }
+
   function recomputeCollapsedSections() {
     let collapsedLevel = Infinity;
     for (const el of getEd().children) {
@@ -1015,32 +1324,171 @@
   }
 
   /* Sidebar */
+  const noteMatchesFilter = (n, f) =>
+    n.title.toLowerCase().includes(f) ||
+    n.content.replace(/<[^>]+>/g, ' ').toLowerCase().includes(f);
+
+  function makeSidebarNoteEl(note) {
+    const active  = note.id === activeId;
+    const snippet = note.content.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 65) || 'Empty Note';
+    const el      = document.createElement('div');
+    el.className  = 'sidebar-item' + (active ? ' active' : '');
+    el.dataset.id = note.id;
+    el.draggable  = true;
+    el.innerHTML  =
+      '<span class="item-icon"><i class="fa-regular fa-note-sticky"></i></span>' +
+      '<div class="item-info"><div class="item-name">' + esc(note.title) + '</div><div class="item-preview">' + esc(snippet) + '</div></div>' +
+      '<button class="item-move" title="Move to Folder"><i class="fa-solid fa-folder-open"></i></button>' +
+      '<button class="item-del" title="Delete Note"><i class="fa-solid fa-trash"></i></button>';
+    el.addEventListener('click', e => {
+      if (!e.target.closest('.item-del') && !e.target.closest('.item-move')) openNote(note.id);
+    });
+    el.querySelector('.item-del').addEventListener('click', e => { e.stopPropagation(); deleteNote(note.id); });
+    el.querySelector('.item-move').addEventListener('click', e => { e.stopPropagation(); openMoveModal(note.id); });
+    el.addEventListener('dragstart', e => {
+      _draggingNoteId = note.id;
+      e.dataTransfer.setData('text/plain', note.id);
+      e.dataTransfer.effectAllowed = 'move';
+      requestAnimationFrame(() => el.classList.add('dragging'));
+    });
+    el.addEventListener('dragend', () => {
+      el.classList.remove('dragging');
+      _draggingNoteId = null;
+      document.querySelectorAll('.drag-over').forEach(d => d.classList.remove('drag-over'));
+    });
+    return el;
+  }
+
   function renderSidebar(filter) {
     filter = (filter || '').toLowerCase();
     const list = document.getElementById('sidebar-list');
     list.innerHTML = '';
-    const rows = sortedIds().map(id => notes[id])
-      .filter(n => !filter ||
-        n.title.toLowerCase().includes(filter) ||
-        n.content.replace(/<[^>]+>/g,' ').toLowerCase().includes(filter));
-    if (!rows.length) {
-      list.innerHTML = '<div style="padding:20px;color:var(--muted);font-size:12.5px;text-align:center;">' + (filter ? 'No Matching Notes' : 'No Notes Yet') + '</div>';
-      return;
-    }
-    rows.forEach(note => {
-      const active  = note.id === activeId;
-      const snippet = note.content.replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim().slice(0,65) || 'Empty Note';
-      const el      = document.createElement('div');
-      el.className  = 'sidebar-item' + (active ? ' active' : '');
-      el.dataset.id = note.id;
-      el.innerHTML  =
-        '<span class="item-icon"><i class="fa-regular fa-note-sticky"></i></span>' +
-        '<div class="item-info"><div class="item-name">' + esc(note.title) + '</div><div class="item-preview">' + esc(snippet) + '</div></div>' +
-        '<button class="item-del" title="Delete Note"><i class="fa-solid fa-xmark"></i></button>';
-      el.addEventListener('click', e => { if (!e.target.closest('.item-del')) openNote(note.id); });
-      el.querySelector('.item-del').addEventListener('click', e => { e.stopPropagation(); deleteNote(note.id); });
-      list.appendChild(el);
+
+    const sortedFolderList = Object.values(folders)
+      .sort((a, b) => new Date(a.created) - new Date(b.created));
+
+    const uncategorized = sortedIds().map(id => notes[id])
+      .filter(n => !n.folderId)
+      .filter(n => !filter || noteMatchesFilter(n, filter));
+
+    let hasContent = false;
+
+    sortedFolderList.forEach(folder => {
+      const folderNotes = sortedIds().map(id => notes[id])
+        .filter(n => n.folderId === folder.id)
+        .filter(n => !filter || noteMatchesFilter(n, filter));
+      if (filter && !folder.title.toLowerCase().includes(filter) && !folderNotes.length) return;
+      hasContent = true;
+
+      const isExpanded = expandedFolders.has(folder.id);
+      const folderEl   = document.createElement('div');
+      folderEl.className = 'folder-item';
+
+      const sharedBadge = folder.public
+        ? '<span class="folder-shared-badge" title="Shared"><i class="fa-solid fa-link"></i></span>'
+        : '';
+      folderEl.innerHTML =
+        '<div class="folder-row" data-fid="' + folder.id + '">' +
+          '<span class="folder-chevron' + (isExpanded ? ' expanded' : '') + '"><i class="fa-solid fa-chevron-right"></i></span>' +
+          '<span class="item-icon" style="color:var(--accent);opacity:.8"><i class="fa-solid fa-folder' + (isExpanded ? '-open' : '') + '"></i></span>' +
+          '<div class="item-info"><div class="item-name">' + esc(folder.title) + '</div></div>' +
+          sharedBadge +
+          '<button class="item-action-btn folder-add-btn" title="New Note In Folder"><i class="fa-solid fa-plus"></i></button>' +
+          '<button class="item-action-btn folder-share-btn" title="Share Folder"><i class="fa-solid fa-arrow-up-from-bracket"></i></button>' +
+          '<button class="item-del" title="Delete Folder"><i class="fa-solid fa-xmark"></i></button>' +
+        '</div>';
+
+      const row = folderEl.querySelector('.folder-row');
+      row.addEventListener('click', e => {
+        if (e.target.closest('.item-del') || e.target.closest('.folder-add-btn') || e.target.closest('.folder-share-btn')) return;
+        if (expandedFolders.has(folder.id)) expandedFolders.delete(folder.id);
+        else expandedFolders.add(folder.id);
+        renderSidebar(filter);
+      });
+      row.addEventListener('dragover', e => {
+        if (!_draggingNoteId) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        row.classList.add('drag-over');
+      });
+      row.addEventListener('dragleave', e => {
+        if (!row.contains(e.relatedTarget)) row.classList.remove('drag-over');
+      });
+      row.addEventListener('drop', e => {
+        e.preventDefault();
+        row.classList.remove('drag-over');
+        const noteId = e.dataTransfer.getData('text/plain');
+        if (noteId && notes[noteId]) moveNoteToFolder(noteId, folder.id);
+      });
+      folderEl.querySelector('.folder-add-btn').addEventListener('click', e => {
+        e.stopPropagation();
+        activeFolderId = folder.id;
+        expandedFolders.add(folder.id);
+        openModal();
+      });
+      folderEl.querySelector('.folder-share-btn').addEventListener('click', e => {
+        e.stopPropagation();
+        openShareModal('folder', folder.id);
+      });
+      folderEl.querySelector('.item-del').addEventListener('click', e => {
+        e.stopPropagation();
+        deleteFolder(folder.id);
+      });
+      list.appendChild(folderEl);
+
+      if (isExpanded) {
+        const notesWrap = document.createElement('div');
+        notesWrap.className = 'folder-notes';
+        if (folderNotes.length) {
+          folderNotes.forEach(n => {
+            const el = makeSidebarNoteEl(n);
+            el.classList.add('folder-note-item');
+            notesWrap.appendChild(el);
+          });
+        } else {
+          const empty = document.createElement('div');
+          empty.style.cssText = 'padding:7px 8px 7px 28px;color:var(--muted);font-size:11.5px;font-style:italic;';
+          empty.textContent = 'No notes — click + to add one';
+          notesWrap.appendChild(empty);
+        }
+        list.appendChild(notesWrap);
+      }
     });
+
+    if (uncategorized.length) {
+      hasContent = true;
+      const uncatWrap = document.createElement('div');
+      uncatWrap.className = 'uncat-drop-zone';
+      if (sortedFolderList.length) {
+        const lbl = document.createElement('div');
+        lbl.className = 'sidebar-section-label';
+        lbl.style.marginTop = '10px';
+        lbl.textContent = 'Notes';
+        uncatWrap.appendChild(lbl);
+      }
+      uncatWrap.addEventListener('dragover', e => {
+        if (!_draggingNoteId || !notes[_draggingNoteId]?.folderId) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        uncatWrap.classList.add('drag-over');
+      });
+      uncatWrap.addEventListener('dragleave', e => {
+        if (!uncatWrap.contains(e.relatedTarget)) uncatWrap.classList.remove('drag-over');
+      });
+      uncatWrap.addEventListener('drop', e => {
+        e.preventDefault();
+        uncatWrap.classList.remove('drag-over');
+        const noteId = e.dataTransfer.getData('text/plain');
+        if (noteId && notes[noteId] && notes[noteId].folderId) moveNoteToFolder(noteId, null);
+      });
+      uncategorized.forEach(note => uncatWrap.appendChild(makeSidebarNoteEl(note)));
+      list.appendChild(uncatWrap);
+    }
+
+    if (!hasContent) {
+      list.innerHTML = '<div style="padding:20px;color:var(--muted);font-size:12.5px;text-align:center;">' +
+        (filter ? 'No Matching Notes' : 'No Notes Yet') + '</div>';
+    }
   }
 
   /* WYSIWYG Toolbar */
@@ -1265,7 +1713,23 @@
   function confirmCreate() {
     const t = document.getElementById('modal-input').value.trim();
     if (!t) { document.getElementById('modal-input').focus(); return; }
-    closeModal(); createNote(t);
+    const fid = activeFolderId;
+    closeModal();
+    createNote(t, fid);
+  }
+
+  /* Folder Modal */
+  const openFolderModal = () => {
+    document.getElementById('folder-modal').classList.add('open');
+    document.getElementById('folder-modal-input').value = '';
+    setTimeout(() => document.getElementById('folder-modal-input').focus(), 120);
+  };
+  const closeFolderModal = () => document.getElementById('folder-modal').classList.remove('open');
+  function confirmCreateFolder() {
+    const t = document.getElementById('folder-modal-input').value.trim();
+    if (!t) { document.getElementById('folder-modal-input').focus(); return; }
+    closeFolderModal();
+    createFolder(t);
   }
 
   /* Settings */
@@ -1286,7 +1750,7 @@
   function initSettings() {
     applyTheme();
     applyFontSize();
-    document.getElementById('settings-btn').addEventListener('click', () => {
+    document.getElementById('profile-settings-btn').addEventListener('click', () => {
       document.getElementById('theme-toggle').checked = isLightMode;
       document.getElementById('settings-modal').classList.add('open');
     });
@@ -1317,11 +1781,178 @@
     });
   }
 
+  /* Share ─────────────────────────────────────────────────── */
+  const getShareUrl       = id => location.origin + location.pathname + '?note='   + id;
+  const getFolderShareUrl = id => location.origin + location.pathname + '?folder=' + id;
+
+  let _shareCtx = null; // { type: 'note'|'folder', id }
+
+  function openShareModal(type, id) {
+    if (type === 'note'   && !notes[id])   return;
+    if (type === 'folder' && !folders[id]) return;
+    _shareCtx = { type, id };
+
+    const isPublic = type === 'note' ? notes[id].public : folders[id].public;
+    const url      = type === 'note' ? getShareUrl(id) : getFolderShareUrl(id);
+
+    document.getElementById('share-modal-title').textContent = type === 'note' ? 'Share Note' : 'Share Folder';
+    document.getElementById('share-modal-desc').textContent  = type === 'note'
+      ? 'Anyone with this link who signs in can view this note.'
+      : 'Anyone with this link who signs in can view all notes in this folder, including new ones added later.';
+    document.getElementById('share-link-input').value = url;
+
+    const nativeBtn = document.getElementById('native-share-btn');
+    nativeBtn.style.display = navigator.share ? 'flex' : 'none';
+
+    // Auto-publish on open
+    if (!isPublic) {
+      if (type === 'note')   setNotePublic(id, true);
+      else                   setFolderPublic(id, true);
+    }
+
+    document.getElementById('share-modal').classList.add('open');
+  }
+
+  async function setNotePublic(noteId, isPublic) {
+    if (!notes[noteId]) return;
+    notes[noteId].public = isPublic;
+    try { await setDoc(doc(fsDb, 'notes', noteId), { public: isPublic }, { merge: true }); }
+    catch (err) { console.error('setNotePublic:', err); showToast('Failed To Update Sharing', 'error'); }
+  }
+
+  function copyShareLink() {
+    const val = document.getElementById('share-link-input').value;
+    navigator.clipboard?.writeText(val).catch(() => {
+      const inp = document.getElementById('share-link-input');
+      inp.select(); document.execCommand('copy');
+    });
+    showToast('Link Copied!', 'success');
+  }
+
+  function nativeShare() {
+    if (!_shareCtx) return;
+    const url   = _shareCtx.type === 'note' ? getShareUrl(_shareCtx.id) : getFolderShareUrl(_shareCtx.id);
+    const title = _shareCtx.type === 'note' ? (notes[_shareCtx.id]?.title || 'Note') : (folders[_shareCtx.id]?.title || 'Folder');
+    navigator.share({ title, url }).catch(() => {});
+  }
+
+  async function stopSharing() {
+    if (!_shareCtx) return;
+    if (_shareCtx.type === 'note')   await setNotePublic(_shareCtx.id, false);
+    else                             await setFolderPublic(_shareCtx.id, false);
+    document.getElementById('share-modal').classList.remove('open');
+    showToast('Sharing Stopped', 'success');
+  }
+
+  async function loadSharedNote(noteId) {
+    try {
+      const snap = await getDoc(doc(fsDb, 'notes', noteId));
+      if (!snap.exists() || !snap.data().public) {
+        const es = document.getElementById('empty-state');
+        es.querySelector('.empty-title').textContent = 'Note Not Available';
+        es.querySelector('.empty-sub').textContent   = 'This note is private or no longer exists.';
+        document.getElementById('empty-cta-btn').style.display = 'none';
+        document.getElementById('sidebar').style.display = 'none';
+        showEditorView(false);
+        return;
+      }
+      const d = snap.data();
+      document.getElementById('sidebar').style.display = 'none';
+      const titleEl = document.getElementById('doc-title');
+      titleEl.value    = d.title || 'Untitled';
+      titleEl.readOnly = true;
+      const ed = document.getElementById('editor');
+      ed.innerHTML       = renderMarkdownContent(d.content || '');
+      ed.contentEditable = 'false';
+      ensureLinkAttrs(ed);
+      restoreChecklistState(ed);
+      refreshEmpty(ed);
+      document.getElementById('share-btn').style.display = 'none';
+      document.getElementById('toolbar').style.display   = 'none';
+      document.getElementById('save-label').textContent  = 'Shared View — Read Only';
+      document.getElementById('save-dot').className      = 'save-dot local';
+      updateCounts();
+      showEditorView(true);
+    } catch (err) {
+      console.error('loadSharedNote:', err);
+      showToast('Could Not Load Shared Note', 'error');
+    }
+  }
+
+  async function loadSharedFolder(folderId) {
+    try {
+      const folderSnap = await getDoc(doc(fsDb, 'folders', folderId));
+      if (!folderSnap.exists() || !folderSnap.data().public) {
+        const es = document.getElementById('empty-state');
+        es.querySelector('.empty-title').textContent = 'Folder Not Available';
+        es.querySelector('.empty-sub').textContent   = 'This folder is private or no longer exists.';
+        document.getElementById('empty-cta-btn').style.display = 'none';
+        document.getElementById('sidebar').style.display = 'none';
+        showEditorView(false);
+        return;
+      }
+      const fd = folderSnap.data();
+      const q  = query(collection(fsDb, 'notes'), where('folderId', '==', folderId));
+      const notesSnap = await getDocs(q);
+      notesSnap.forEach(d => {
+        const id   = d.id;
+        const data = d.data();
+        notes[id]  = {
+          id,
+          title:    data.title    || 'Untitled Note',
+          content:  data.content  || '',
+          public:   data.public   || false,
+          folderId: null, // treat as flat for shared read-only view
+          created:  data.created?.toDate?.()?.toISOString()  || new Date().toISOString(),
+          modified: data.modified?.toDate?.()?.toISOString() || new Date().toISOString()
+        };
+      });
+
+      // Shared read-only view – show notes in sidebar but hide all edit controls
+      document.querySelector('.sidebar-header').innerHTML =
+        '<div class="app-logo"><i class="fa-solid fa-folder-open"></i> ' + esc(fd.title || 'Shared Folder') + '</div>';
+      document.getElementById('sidebar').style.display = '';
+      renderSidebar();
+
+      document.getElementById('editor').contentEditable = 'false';
+      document.getElementById('share-btn').style.display    = 'none';
+      document.getElementById('toolbar').style.display      = 'none';
+      document.getElementById('save-label').textContent     = 'Shared View — Read Only';
+      document.getElementById('save-dot').className         = 'save-dot local';
+
+      const ids = sortedIds();
+      if (ids.length) openNote(ids[0]);
+      else showEditorView(false);
+    } catch (err) {
+      console.error('loadSharedFolder:', err);
+      showToast('Could Not Load Shared Folder', 'error');
+    }
+  }
+
   /* Event Wiring */
   document.getElementById('drawer-btn').addEventListener('click',     openDrawer);
   document.getElementById('mob-new-btn').addEventListener('click',    openModal);
   document.getElementById('google-signin-btn').addEventListener('click', signInWithGoogle);
   document.getElementById('signout-btn').addEventListener('click', () => signOut(auth));
+  document.getElementById('share-btn').addEventListener('click',       () => openShareModal('note', activeId));
+  document.getElementById('copy-link-btn').addEventListener('click',   copyShareLink);
+  document.getElementById('native-share-btn').addEventListener('click', nativeShare);
+  document.getElementById('share-stop-btn').addEventListener('click',  stopSharing);
+  document.getElementById('share-close').addEventListener('click',     () => document.getElementById('share-modal').classList.remove('open'));
+  document.getElementById('share-modal').addEventListener('click',     e => { if (e.target === e.currentTarget) document.getElementById('share-modal').classList.remove('open'); });
+  document.getElementById('new-folder-btn').addEventListener('click', openFolderModal);
+  document.getElementById('folder-modal-create').addEventListener('click', confirmCreateFolder);
+  document.getElementById('folder-modal-cancel').addEventListener('click', closeFolderModal);
+  document.getElementById('folder-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeFolderModal(); });
+  document.getElementById('folder-modal-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter') confirmCreateFolder();
+    if (e.key === 'Escape') closeFolderModal();
+  });
+  document.getElementById('delete-modal-confirm').addEventListener('click', confirmDelete);
+  document.getElementById('delete-modal-cancel').addEventListener('click', closeDeleteModal);
+  document.getElementById('delete-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeDeleteModal(); });
+  document.getElementById('move-modal-cancel').addEventListener('click', closeMoveModal);
+  document.getElementById('move-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeMoveModal(); });
   document.getElementById('drawer-overlay').addEventListener('click', closeDrawer);
   document.getElementById('new-note-btn').addEventListener('click',   openModal);
   document.getElementById('empty-cta-btn').addEventListener('click',  openModal);
@@ -1335,7 +1966,19 @@
 
   const editorEl = document.getElementById('editor');
 
-  editorEl.addEventListener('input', () => {
+  editorEl.addEventListener('beforeinput', e => {
+    if (e.inputType === 'insertParagraph' || e.inputType === 'insertLineBreak') {
+      _capitalizeNext = true;
+    }
+  });
+
+  editorEl.addEventListener('input', e => {
+    if (_capitalizeNext && e.inputType === 'insertText' && e.data) {
+      if (/[a-z]/.test(e.data[0])) capitalizeCurrentChar(e.data.length);
+      _capitalizeNext = false;
+    } else if (_capitalizeNext && e.inputType && e.inputType !== 'insertParagraph' && e.inputType !== 'insertLineBreak') {
+      _capitalizeNext = false;
+    }
     refreshEmpty(editorEl);
     if (!syncActiveNoteFromEditor()) return;
     scheduleSave();
@@ -1417,6 +2060,7 @@
         const r = document.createRange();
         r.selectNodeContents(newLi); r.collapse(true);
         const s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
+        _capitalizeNext = true;
         editorEl.dispatchEvent(new Event('input'));
         return;
       }
@@ -1426,6 +2070,7 @@
         const p = document.createElement('p'); p.innerHTML = '<br>'; h.after(p);
         const r = document.createRange(); r.setStart(p, 0); r.collapse(true);
         const s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
+        _capitalizeNext = true;
         editorEl.dispatchEvent(new Event('input'));
         return;
       }
@@ -1476,7 +2121,9 @@
   });
   document.getElementById('doc-title').addEventListener('blur', () => {
     if (!activeId || !notes[activeId]) return;
-    const titled = toTitleCase(document.getElementById('doc-title').value.trim()) || 'Untitled Note';
+    const raw   = document.getElementById('doc-title').value.trim() || 'Untitled Note';
+    const alpha = raw.replace(/[^a-zA-Z]/g, '');
+    const titled = (alpha.length > 0 && alpha === alpha.toUpperCase()) ? raw : toTitleCase(raw);
     document.getElementById('doc-title').value = titled;
     notes[activeId].title = titled;
     const el = document.querySelector('.sidebar-item.active .item-name');
@@ -1510,6 +2157,27 @@
   }, { passive: true });
 
   document.execCommand('defaultParagraphSeparator', false, 'p');
+
+  // Sidebar-list fallback drop zone — allows moving notes to "no folder"
+  // when the uncategorized section isn't visible (all notes are in folders)
+  const _sidebarList = document.getElementById('sidebar-list');
+  _sidebarList.addEventListener('dragover', e => {
+    if (!_draggingNoteId || !notes[_draggingNoteId]?.folderId) return;
+    if (e.target.closest('.folder-row') || e.target.closest('.uncat-drop-zone')) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    _sidebarList.classList.add('uncat-drop-zone', 'drag-over');
+  });
+  _sidebarList.addEventListener('dragleave', e => {
+    if (!_sidebarList.contains(e.relatedTarget)) _sidebarList.classList.remove('drag-over');
+  });
+  _sidebarList.addEventListener('drop', e => {
+    _sidebarList.classList.remove('drag-over');
+    if (e.target.closest('.folder-row') || e.target.closest('.uncat-drop-zone')) return;
+    const noteId = e.dataTransfer.getData('text/plain');
+    if (noteId && notes[noteId] && notes[noteId].folderId) moveNoteToFolder(noteId, null);
+  });
+
   renderSidebar();
   initSettings();
   </script>
