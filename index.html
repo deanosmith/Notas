@@ -317,13 +317,24 @@
 
     /* Checklist */
     .editor ul.checklist { list-style: none; margin-left: 0; padding-left: 0; }
-    .editor ul.checklist > li { padding-left: 28px; position: relative; min-height: 1.75em; padding-top: 3px; padding-bottom: 3px; }
-    .editor ul.checklist > li::first-letter { text-transform: uppercase; }
+    .editor ul.checklist > li {
+      display: block;
+      position: relative;
+      padding: 3px 0 3px 28px;
+      min-height: 1.75em;
+      cursor: text;
+    }
     .editor ul.checklist > li::before {
-      content: ''; position: absolute; left: 0; top: 50%; transform: translateY(-50%);
-      width: 17px; height: 17px; border-radius: 50%;
-      border: 2px solid var(--muted); background: transparent;
-      cursor: pointer; box-sizing: border-box;
+      content: '';
+      position: absolute;
+      left: 0;
+      top: calc(0.875em - 5.5px);
+      width: 17px; height: 17px;
+      border-radius: 50%;
+      border: 2px solid var(--muted);
+      background: transparent;
+      box-sizing: border-box;
+      pointer-events: none;
       transition: background .14s, border-color .14s;
     }
     .editor ul.checklist > li.checked::before { background: var(--accent); border-color: var(--accent); }
@@ -739,9 +750,11 @@
 
   function restoreChecklistState(root) {
     root.querySelectorAll('ul.checklist > li').forEach(li => {
+      // remove legacy check-box spans (visual now handled by CSS ::before)
+      li.querySelectorAll('.check-box').forEach(el => el.remove());
       // migrate old format that used input[type=checkbox]
-      const cb = li.querySelector('input[type="checkbox"]');
-      if (cb) { if (cb.checked) li.classList.add('checked'); cb.remove(); }
+      const oldCb = li.querySelector('input[type="checkbox"]');
+      if (oldCb) { if (oldCb.checked) li.classList.add('checked'); oldCb.remove(); }
     });
   }
 
@@ -1101,12 +1114,6 @@
     else document.execCommand('insertHTML', false, '<a href="' + url + '">Link</a>');
   }
 
-  function insertChecklistItem(li) {
-    const text = document.createElement('span');
-    li.appendChild(text);
-    return text;
-  }
-
   const ACTIONS = {
     bold:          () => cmd('bold'),
     italic:        () => cmd('italic'),
@@ -1121,12 +1128,8 @@
       const list  = document.createElement('ul');
       list.className = 'checklist';
       const item  = document.createElement('li');
-      const text  = insertChecklistItem(item);
       list.appendChild(item);
       swapBlock(block, list, item);
-      const r = document.createRange();
-      r.setStart(text, 0); r.collapse(true);
-      const s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
       getEd().focus();
     },
     quote:         () => toggleBlock('blockquote'),
@@ -1228,18 +1231,18 @@
   });
 
   editorEl.addEventListener('click', e => {
-    const checkLi = e.target.closest('ul.checklist > li');
-    if (checkLi && editorEl.contains(checkLi)) {
-      const rect = checkLi.getBoundingClientRect();
-      if (e.clientX - rect.left < 28) {
+    const li = e.target.closest('ul.checklist > li');
+    if (li && editorEl.contains(li)) {
+      const relX = e.clientX - li.getBoundingClientRect().left;
+      if (relX >= 0 && relX <= 20) {
         e.preventDefault();
-        const ul = checkLi.closest('ul.checklist');
-        checkLi.classList.toggle('checked');
-        if (checkLi.classList.contains('checked')) {
-          ul.appendChild(checkLi);
+        const ul = li.closest('ul.checklist');
+        li.classList.toggle('checked');
+        if (li.classList.contains('checked')) {
+          ul.appendChild(li);
         } else {
           const firstChecked = ul.querySelector('li.checked');
-          firstChecked ? ul.insertBefore(checkLi, firstChecked) : ul.prepend(checkLi);
+          firstChecked ? ul.insertBefore(li, firstChecked) : ul.prepend(li);
         }
         if (syncActiveNoteFromEditor()) scheduleSave();
         return;
@@ -1292,10 +1295,9 @@
       if (li && li.closest('ul.checklist')) {
         e.preventDefault();
         const newLi = document.createElement('li');
-        const text  = insertChecklistItem(newLi);
         li.after(newLi);
         const r = document.createRange();
-        r.setStart(text, 0); r.collapse(true);
+        r.selectNodeContents(newLi); r.collapse(true);
         const s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
         editorEl.dispatchEvent(new Event('input'));
         return;
