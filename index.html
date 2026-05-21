@@ -380,6 +380,23 @@
     #toast.show.success { border-color: var(--success); color: var(--success); }
     #toast.show.error   { border-color: var(--danger);  color: var(--danger);  }
 
+    /* Auth Overlay */
+    #auth-overlay { position:fixed; inset:0; z-index:400; display:flex; align-items:center; justify-content:center; background: radial-gradient(circle at 50% 36%, rgba(0,180,255,.14), transparent 52%), linear-gradient(180deg, #04090f 0%, #010204 100%); }
+    .auth-card { text-align:center; max-width:340px; width:100%; padding:0 28px; }
+    .auth-logo { font-size:54px; margin-bottom:18px; color:var(--accent); }
+    .auth-title { font-size:30px; font-weight:700; letter-spacing:-.6px; margin-bottom:8px; color:#e8f0ff; }
+    .auth-sub { font-size:14px; color:#4a6a8a; margin-bottom:36px; line-height:1.6; }
+    #google-signin-btn { display:flex; align-items:center; justify-content:center; gap:12px; width:100%; padding:14px 20px; background:linear-gradient(135deg,rgba(255,255,255,.1),rgba(255,255,255,.05)); border:1px solid rgba(100,210,255,.16); border-radius:var(--radius-sm); color:#e8f0ff; font-size:14px; font-family:var(--font); font-weight:500; cursor:pointer; transition:background .14s,transform .14s,border-color .14s; }
+    #google-signin-btn:hover { background:linear-gradient(135deg,rgba(255,255,255,.16),rgba(255,255,255,.08)); border-color:rgba(100,210,255,.3); transform:translateY(-1px); }
+    #google-signin-btn:disabled { opacity:.5; cursor:not-allowed; transform:none; }
+    #auth-error { margin-top:16px; font-size:12.5px; color:var(--danger); }
+    /* User badge in sidebar */
+    #user-badge .u-row { display:flex; align-items:center; gap:8px; padding:8px 10px; background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(255,255,255,.01)); border:1px solid var(--glass-border); border-radius:var(--radius-xs); }
+    #user-avatar { width:26px; height:26px; border-radius:50%; flex-shrink:0; object-fit:cover; }
+    #user-name { flex:1; font-size:12px; color:var(--text2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    #signout-btn { border:none; background:none; color:var(--muted); font-size:13px; cursor:pointer; padding:3px 5px; border-radius:5px; transition:color .12s,background .12s; flex-shrink:0; }
+    #signout-btn:hover { color:var(--danger); background:rgba(255,69,58,.14); }
+
     /* Scrollbars */
     ::-webkit-scrollbar { width: 5px; height: 5px; }
     ::-webkit-scrollbar-track { background: transparent; }
@@ -446,6 +463,13 @@
       <div class="sidebar-list" id="sidebar-list"></div>
       <div class="sidebar-bottom">
         <input type="file" id="import-input" accept=".json" />
+        <div id="user-badge" style="display:none;width:100%;padding:0 0 8px;">
+          <div class="u-row">
+            <img id="user-avatar" src="" alt="" style="display:none;" />
+            <span id="user-name"></span>
+            <button id="signout-btn" title="Sign Out"><i class="fa-solid fa-arrow-right-from-bracket"></i></button>
+          </div>
+        </div>
         <button class="bottom-btn" id="settings-btn"><i class="fa-solid fa-gear"></i> Settings</button>
       </div>
     </aside>
@@ -544,15 +568,35 @@
     </div>
   </div>
 
+  <div class="modal-overlay" id="key-modal" style="display:none!important"></div>
+
+  <div id="auth-overlay">
+    <div class="auth-card">
+      <div class="auth-logo"><i class="fa-solid fa-scroll"></i></div>
+      <h1 class="auth-title">Notas</h1>
+      <p class="auth-sub">Your personal notes, synced across devices.</p>
+      <button id="google-signin-btn">
+        <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true">
+          <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.06 17.74 9.5 24 9.5z"/>
+          <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+          <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+          <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.35-8.16 2.35-6.26 0-11.57-3.56-13.47-8.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+        </svg>
+        Continue with Google
+      </button>
+      <p id="auth-error" style="display:none;"></p>
+    </div>
+  </div>
+
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 
   <script type="module">
   import { initializeApp }                                    from 'https://www.gstatic.com/firebasejs/12.13.0/firebase-app.js';
   import { getAnalytics }                                     from 'https://www.gstatic.com/firebasejs/12.13.0/firebase-analytics.js';
-  import { getAuth, signInAnonymously, onAuthStateChanged }   from 'https://www.gstatic.com/firebasejs/12.13.0/firebase-auth.js';
+  import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/12.13.0/firebase-auth.js';
   import {
-    getFirestore, collection, doc, setDoc, deleteDoc,
-    onSnapshot, Timestamp, writeBatch, serverTimestamp
+    getFirestore, collection, doc, setDoc, deleteDoc, getDocs,
+    onSnapshot, query, where, Timestamp, writeBatch, serverTimestamp
   } from 'https://www.gstatic.com/firebasejs/12.13.0/firebase-firestore.js';
 
   const firebaseConfig = {
@@ -580,33 +624,99 @@
     window.marked.setOptions({ gfm: true, breaks: true });
   }
 
+  /* One-time vault migration ──────────────────────────────────
+     Reads notes encrypted by the old Vigenère+vault system and
+     moves them into the flat notes collection as plain HTML.   */
+  function vigDecrypt(ct, key) {
+    if (!key || !ct || !ct.startsWith('vig1:')) return ct;
+    try {
+      const hex = ct.slice(5);
+      let out = '';
+      for (let i = 0; i < hex.length; i += 4) {
+        const c = parseInt(hex.slice(i, i + 4), 16);
+        out += String.fromCharCode(((c - key.charCodeAt((i / 4) % key.length)) % 65536 + 65536) % 65536);
+      }
+      return out;
+    } catch { return ct; }
+  }
+
+  async function migrateVaultNotes(uid) {
+    if (localStorage.getItem('notas_vault_migrated_v1')) return;
+    const migKey = localStorage.getItem('notas_cipher_key') || 'daylee';
+    try {
+      const buf  = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(migKey));
+      const hash = Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+      const snap = await getDocs(collection(fsDb, 'vaults', hash, 'notes'));
+      if (!snap.empty) {
+        const batch = writeBatch(fsDb);
+        snap.forEach(d => {
+          const v = d.data();
+          batch.set(doc(fsDb, 'notes', d.id), {
+            owner:    uid,
+            title:    vigDecrypt(v.title   || '', migKey) || 'Untitled Note',
+            content:  vigDecrypt(v.content || '', migKey),
+            created:  v.created  || Timestamp.now(),
+            modified: v.modified || Timestamp.now()
+          });
+        });
+        await batch.commit();
+        showToast(snap.size + ' note' + (snap.size !== 1 ? 's' : '') + ' migrated', 'success');
+      }
+    } catch (err) { console.error('vault migration:', err); }
+    localStorage.setItem('notas_vault_migrated_v1', '1');
+    localStorage.removeItem('notas_cipher_key');
+  }
+
   /* Auth */
-  onAuthStateChanged(auth, user => {
+  onAuthStateChanged(auth, async user => {
+    const overlay = document.getElementById('auth-overlay');
     if (user) {
       userId = user.uid;
+      overlay.style.display = 'none';
+      document.getElementById('user-badge').style.display = '';
+      document.getElementById('user-name').textContent = user.displayName || user.email || 'Signed In';
+      const av = document.getElementById('user-avatar');
+      if (user.photoURL) { av.src = user.photoURL; av.style.display = ''; }
+      else av.style.display = 'none';
+      await migrateVaultNotes(user.uid);
       migrateFromLocalStorage();
       listenToNotes();
+    } else {
+      overlay.style.display = 'flex';
+      document.getElementById('user-badge').style.display = 'none';
+      if (unsubscribe) { unsubscribe(); unsubscribe = null; }
+      notes = {}; activeId = null;
+      showEditorView(false);
+      renderSidebar();
     }
-    // null on initial load before sign-in resolves — not an error
   });
-  signInAnonymously(auth).catch(err => {
-    console.error('signInAnonymously:', err);
-    setSaveState('error');
-    showToast('Auth Error: ' + (err.code || err.message), 'error');
-  });
+
+  async function signInWithGoogle() {
+    const btn = document.getElementById('google-signin-btn');
+    const err = document.getElementById('auth-error');
+    btn.disabled = true; err.style.display = 'none';
+    try {
+      await signInWithPopup(auth, new GoogleAuthProvider());
+    } catch (e) {
+      console.error('signInWithPopup:', e);
+      err.textContent = e.message || e.code;
+      err.style.display = ''; btn.disabled = false;
+    }
+  }
 
   /* Firestore Listener */
   function listenToNotes() {
     if (unsubscribe) unsubscribe();
-    unsubscribe = onSnapshot(collection(fsDb, 'notes'), snap => {
+    const q = query(collection(fsDb, 'notes'), where('owner', '==', userId));
+    unsubscribe = onSnapshot(q, snap => {
       snap.docChanges().forEach(ch => {
         const id = ch.doc.id;
         if (ch.type === 'removed') { delete notes[id]; return; }
         const d = ch.doc.data();
         notes[id] = {
           id,
-          title:    d.title    || 'Untitled Note',
-          content:  d.content  || '',
+          title:    d.title   || 'Untitled Note',
+          content:  d.content || '',
           created:  d.created?.toDate?.()?.toISOString()  || new Date().toISOString(),
           modified: d.modified?.toDate?.()?.toISOString() || new Date().toISOString()
         };
@@ -632,6 +742,7 @@
     setSaveState('saving');
     try {
       await setDoc(doc(fsDb, 'notes', note.id), {
+        owner:    userId,
         title:    note.title,
         content:  note.content,
         created:  Timestamp.fromDate(new Date(note.created)),
@@ -664,6 +775,7 @@
       list.forEach(n => {
         const html = renderMarkdownContent(n.content || '');
         batch.set(doc(fsDb, 'notes', n.id), {
+          owner:    userId,
           title:    n.title,
           content:  html,
           created:  Timestamp.fromDate(new Date(n.created)),
@@ -1144,7 +1256,11 @@
   const closeDrawer = () => { document.getElementById('sidebar').classList.remove('open'); document.getElementById('drawer-overlay').classList.remove('open'); };
 
   /* Modal */
-  const openModal  = () => { document.getElementById('modal').classList.add('open'); document.getElementById('modal-input').value = ''; setTimeout(() => document.getElementById('modal-input').focus(), 120); };
+  const openModal  = () => {
+    document.getElementById('modal').classList.add('open');
+    document.getElementById('modal-input').value = '';
+    setTimeout(() => document.getElementById('modal-input').focus(), 120);
+  };
   const closeModal = () => document.getElementById('modal').classList.remove('open');
   function confirmCreate() {
     const t = document.getElementById('modal-input').value.trim();
@@ -1204,6 +1320,8 @@
   /* Event Wiring */
   document.getElementById('drawer-btn').addEventListener('click',     openDrawer);
   document.getElementById('mob-new-btn').addEventListener('click',    openModal);
+  document.getElementById('google-signin-btn').addEventListener('click', signInWithGoogle);
+  document.getElementById('signout-btn').addEventListener('click', () => signOut(auth));
   document.getElementById('drawer-overlay').addEventListener('click', closeDrawer);
   document.getElementById('new-note-btn').addEventListener('click',   openModal);
   document.getElementById('empty-cta-btn').addEventListener('click',  openModal);
