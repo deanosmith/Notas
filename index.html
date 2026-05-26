@@ -4,7 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>Notas</title>
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%2300b4ff'/%3E%3Crect x='8' y='8' width='16' height='16' rx='2' fill='%23e8f0ff'/%3E%3Cellipse cx='8' cy='16' rx='3' ry='7' fill='%234ab8ff'/%3E%3Cellipse cx='24' cy='16' rx='3' ry='7' fill='%234ab8ff'/%3E%3Cpath d='M11 13h10M11 16h10M11 19h7' stroke='%2300b4ff' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E" />
+  <link rel="icon" type="image/svg+xml" href="icon.svg" />
+  <link rel="apple-touch-icon" href="icon.svg" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" />
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -378,6 +379,8 @@
     }
     .editor ul.checklist > li.checked::before { background: var(--accent); border-color: var(--accent); }
     .editor ul.checklist > li.checked { color: var(--muted); text-decoration: line-through; }
+    /* Nested checklist indentation */
+    .editor ul.checklist ul.checklist { margin-left: 22px; }
     .editor a  { color: var(--text); text-decoration: none; background: linear-gradient(180deg, rgba(0, 180, 255, .22), rgba(0, 180, 255, .08)); padding: 1px 6px; border-radius: 999px; border: 1px solid rgba(0, 180, 255, .18); box-shadow: inset 0 1px 0 rgba(255,255,255,.08); cursor: pointer; }
     .editor a:hover { background: linear-gradient(180deg, rgba(0, 180, 255, .3), rgba(0, 180, 255, .14)); }
     .editor strong { font-weight: 650; color: var(--text); }
@@ -459,6 +462,22 @@
     .fs-btn:hover { background: linear-gradient(135deg, var(--accent-h), var(--accent)); color: #fff; border-color: rgba(0, 200, 255, .26); }
     .fs-val { font-size: 13px; color: var(--text2); min-width: 30px; text-align: center; font-variant-numeric: tabular-nums; }
 
+    /* Loading overlay */
+    #loading-overlay {
+      position: fixed; inset: 0; z-index: 500;
+      display: flex; align-items: center; justify-content: center;
+      background: #000;
+      transition: opacity .3s;
+    }
+    .loading-spinner {
+      width: 36px; height: 36px;
+      border: 3px solid rgba(0, 180, 255, .2);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
     /* Mobile */
     @media (max-width: 767px) {
       #mob-header { display: flex; }
@@ -480,6 +499,8 @@
   </style>
 </head>
 <body>
+
+  <div id="loading-overlay"><div class="loading-spinner"></div></div>
 
   <header id="mob-header">
     <button class="mob-btn" id="drawer-btn"><i class="fa-solid fa-bars"></i></button>
@@ -527,22 +548,19 @@
           </div>
           <div class="toolbar" id="toolbar">
             <div class="toolbar-group">
-              <button class="tb-btn" data-action="bold"          title="Bold"><b>B</b></button>
-              <button class="tb-btn" data-action="italic"        title="Italic"><i>I</i></button>
-              <button class="tb-btn" data-action="strikethrough" title="Strikethrough"><s>S</s></button>
+              <button class="tb-btn" data-action="h1"     title="Heading 1">H1</button>
+              <button class="tb-btn" data-action="bold"   title="Bold"><b>B</b></button>
+              <button class="tb-btn" data-action="italic" title="Italic"><i>I</i></button>
             </div>
             <div class="toolbar-sep"></div>
             <div class="toolbar-group">
-              <button class="tb-btn" data-action="h1" title="Heading 1">H1</button>
-              <button class="tb-btn" data-action="h2" title="Heading 2">H2</button>
-              <button class="tb-btn" data-action="h3" title="Heading 3">H3</button>
-            </div>
-            <div class="toolbar-sep"></div>
-            <div class="toolbar-group">
-              <button class="tb-btn" data-action="ul" title="Bullet List"><i class="fa-solid fa-list-ul"></i></button>
-              <button class="tb-btn" data-action="ol" title="Numbered List"><i class="fa-solid fa-list-ol"></i></button>
+              <button class="tb-btn" data-action="ul"        title="Bullet List"><i class="fa-solid fa-list-ul"></i></button>
               <button class="tb-btn" data-action="checklist" title="Checklist"><i class="fa-solid fa-list-check"></i></button>
-              <button class="tb-btn" data-action="hr" title="Divider"><i class="fa-solid fa-minus"></i></button>
+            </div>
+            <div class="toolbar-sep"></div>
+            <div class="toolbar-group">
+              <button class="tb-btn" data-action="indentLeft"  title="Outdent"><i class="fa-solid fa-outdent"></i></button>
+              <button class="tb-btn" data-action="indentRight" title="Indent"><i class="fa-solid fa-indent"></i></button>
             </div>
           </div>
         </div>
@@ -604,6 +622,10 @@
         <div class="settings-row" id="signout-row" style="display:none;">
           <span class="settings-label"><i class="fa-solid fa-arrow-right-from-bracket"></i>Sign Out</span>
           <button id="signout-btn" style="padding:7px 14px;border-radius:var(--radius-xs);border:1px solid rgba(255,69,58,.3);background:rgba(255,69,58,.1);color:var(--danger);font-size:12px;font-family:var(--font);font-weight:500;cursor:pointer;transition:background .12s;">Sign Out</button>
+        </div>
+        <div class="settings-row">
+          <span class="settings-label"><i class="fa-solid fa-tag"></i>Version</span>
+          <span style="font-size:12px;color:var(--muted);">0.1</span>
         </div>
       </div>
       <div class="modal-actions">
@@ -775,6 +797,8 @@
 
   /* Auth */
   onAuthStateChanged(auth, async user => {
+    const loadingEl = document.getElementById('loading-overlay');
+    if (loadingEl) { loadingEl.style.opacity = '0'; setTimeout(() => { loadingEl.style.display = 'none'; }, 300); }
     const overlay = document.getElementById('auth-overlay');
     if (user) {
       overlay.style.display = 'none';
@@ -1069,6 +1093,58 @@
       const oldCb = li.querySelector('input[type="checkbox"]');
       if (oldCb) { if (oldCb.checked) li.classList.add('checked'); oldCb.remove(); }
     });
+  }
+
+  // Ensure any ul nested inside a ul.checklist carries the checklist class
+  // (used when loading old saved notes that may have plain nested uls).
+  function fixChecklistNesting(root) {
+    (root || getEd()).querySelectorAll('ul.checklist li ul').forEach(ul => {
+      ul.classList.add('checklist');
+    });
+  }
+
+  // Custom indent for a checklist li: move it into a nested ul.checklist under its
+  // previous sibling. Relies on pure DOM manipulation — not execCommand — so the
+  // checklist class is never lost.
+  function checklistIndent(li) {
+    const prev = li.previousElementSibling;
+    if (!prev) return; // first item — nothing to nest under
+
+    // Save the live selection (text nodes travel with the li, so the range stays valid)
+    const sel = window.getSelection();
+    const savedRange = sel && sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null;
+
+    // Append to an existing nested checklist, or create one
+    let nested = prev.querySelector(':scope > ul.checklist');
+    if (!nested) {
+      nested = document.createElement('ul');
+      nested.className = 'checklist';
+      prev.appendChild(nested);
+    }
+    nested.appendChild(li);
+
+    if (savedRange) { sel.removeAllRanges(); sel.addRange(savedRange); }
+  }
+
+  // Custom outdent for a checklist li: move it to after its parent li in the
+  // grandparent checklist. Siblings that come after it stay as a sub-list.
+  function checklistOutdent(li) {
+    const parentList = li.parentElement;                       // nested ul.checklist
+    if (!parentList || !parentList.classList.contains('checklist')) return;
+    const parentLi = parentList.parentElement;                 // containing li
+    if (!parentLi || parentLi.tagName !== 'LI') return;        // already at top level
+    const grandParent = parentLi.parentElement;
+    if (!grandParent) return;
+
+    const sel = window.getSelection();
+    const savedRange = sel && sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null;
+
+    grandParent.insertBefore(li, parentLi.nextSibling);
+
+    // Remove the nested list if it is now empty
+    if (!parentList.hasChildNodes()) parentList.remove();
+
+    if (savedRange) { sel.removeAllRanges(); sel.addRange(savedRange); }
   }
 
   function refreshEmpty(el) {
@@ -1681,22 +1757,90 @@
     h1:            () => toggleBlock('h1'),
     h2:            () => toggleBlock('h2'),
     h3:            () => toggleBlock('h3'),
-    ul:            () => { cmd('insertUnorderedList'); getEd().focus(); },
+    ul:            () => {
+      // If inside a checklist, convert it to a regular bullet list
+      const li = ancestorOfType(['li']);
+      if (li) {
+        const parentChecklist = li.closest('ul.checklist');
+        if (parentChecklist) {
+          parentChecklist.classList.remove('checklist');
+          parentChecklist.querySelectorAll('li').forEach(item => item.classList.remove('checked'));
+          getEd().focus();
+          getEd().dispatchEvent(new Event('input'));
+          return;
+        }
+      }
+      cmd('insertUnorderedList'); getEd().focus();
+    },
     ol:            () => { cmd('insertOrderedList');   getEd().focus(); },
     checklist:     () => {
+      getEd().focus();
+      // If already inside any list, convert that list to/from a checklist
+      const li = ancestorOfType(['li']);
+      if (li) {
+        const parentList = li.closest('ul, ol');
+        if (parentList) {
+          if (parentList.classList.contains('checklist')) {
+            // Already a checklist — toggle back to regular bullet list
+            parentList.classList.remove('checklist');
+            parentList.querySelectorAll('li').forEach(item => item.classList.remove('checked'));
+          } else if (parentList.tagName === 'OL') {
+            // Convert ordered list → checklist
+            const newList = document.createElement('ul');
+            newList.className = 'checklist';
+            while (parentList.firstChild) newList.appendChild(parentList.firstChild);
+            parentList.replaceWith(newList);
+          } else {
+            // Convert unordered list → checklist
+            parentList.classList.add('checklist');
+          }
+          getEd().dispatchEvent(new Event('input'));
+          return;
+        }
+      }
+      // Not in a list — wrap current block's content in a new checklist item
       const block = currentBlockFromSelection();
       const list  = document.createElement('ul');
       list.className = 'checklist';
       const item  = document.createElement('li');
+      if (block && block !== getEd()) {
+        // Transfer existing text/nodes into the new li
+        while (block.firstChild) item.appendChild(block.firstChild);
+      }
       list.appendChild(item);
-      swapBlock(block, list, item);
-      getEd().focus();
+      if (block && block !== getEd()) {
+        block.replaceWith(list);
+      } else {
+        getEd().appendChild(list);
+      }
+      placeCursorAtEnd(item);
+      getEd().dispatchEvent(new Event('input'));
     },
     quote:         () => toggleBlock('blockquote'),
     code:          insertInlineCode,
     codeblock:     insertCodeBlock,
     link:          insertLink,
-    hr:            () => { cmd('insertHorizontalRule'); getEd().focus(); }
+    hr:            () => { cmd('insertHorizontalRule'); getEd().focus(); },
+    indentLeft:    () => {
+      const li = ancestorOfType(['li']);
+      if (li && li.closest('ul.checklist')) {
+        checklistOutdent(li);
+        getEd().dispatchEvent(new Event('input'));
+      } else {
+        document.execCommand('outdent');
+      }
+      getEd().focus();
+    },
+    indentRight:   () => {
+      const li = ancestorOfType(['li']);
+      if (li && li.closest('ul.checklist')) {
+        checklistIndent(li);
+        getEd().dispatchEvent(new Event('input'));
+      } else {
+        document.execCommand('indent');
+      }
+      getEd().focus();
+    }
   };
 
   /* Drawer */
@@ -2055,11 +2199,38 @@
       const li = ancestorOfType(['li']);
       if (li && li.closest('ul.checklist')) {
         e.preventDefault();
+        const sel = window.getSelection();
+        if (!sel || !sel.rangeCount) return;
+        const range = sel.getRangeAt(0);
+
+        // Delete any selected text first
+        if (!range.collapsed) range.deleteContents();
+
+        // Extract content from cursor position to end of the li (split point)
+        const tailRange = document.createRange();
+        tailRange.setStart(range.startContainer, range.startOffset);
+        tailRange.setEnd(li, li.childNodes.length);
+        const tailContent = tailRange.extractContents();
+
+        // Build new li with the extracted trailing content
         const newLi = document.createElement('li');
+        newLi.appendChild(tailContent);
+        // Ensure new li is focusable when tail was empty
+        if (!newLi.textContent && !newLi.querySelector('br, img')) {
+          newLi.appendChild(document.createElement('br'));
+        }
+        // Ensure original li is also focusable when it became empty
+        if (!li.hasChildNodes()) {
+          li.appendChild(document.createElement('br'));
+        }
+
         li.after(newLi);
+
         const r = document.createRange();
-        r.selectNodeContents(newLi); r.collapse(true);
-        const s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
+        r.selectNodeContents(newLi);
+        r.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(r);
         _capitalizeNext = true;
         editorEl.dispatchEvent(new Event('input'));
         return;
@@ -2077,8 +2248,18 @@
     }
     if (e.key === 'Tab') {
       e.preventDefault();
-      if (ancestorOfType(['li'])) e.shiftKey ? document.execCommand('outdent') : document.execCommand('indent');
-      else document.execCommand('insertText', false, '    ');
+      const li = ancestorOfType(['li']);
+      if (li) {
+        if (li.closest('ul.checklist')) {
+          // Use custom DOM-based indent/outdent so the checklist class is preserved
+          e.shiftKey ? checklistOutdent(li) : checklistIndent(li);
+        } else {
+          e.shiftKey ? document.execCommand('outdent') : document.execCommand('indent');
+        }
+        getEd().dispatchEvent(new Event('input'));
+      } else {
+        document.execCommand('insertText', false, '    ');
+      }
     }
   });
 
