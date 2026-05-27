@@ -839,6 +839,71 @@
   let _moveNoteId     = null;
   let _capitalizeNext = false;
   let _draggingNoteId = null;
+
+  /* ── Custom Undo/Redo System ─────────────────────────── */
+  const undoStack = [];
+  const redoStack = [];
+  const UNDO_LIMIT = 100;
+  let _lastUndoSnapshot = '';
+  let _undoDebounceTimer = null;
+
+  function pushUndo() {
+    const ed = getEd();
+    if (!ed) return;
+    const html = ed.innerHTML;
+    if (html === _lastUndoSnapshot) return;
+    undoStack.push(_lastUndoSnapshot);
+    if (undoStack.length > UNDO_LIMIT) undoStack.shift();
+    redoStack.length = 0;
+    _lastUndoSnapshot = html;
+  }
+
+  function initUndoSnapshot() {
+    const ed = getEd();
+    if (ed) _lastUndoSnapshot = ed.innerHTML;
+    undoStack.length = 0;
+    redoStack.length = 0;
+  }
+
+  function performUndo() {
+    if (!undoStack.length) return;
+    const ed = getEd();
+    redoStack.push(ed.innerHTML);
+    const prev = undoStack.pop();
+    ed.innerHTML = prev;
+    _lastUndoSnapshot = prev;
+    restoreChecklistState(ed);
+    refreshEmpty(ed);
+    if (syncActiveNoteFromEditor()) scheduleSave();
+  }
+
+  function performRedo() {
+    if (!redoStack.length) return;
+    const ed = getEd();
+    undoStack.push(ed.innerHTML);
+    const next = redoStack.pop();
+    ed.innerHTML = next;
+    _lastUndoSnapshot = next;
+    restoreChecklistState(ed);
+    refreshEmpty(ed);
+    if (syncActiveNoteFromEditor()) scheduleSave();
+  }
+
+  // Debounced snapshot for regular typing — captures state periodically
+  function scheduleUndoSnapshot() {
+    clearTimeout(_undoDebounceTimer);
+    _undoDebounceTimer = setTimeout(() => {
+      const ed = getEd();
+      if (!ed) return;
+      const html = ed.innerHTML;
+      if (html !== _lastUndoSnapshot) {
+        undoStack.push(_lastUndoSnapshot);
+        if (undoStack.length > UNDO_LIMIT) undoStack.shift();
+        _lastUndoSnapshot = html;
+        // Don't clear redoStack for typing snapshots
+      }
+    }, 600);
+  }
   const _sharedNoteId   = new URLSearchParams(location.search).get('note');
   const _sharedFolderId = new URLSearchParams(location.search).get('folder');
 
@@ -1142,6 +1207,7 @@
     renderSidebar();
     updateCounts();
     setSaveState('saved');
+    initUndoSnapshot();
     if (!isMobile()) setTimeout(() => placeCursorAtEnd(ed), 40);
     if (isMobile()) closeDrawer();
   }
@@ -1221,6 +1287,54 @@
 
     // Remove the nested list if it is now empty
     if (!parentList.hasChildNodes()) parentList.remove();
+
+    if (savedRange) { sel.removeAllRanges(); sel.addRange(savedRange); }
+  }
+
+  // Extract a single li from its parent list into a new <ul> with the given class.
+  // Items before li stay in a new copy of the original list; items after do the same.
+  // The cursor (saved selection) is preserved across the DOM restructuring.
+  function splitListAtLi(li, newListClass) {
+    const parentList = li.parentElement;
+    const grandParent = parentList.parentElement;
+    if (!grandParent) return;
+
+    const sel = window.getSelection();
+    const savedRange = sel && sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null;
+
+    const siblings = [...parentList.children];
+    const idx = siblings.indexOf(li);
+    const before = siblings.slice(0, idx);
+    const after  = siblings.slice(idx + 1);
+
+    const origTag   = parentList.tagName.toLowerCase();
+    const origClass = parentList.className;
+
+    // Items before the current li stay in a list of the same original type
+    if (before.length) {
+      const bl = document.createElement(origTag);
+      bl.className = origClass;
+      before.forEach(n => bl.appendChild(n));
+      grandParent.insertBefore(bl, parentList);
+    }
+
+    // The extracted li goes into a new <ul> with the requested class
+    const newList = document.createElement('ul');
+    if (newListClass) newList.className = newListClass;
+    if (newListClass !== 'checklist') li.classList.remove('checked');
+    newList.appendChild(li);
+    grandParent.insertBefore(newList, parentList);
+
+    // Items after the current li stay in a list of the same original type
+    if (after.length) {
+      const al = document.createElement(origTag);
+      al.className = origClass;
+      after.forEach(n => al.appendChild(n));
+      grandParent.insertBefore(al, parentList);
+    }
+
+    // Original list is now empty — remove it
+    parentList.remove();
 
     if (savedRange) { sel.removeAllRanges(); sel.addRange(savedRange); }
   }
@@ -1730,29 +1844,52 @@
       if (editorText !== marker) return false;
     }
 
+    // Extract trailing content (text after the marker) to preserve it
+    function extractTrailingContent() {
+      const tailRange = document.createRange();
+      tailRange.setStart(range.startContainer, range.startOffset);
+      tailRange.setEndAfter(block.lastChild || block);
+      const frag = tailRange.extractContents();
+      // Remove the marker prefix from the block
+      prefix.deleteContents();
+      return frag;
+    }
+
     if (/^#{1,3}$/.test(marker)) {
-      const heading = createEmptyBlock('h' + marker.length);
+      const tail = extractTrailingContent();
+      const heading = document.createElement('h' + marker.length);
+      if (tail.textContent || tail.childNodes.length > 0) heading.appendChild(tail);
+      else heading.appendChild(document.createElement('br'));
       swapBlock(block, heading, heading);
       return true;
     }
 
     if (marker === '>') {
-      const quote = createEmptyBlock('blockquote');
+      const tail = extractTrailingContent();
+      const quote = document.createElement('blockquote');
+      if (tail.textContent || tail.childNodes.length > 0) quote.appendChild(tail);
+      else quote.appendChild(document.createElement('br'));
       swapBlock(block, quote, quote);
       return true;
     }
 
     if (/^[-+*]$/.test(marker)) {
+      const tail = extractTrailingContent();
       const list = document.createElement('ul');
-      const item = createEmptyBlock('li');
+      const item = document.createElement('li');
+      if (tail.textContent || tail.childNodes.length > 0) item.appendChild(tail);
+      else item.appendChild(document.createElement('br'));
       list.appendChild(item);
       swapBlock(block, list, item);
       return true;
     }
 
     if (/^\d+[.)]$/.test(marker)) {
+      const tail = extractTrailingContent();
       const list = document.createElement('ol');
-      const item = createEmptyBlock('li');
+      const item = document.createElement('li');
+      if (tail.textContent || tail.childNodes.length > 0) item.appendChild(tail);
+      else item.appendChild(document.createElement('br'));
       list.appendChild(item);
       swapBlock(block, list, item);
       return true;
@@ -1850,13 +1987,12 @@
     h2:            () => toggleBlock('h2'),
     h3:            () => toggleBlock('h3'),
     ul:            () => {
-      // If inside a checklist, convert it to a regular bullet list
+      // If inside a checklist, convert only this item to a regular bullet
       const li = ancestorOfType(['li']);
       if (li) {
         const parentChecklist = li.closest('ul.checklist');
         if (parentChecklist) {
-          parentChecklist.classList.remove('checklist');
-          parentChecklist.querySelectorAll('li').forEach(item => item.classList.remove('checked'));
+          splitListAtLi(li, '');
           getEd().focus();
           getEd().dispatchEvent(new Event('input'));
           return;
@@ -1867,24 +2003,17 @@
     ol:            () => { cmd('insertOrderedList');   getEd().focus(); },
     checklist:     () => {
       getEd().focus();
-      // If already inside any list, convert that list to/from a checklist
+      // If inside any list, convert only the current item to/from a checklist
       const li = ancestorOfType(['li']);
       if (li) {
         const parentList = li.closest('ul, ol');
         if (parentList) {
           if (parentList.classList.contains('checklist')) {
-            // Already a checklist — toggle back to regular bullet list
-            parentList.classList.remove('checklist');
-            parentList.querySelectorAll('li').forEach(item => item.classList.remove('checked'));
-          } else if (parentList.tagName === 'OL') {
-            // Convert ordered list → checklist
-            const newList = document.createElement('ul');
-            newList.className = 'checklist';
-            while (parentList.firstChild) newList.appendChild(parentList.firstChild);
-            parentList.replaceWith(newList);
+            // Already a checklist item — convert only this item to a regular bullet
+            splitListAtLi(li, '');
           } else {
-            // Convert unordered list → checklist
-            parentList.classList.add('checklist');
+            // Regular bullet or ordered item — convert only this item to a checklist item
+            splitListAtLi(li, 'checklist');
           }
           getEd().dispatchEvent(new Event('input'));
           return;
@@ -2376,6 +2505,7 @@
     }
     refreshEmpty(editorEl);
     if (!syncActiveNoteFromEditor()) return;
+    scheduleUndoSnapshot();
     scheduleSave();
   });
 
@@ -2424,6 +2554,7 @@
     if (!e.metaKey && !e.ctrlKey && !e.altKey && e.key === ' ' && !e.isComposing) {
       if (applyMarkdownShortcut()) {
         e.preventDefault();
+        pushUndo();
         refreshEmpty(editorEl);
         if (syncActiveNoteFromEditor()) scheduleSave();
         return;
@@ -2454,6 +2585,32 @@
         if (!sel || !sel.rangeCount) return;
         const range = sel.getRangeAt(0);
 
+        // If this li is empty, exit the checklist (like bullet lists do)
+        const liText = li.textContent.replace(/\u00a0/g, '').trim();
+        if (!liText) {
+          pushUndo();
+          const parentList = li.closest('ul.checklist');
+          li.remove();
+          // If the list is now empty, remove it too
+          if (parentList && !parentList.hasChildNodes()) parentList.remove();
+          // Create a new paragraph after the list (or in its place)
+          const p = document.createElement('p');
+          p.appendChild(document.createElement('br'));
+          if (parentList && parentList.parentNode) {
+            parentList.after(p);
+          } else {
+            getEd().appendChild(p);
+          }
+          const r = document.createRange();
+          r.setStart(p, 0);
+          r.collapse(true);
+          sel.removeAllRanges();
+          sel.addRange(r);
+          editorEl.dispatchEvent(new Event('input'));
+          return;
+        }
+
+        pushUndo();
         // Delete any selected text first
         if (!range.collapsed) range.deleteContents();
 
@@ -2516,17 +2673,23 @@
 
   editorEl.addEventListener('paste', e => {
     e.preventDefault();
+    pushUndo();
+    const html = e.clipboardData.getData('text/html');
     const text = e.clipboardData.getData('text/plain');
-    const sel = window.getSelection();
-    if (!sel || !sel.rangeCount) return;
-    const range = sel.getRangeAt(0);
-    range.deleteContents();
-    const textNode = document.createTextNode(text);
-    range.insertNode(textNode);
-    range.setStartAfter(textNode);
-    range.collapse(true);
-    sel.removeAllRanges();
-    sel.addRange(range);
+    if (html) {
+      // Sanitize: strip scripts, event handlers, and dangerous elements
+      const temp = document.createElement('div');
+      temp.innerHTML = html;
+      temp.querySelectorAll('script, style, iframe, object, embed, meta, link').forEach(el => el.remove());
+      temp.querySelectorAll('*').forEach(el => {
+        for (const attr of [...el.attributes]) {
+          if (attr.name.startsWith('on') || attr.name === 'srcdoc') el.removeAttribute(attr.name);
+        }
+      });
+      document.execCommand('insertHTML', false, temp.innerHTML);
+    } else if (text) {
+      document.execCommand('insertText', false, text);
+    }
     editorEl.dispatchEvent(new Event('input'));
   });
 
@@ -2534,12 +2697,14 @@
     const btn = e.target.closest('[data-action]');
     if (!btn) return;
     e.preventDefault();
+    pushUndo();
     ACTIONS[btn.dataset.action]?.();
   });
   document.getElementById('toolbar').addEventListener('touchend', e => {
     const btn = e.target.closest('[data-action]');
     if (!btn) return;
     e.preventDefault();
+    pushUndo();
     ACTIONS[btn.dataset.action]?.();
   });
 
@@ -2567,8 +2732,11 @@
     const mod = /Mac/.test(navigator.platform) ? e.metaKey : e.ctrlKey;
     if (!mod) return;
     if (document.activeElement === editorEl) {
-      if (e.key === 'b') { e.preventDefault(); cmd('bold');  }
-      if (e.key === 'i') { e.preventDefault(); cmd('italic'); }
+      if (e.key === 'z' && !e.shiftKey) { e.preventDefault(); performUndo(); return; }
+      if (e.key === 'z' && e.shiftKey)  { e.preventDefault(); performRedo(); return; }
+      if (e.key === 'y')                { e.preventDefault(); performRedo(); return; }
+      if (e.key === 'b') { e.preventDefault(); pushUndo(); cmd('bold');  }
+      if (e.key === 'i') { e.preventDefault(); pushUndo(); cmd('italic'); }
     }
     if (e.key === 'n') { e.preventDefault(); openModal(); }
   });
