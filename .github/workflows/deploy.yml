@@ -25,17 +25,27 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Inject Firebase credentials
+      - name: Generate Firebase config
+        env:
+          FIREBASE_API_KEY: ${{ secrets.FIREBASE_API_KEY }}
+          FIREBASE_AUTH_DOMAIN: ${{ secrets.FIREBASE_AUTH_DOMAIN }}
+          FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+          FIREBASE_STORAGE_BUCKET: ${{ secrets.FIREBASE_STORAGE_BUCKET }}
+          FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.FIREBASE_MESSAGING_SENDER_ID }}
+          FIREBASE_APP_ID: ${{ secrets.FIREBASE_APP_ID }}
+          FIREBASE_MEASUREMENT_ID: ${{ secrets.FIREBASE_MEASUREMENT_ID }}
         run: |
-          sed -i \
-            -e "s|__FIREBASE_API_KEY__|${{ secrets.FIREBASE_API_KEY }}|g" \
-            -e "s|__FIREBASE_AUTH_DOMAIN__|${{ secrets.FIREBASE_AUTH_DOMAIN }}|g" \
-            -e "s|__FIREBASE_PROJECT_ID__|${{ secrets.FIREBASE_PROJECT_ID }}|g" \
-            -e "s|__FIREBASE_STORAGE_BUCKET__|${{ secrets.FIREBASE_STORAGE_BUCKET }}|g" \
-            -e "s|__FIREBASE_MESSAGING_SENDER_ID__|${{ secrets.FIREBASE_MESSAGING_SENDER_ID }}|g" \
-            -e "s|__FIREBASE_APP_ID__|${{ secrets.FIREBASE_APP_ID }}|g" \
-            -e "s|__FIREBASE_MEASUREMENT_ID__|${{ secrets.FIREBASE_MEASUREMENT_ID }}|g" \
-            index.html
+          {
+            echo "window.__env = {"
+            echo "  FIREBASE_API_KEY:             '${FIREBASE_API_KEY}',"
+            echo "  FIREBASE_AUTH_DOMAIN:         '${FIREBASE_AUTH_DOMAIN}',"
+            echo "  FIREBASE_PROJECT_ID:          '${FIREBASE_PROJECT_ID}',"
+            echo "  FIREBASE_STORAGE_BUCKET:      '${FIREBASE_STORAGE_BUCKET}',"
+            echo "  FIREBASE_MESSAGING_SENDER_ID: '${FIREBASE_MESSAGING_SENDER_ID}',"
+            echo "  FIREBASE_APP_ID:              '${FIREBASE_APP_ID}',"
+            echo "  FIREBASE_MEASUREMENT_ID:      '${FIREBASE_MEASUREMENT_ID}'"
+            echo "};"
+          } > firebase-config.local.js
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
