@@ -839,6 +839,7 @@
   let unsubFolders  = null;
   let unsubUserDoc  = null;
   let sharedNoteUnsubs = {};   // noteId → unsubscribe fn, for real-time shared-note updates
+  let sharedLibraryMeta = {};  // noteId → recipient-owned metadata, e.g. local folder placement
   let _deletePending  = null;
   let _moveNoteId     = null;
   let _capitalizeNext = false;
@@ -948,6 +949,7 @@
       if (unsubUserDoc) { unsubUserDoc(); unsubUserDoc = null; }
       Object.values(sharedNoteUnsubs).forEach(fn => fn());
       sharedNoteUnsubs = {};
+      sharedLibraryMeta = {};
       notes = {}; folders = {}; activeId = null; activeFolderId = null;
       showEditorView(false);
       renderSidebar();
@@ -1130,7 +1132,13 @@
   function _persistOffline(note) {
     try {
       const pending = JSON.parse(localStorage.getItem(OFFLINE_KEY) || '{}');
-      pending[note.id] = { title: note.title, content: note.content, modified: note.modified };
+      pending[note.id] = {
+        title: note.title,
+        content: note.content,
+        modified: note.modified,
+        owner: note.owner || userId,
+        shared: !!(note.owner && note.owner !== userId)
+      };
       localStorage.setItem(OFFLINE_KEY, JSON.stringify(pending));
     } catch (err) { console.error('_persistOffline:', err); }
   }
@@ -1154,8 +1162,10 @@
             saveDoc(notes[id]);
           }
         } else {
-          // Note might not be loaded yet — save directly
-          const payload = { title: edit.title, content: edit.content, modified: serverTimestamp(), owner: userId };
+          // Note might not be loaded yet. Never claim ownership of a known shared note.
+          const payload = { title: edit.title, content: edit.content, modified: serverTimestamp() };
+          const knownShared = edit.shared || (edit.owner && edit.owner !== userId) || sharedLibraryMeta[id];
+          if (!knownShared) payload.owner = userId;
           setDoc(doc(fsDb, 'notes', id), payload, { merge: true }).catch(err => console.error('flush offline:', err));
         }
       });
@@ -1206,15 +1216,20 @@
     const folder = folders[id];
     if (!folder) return;
     const batch = writeBatch(fsDb);
+    const sharedToMove = [];
     Object.values(notes).filter(n => n.folderId === id).forEach(n => {
       n.folderId = null;
-      batch.update(doc(fsDb, 'notes', n.id), { folderId: null });
+      if (isOwnedNote(n)) batch.update(doc(fsDb, 'notes', n.id), { folderId: null });
+      else                sharedToMove.push(n.id);
     });
     batch.delete(doc(fsDb, 'folders', id));
     delete folders[id];
     expandedFolders.delete(id);
     if (activeFolderId === id) activeFolderId = null;
-    try { await batch.commit(); } catch (err) { console.error('deleteFolder:', err); showToast('Failed To Delete Folder', 'error'); }
+    try {
+      await batch.commit();
+      await Promise.all(sharedToMove.map(noteId => _setSharedNoteFolder(noteId, null)));
+    } catch (err) { console.error('deleteFolder:', err); showToast('Failed To Delete Folder', 'error'); }
     renderSidebar();
   }
 
@@ -1224,7 +1239,7 @@
     try {
       await setDoc(doc(fsDb, 'folders', folderId), { public: isPublic }, { merge: true });
       // Cascade public flag to all notes in this folder so they are readable by recipients
-      const folderNotes = Object.values(notes).filter(n => n.folderId === folderId && n.owner === userId);
+      const folderNotes = Object.values(notes).filter(n => n.folderId === folderId && isOwnedNote(n));
       await Promise.all(folderNotes.map(n => {
         n.public = isPublic;
         return setDoc(doc(fsDb, 'notes', n.id), { public: isPublic }, { merge: true });
@@ -1241,6 +1256,7 @@
   function _execDeleteNote(id) {
     const note = notes[id];
     if (!note) return;
+    if (!isOwnedNote(note)) { removeFromLibrary(id); return; }
     delete notes[id];
     if (activeId === id) {
       const ids = sortedIds();
@@ -1550,11 +1566,12 @@
     const list  = document.getElementById('move-modal-list');
     list.innerHTML = '';
 
+    const defaultFolderName = isOwnedNote(note) ? 'No Folder' : 'Shared';
     const noFolderItem = document.createElement('div');
-    const isNoFolder   = !note.folderId;
+    const isNoFolder   = !hasVisibleFolder(note);
     noFolderItem.className = 'move-folder-item' + (isNoFolder ? ' is-current' : '');
     noFolderItem.innerHTML =
-      '<i class="mfi fa-solid fa-inbox"></i><span>No Folder' + (isNoFolder ? ' (current)' : '') + '</span>';
+      '<i class="mfi fa-solid fa-inbox"></i><span>' + defaultFolderName + (isNoFolder ? ' (current)' : '') + '</span>';
     if (!isNoFolder) noFolderItem.addEventListener('click', () => { closeMoveModal(); moveNoteToFolder(noteId, null); });
     list.appendChild(noFolderItem);
 
@@ -1587,6 +1604,7 @@
   async function moveNoteToFolder(noteId, folderId) {
     const note = notes[noteId];
     if (!note) return;
+    folderId = folderId && folders[folderId] ? folderId : null;
     const prev = note.folderId;
     if ((folderId || null) === (prev || null)) return;
     note.folderId = folderId || null;
@@ -1594,10 +1612,15 @@
     if (folderId) expandedFolders.add(folderId);
     renderSidebar();
     try {
-      const payload = { modified: serverTimestamp() };
-      payload.folderId = folderId || deleteField();
-      await setDoc(doc(fsDb, 'notes', noteId), payload, { merge: true });
-      showToast('Note Moved', 'success');
+      let cloudSynced = true;
+      if (isOwnedNote(note)) {
+        const payload = { modified: serverTimestamp() };
+        payload.folderId = folderId || deleteField();
+        await setDoc(doc(fsDb, 'notes', noteId), payload, { merge: true });
+      } else {
+        cloudSynced = await _setSharedNoteFolder(noteId, folderId);
+      }
+      showToast(cloudSynced ? 'Note Moved' : 'Note moved locally; cloud sync failed', cloudSynced ? 'success' : 'error');
     } catch (err) {
       console.error('moveNoteToFolder:', err);
       note.folderId = prev;
@@ -1673,6 +1696,14 @@
   }
 
   /* Sidebar */
+  function isOwnedNote(note) {
+    return !note?.owner || note.owner === userId;
+  }
+
+  function hasVisibleFolder(note) {
+    return !!(note?.folderId && folders[note.folderId]);
+  }
+
   const noteMatchesFilter = (n, f) =>
     n.title.toLowerCase().includes(f) ||
     n.content.replace(/<[^>]+>/g, ' ').toLowerCase().includes(f);
@@ -1721,12 +1752,12 @@
 
   function makeSidebarNoteEl(note, { inFolder = false } = {}) {
     const active   = note.id === activeId;
-    const isOwned  = !note.owner || note.owner === userId;
+    const isOwned  = isOwnedNote(note);
     const snippet  = note.content.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 65) || 'Empty Note';
     const el       = document.createElement('div');
     el.className   = 'sidebar-item' + (active ? ' active' : '');
     el.dataset.id  = note.id;
-    el.draggable   = isOwned;
+    el.draggable   = true;
     el.innerHTML   =
       '<span class="item-icon"><i class="fa-regular fa-note-sticky"></i></span>' +
       '<div class="item-info"><div class="item-name">' + esc(note.title) + '</div><div class="item-preview">' + esc(snippet) + '</div></div>' +
@@ -1746,23 +1777,24 @@
             { icon: 'fa-solid fa-trash', label: 'Delete', danger: true,              action: () => deleteNote(note.id) }
           ]
         : [
+            ...(inFolder ? [{ icon: 'fa-solid fa-folder-minus', label: 'Remove from Folder', action: () => moveNoteToFolder(note.id, null) }] : []),
+            { icon: 'fa-solid fa-folder-open', label: 'Move to Folder', action: () => openMoveModal(note.id) },
+            'sep',
             { icon: 'fa-solid fa-xmark', label: 'Remove from Library', danger: true, action: () => removeFromLibrary(note.id) }
           ];
       openCtxMenu(e.currentTarget, items);
     });
-    if (isOwned) {
-      el.addEventListener('dragstart', e => {
-        _draggingNoteId = note.id;
-        e.dataTransfer.setData('text/plain', note.id);
-        e.dataTransfer.effectAllowed = 'move';
-        requestAnimationFrame(() => el.classList.add('dragging'));
-      });
-      el.addEventListener('dragend', () => {
-        el.classList.remove('dragging');
-        _draggingNoteId = null;
-        document.querySelectorAll('.drag-over').forEach(d => d.classList.remove('drag-over'));
-      });
-    }
+    el.addEventListener('dragstart', e => {
+      _draggingNoteId = note.id;
+      e.dataTransfer.setData('text/plain', note.id);
+      e.dataTransfer.effectAllowed = 'move';
+      requestAnimationFrame(() => el.classList.add('dragging'));
+    });
+    el.addEventListener('dragend', () => {
+      el.classList.remove('dragging');
+      _draggingNoteId = null;
+      document.querySelectorAll('.drag-over').forEach(d => d.classList.remove('drag-over'));
+    });
     return el;
   }
 
@@ -1774,9 +1806,11 @@
     const sortedFolderList = Object.values(folders)
       .sort((a, b) => new Date(a.created) - new Date(b.created));
 
-    const uncategorized = sortedIds().map(id => notes[id])
-      .filter(n => !n.folderId)
+    const looseNotes = sortedIds().map(id => notes[id])
+      .filter(n => !hasVisibleFolder(n))
       .filter(n => !filter || noteMatchesFilter(n, filter));
+    const uncategorized = looseNotes.filter(n => isOwnedNote(n));
+    const sharedUncategorized = looseNotes.filter(n => !isOwnedNote(n));
 
     let hasContent = false;
 
@@ -1855,15 +1889,15 @@
       }
     });
 
-    if (uncategorized.length) {
+    const appendLooseSection = (sectionNotes, label, showLabel) => {
       hasContent = true;
       const uncatWrap = document.createElement('div');
       uncatWrap.className = 'uncat-drop-zone';
-      if (sortedFolderList.length) {
+      if (showLabel) {
         const lbl = document.createElement('div');
         lbl.className = 'sidebar-section-label';
         lbl.style.marginTop = '10px';
-        lbl.textContent = 'Notes';
+        lbl.textContent = label;
         uncatWrap.appendChild(lbl);
       }
       uncatWrap.addEventListener('dragover', e => {
@@ -1881,8 +1915,16 @@
         const noteId = e.dataTransfer.getData('text/plain');
         if (noteId && notes[noteId] && notes[noteId].folderId) moveNoteToFolder(noteId, null);
       });
-      uncategorized.forEach(note => uncatWrap.appendChild(makeSidebarNoteEl(note)));
+      sectionNotes.forEach(note => uncatWrap.appendChild(makeSidebarNoteEl(note)));
       list.appendChild(uncatWrap);
+    };
+
+    if (uncategorized.length) {
+      appendLooseSection(uncategorized, 'Notes', sortedFolderList.length || sharedUncategorized.length);
+    }
+
+    if (sharedUncategorized.length) {
+      appendLooseSection(sharedUncategorized, 'Shared', true);
     }
 
     if (!hasContent) {
@@ -2578,13 +2620,172 @@
 
   function _getUserDocRef() { return doc(fsDb, 'users', userId); }
 
-  async function _addSharedId(noteId) {
-    try { await setDoc(_getUserDocRef(), { sharedNoteIds: arrayUnion(noteId) }, { merge: true }); }
-    catch (err) { console.error('_addSharedId:', err); }
+  function _sharedLibraryStorageKey() { return 'notas_shared_library_' + userId; }
+  function _legacySharedStorageKey() { return 'notas_shared_' + userId; }
+  function _hasOwn(obj, key) { return Object.prototype.hasOwnProperty.call(obj || {}, key); }
+
+  function _normalizeSharedFolderId(folderId) {
+    return typeof folderId === 'string' && folderId ? folderId : null;
   }
+
+  function _readSharedLibraryFromLocal() {
+    const meta = {};
+    try {
+      const raw = localStorage.getItem(_sharedLibraryStorageKey());
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        const ids = Array.isArray(parsed)
+          ? parsed
+          : (Array.isArray(parsed.ids) ? parsed.ids : (Array.isArray(parsed.sharedNoteIds) ? parsed.sharedNoteIds : []));
+        const folders = (!Array.isArray(parsed) && parsed && typeof parsed === 'object')
+          ? (parsed.folders || parsed.sharedNoteFolders || {})
+          : {};
+        ids.forEach(id => {
+          if (typeof id !== 'string' || !id) return;
+          meta[id] = { folderId: _normalizeSharedFolderId(folders[id]) };
+        });
+      }
+
+      const legacyRaw = localStorage.getItem(_legacySharedStorageKey());
+      if (legacyRaw) {
+        const legacyIds = JSON.parse(legacyRaw);
+        if (Array.isArray(legacyIds)) {
+          legacyIds.forEach(id => {
+            if (typeof id === 'string' && id && !meta[id]) meta[id] = { folderId: null };
+          });
+        }
+      }
+    } catch (err) { console.error('read shared library local:', err); }
+    return meta;
+  }
+
+  function _writeSharedLibraryToLocal(meta = sharedLibraryMeta) {
+    try {
+      const ids = Object.keys(meta);
+      const folders = {};
+      ids.forEach(id => {
+        const folderId = _normalizeSharedFolderId(meta[id]?.folderId);
+        if (folderId) folders[id] = folderId;
+      });
+      if (ids.length) localStorage.setItem(_sharedLibraryStorageKey(), JSON.stringify({ ids, folders }));
+      else            localStorage.removeItem(_sharedLibraryStorageKey());
+      localStorage.removeItem(_legacySharedStorageKey());
+    } catch (err) { console.error('write shared library local:', err); }
+  }
+
+  function _readSharedLibraryFromRemote(data) {
+    const meta = {};
+    const ids = Array.isArray(data.sharedNoteIds) ? data.sharedNoteIds : [];
+    const folders = data.sharedNoteFolders && typeof data.sharedNoteFolders === 'object'
+      ? data.sharedNoteFolders
+      : {};
+    ids.forEach(id => {
+      if (typeof id !== 'string' || !id) return;
+      meta[id] = {};
+      if (_hasOwn(folders, id)) meta[id].folderId = _normalizeSharedFolderId(folders[id]);
+    });
+    return meta;
+  }
+
+  function _mergeSharedLibraries(...libs) {
+    const merged = {};
+    libs.forEach(lib => {
+      Object.keys(lib || {}).forEach(id => {
+        if (!merged[id]) merged[id] = { folderId: null };
+        if (_hasOwn(lib[id], 'folderId')) merged[id].folderId = _normalizeSharedFolderId(lib[id].folderId);
+      });
+    });
+    return merged;
+  }
+
+  function _getSharedNoteFolder(noteId) {
+    return _normalizeSharedFolderId(sharedLibraryMeta[noteId]?.folderId);
+  }
+
+  function _applySharedLibraryMeta(meta) {
+    sharedLibraryMeta = meta;
+    Object.keys(notes).forEach(id => {
+      if (notes[id] && !isOwnedNote(notes[id])) notes[id].folderId = _getSharedNoteFolder(id);
+    });
+    _writeSharedLibraryToLocal();
+  }
+
+  function _syncSharedSubscriptions(ids) {
+    const activeIds = new Set(ids);
+    ids.forEach(id => _subscribeSharedNote(id));
+    Object.keys(sharedNoteUnsubs).forEach(id => {
+      if (activeIds.has(id)) return;
+      sharedNoteUnsubs[id]();
+      delete sharedNoteUnsubs[id];
+      if (notes[id] && !isOwnedNote(notes[id])) {
+        delete notes[id];
+        if (activeId === id) activeId = null;
+      }
+    });
+  }
+
+  async function _syncSharedLibraryToCloud(meta = sharedLibraryMeta) {
+    const ids = Object.keys(meta);
+    if (!ids.length) return true;
+    const sharedNoteFolders = {};
+    ids.forEach(id => { sharedNoteFolders[id] = _normalizeSharedFolderId(meta[id]?.folderId); });
+    try {
+      await setDoc(_getUserDocRef(), {
+        sharedNoteIds: arrayUnion(...ids),
+        sharedNoteFolders
+      }, { merge: true });
+      return true;
+    } catch (err) {
+      console.error('sync shared library cloud:', err);
+      return false;
+    }
+  }
+
+  async function _addSharedId(noteId) {
+    if (!sharedLibraryMeta[noteId]) sharedLibraryMeta[noteId] = { folderId: null };
+    _writeSharedLibraryToLocal();
+    const payload = { sharedNoteIds: arrayUnion(noteId) };
+    const folderId = _getSharedNoteFolder(noteId);
+    if (folderId) payload.sharedNoteFolders = { [noteId]: folderId };
+    try {
+      await setDoc(_getUserDocRef(), payload, { merge: true });
+      return true;
+    } catch (err) {
+      console.error('_addSharedId:', err);
+      return false;
+    }
+  }
+
   async function _removeSharedId(noteId) {
-    try { await setDoc(_getUserDocRef(), { sharedNoteIds: arrayRemove(noteId) }, { merge: true }); }
-    catch (err) { console.error('_removeSharedId:', err); }
+    delete sharedLibraryMeta[noteId];
+    _writeSharedLibraryToLocal();
+    try {
+      await setDoc(_getUserDocRef(), {
+        sharedNoteIds: arrayRemove(noteId),
+        sharedNoteFolders: { [noteId]: null }
+      }, { merge: true });
+      return true;
+    } catch (err) {
+      console.error('_removeSharedId:', err);
+      return false;
+    }
+  }
+
+  async function _setSharedNoteFolder(noteId, folderId) {
+    if (!sharedLibraryMeta[noteId]) sharedLibraryMeta[noteId] = { folderId: null };
+    sharedLibraryMeta[noteId].folderId = _normalizeSharedFolderId(folderId);
+    if (notes[noteId] && !isOwnedNote(notes[noteId])) notes[noteId].folderId = sharedLibraryMeta[noteId].folderId;
+    _writeSharedLibraryToLocal();
+    try {
+      await setDoc(_getUserDocRef(), {
+        sharedNoteIds: arrayUnion(noteId),
+        sharedNoteFolders: { [noteId]: sharedLibraryMeta[noteId].folderId }
+      }, { merge: true });
+      return true;
+    } catch (err) {
+      console.error('_setSharedNoteFolder:', err);
+      return false;
+    }
   }
 
   // Subscribe to a single shared note document for real-time updates.
@@ -2625,7 +2826,7 @@
         title:    d.title    || 'Untitled Note',
         content:  d.content  || '',
         public:   true,
-        folderId: null, // shared notes appear in the uncategorised section
+        folderId: _getSharedNoteFolder(noteId),
         created:  d.created?.toDate?.()?.toISOString()  || new Date().toISOString(),
         modified: d.modified?.toDate?.()?.toISOString() || new Date().toISOString()
       };
@@ -2660,40 +2861,37 @@
   // Listen to the user doc for shared note IDs — syncs across devices.
   function listenToSharedNotes() {
     if (unsubUserDoc) unsubUserDoc();
+    const localMeta = _readSharedLibraryFromLocal();
+    if (Object.keys(localMeta).length) {
+      _applySharedLibraryMeta(_mergeSharedLibraries(sharedLibraryMeta, localMeta));
+      _syncSharedSubscriptions(Object.keys(sharedLibraryMeta));
+    }
     unsubUserDoc = onSnapshot(_getUserDocRef(), snap => {
       const data = snap.data() || {};
-      const ids  = data.sharedNoteIds || [];
-      // Subscribe to any newly added shared notes
-      ids.forEach(id => _subscribeSharedNote(id));
-      // Unsubscribe from any removed shared notes
-      Object.keys(sharedNoteUnsubs).forEach(id => {
-        if (!ids.includes(id)) {
-          sharedNoteUnsubs[id]();
-          delete sharedNoteUnsubs[id];
-          if (notes[id]?.owner !== userId) {
-            delete notes[id];
-            if (activeId === id) activeId = null;
-          }
-        }
-      });
+      const remoteMeta = _readSharedLibraryFromRemote(data);
+      const latestLocalMeta = _readSharedLibraryFromLocal();
+      const nextMeta = _mergeSharedLibraries(latestLocalMeta, remoteMeta);
+      const ids = Object.keys(nextMeta);
+      _applySharedLibraryMeta(nextMeta);
+      _syncSharedSubscriptions(ids);
+      const hasLocalOnlyIds = Object.keys(latestLocalMeta).some(id => !remoteMeta[id]);
+      if (hasLocalOnlyIds) {
+        const localOnlyMeta = {};
+        Object.keys(latestLocalMeta).forEach(id => { if (!remoteMeta[id]) localOnlyMeta[id] = latestLocalMeta[id]; });
+        _syncSharedLibraryToCloud(localOnlyMeta);
+      }
       renderSidebar();
       if (!activeId) { const sorted = sortedIds(); sorted.length ? openNote(sorted[0]) : showEditorView(false); }
-    }, err => { console.error('user doc listener:', err); });
-    // Migrate any legacy localStorage shared IDs to Firestore
-    _migrateLocalSharedIds();
-  }
-
-  async function _migrateLocalSharedIds() {
-    const legacyKey = 'notas_shared_' + userId;
-    const raw = localStorage.getItem(legacyKey);
-    if (!raw) return;
-    try {
-      const ids = JSON.parse(raw);
-      if (ids.length) {
-        await setDoc(_getUserDocRef(), { sharedNoteIds: arrayUnion(...ids) }, { merge: true });
+    }, err => {
+      console.error('user doc listener:', err);
+      const fallbackMeta = _readSharedLibraryFromLocal();
+      if (Object.keys(fallbackMeta).length) {
+        _applySharedLibraryMeta(fallbackMeta);
+        _syncSharedSubscriptions(Object.keys(sharedLibraryMeta));
+        renderSidebar();
+        if (!activeId) { const sorted = sortedIds(); sorted.length ? openNote(sorted[0]) : showEditorView(false); }
       }
-      localStorage.removeItem(legacyKey);
-    } catch (err) { console.error('migrate shared ids:', err); }
+    });
   }
 
   // Called when the user opens a ?note=<id> link.
@@ -2720,18 +2918,18 @@
         title:    d.title    || 'Untitled Note',
         content:  d.content  || '',
         public:   true,
-        folderId: null,
+        folderId: _getSharedNoteFolder(noteId),
         created:  d.created?.toDate?.()?.toISOString()  || new Date().toISOString(),
         modified: d.modified?.toDate?.()?.toISOString() || new Date().toISOString()
       };
       // Persist and subscribe for real-time edits going forward
-      _addSharedId(noteId);
+      const syncedToCloud = await _addSharedId(noteId);
       _subscribeSharedNote(noteId);
       window.history.replaceState({}, '', location.pathname);
       // Navigate right away — no timeout needed
       renderSidebar();
       openNote(noteId);
-      showToast('Note added to your library', 'success');
+      showToast(syncedToCloud ? 'Note added to your library' : 'Note added locally; cloud sync failed', syncedToCloud ? 'success' : 'error');
     } catch (err) {
       console.error('handleShareLink:', err);
       showToast('Could not access this shared note', 'error');
@@ -2763,13 +2961,15 @@
       const q = query(collection(fsDb, 'notes'), where('folderId', '==', folderId));
       const notesSnap = await getDocs(q);
       let added = 0;
+      const persistJobs = [];
       notesSnap.forEach(d => {
         if (d.data().owner !== userId) {
-          _addSharedId(d.id);
+          persistJobs.push(_addSharedId(d.id));
           _subscribeSharedNote(d.id);
           added++;
         }
       });
+      await Promise.all(persistJobs);
       window.history.replaceState({}, '', location.pathname);
       if (added) showToast('Folder notes added to your library!', 'success');
     } catch (err) {
