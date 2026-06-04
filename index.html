@@ -618,9 +618,10 @@
           </div>
           <div class="toolbar" id="toolbar">
             <div class="toolbar-group">
-              <button class="tb-btn" data-action="h1"     title="Heading 1">H1</button>
-              <button class="tb-btn" data-action="bold"   title="Bold"><b>B</b></button>
-              <button class="tb-btn" data-action="italic" title="Italic"><i>I</i></button>
+              <button class="tb-btn" data-action="h1"            title="Heading 1">H1</button>
+              <button class="tb-btn" data-action="bold"          title="Bold"><b>B</b></button>
+              <button class="tb-btn" data-action="italic"        title="Italic"><i>I</i></button>
+              <button class="tb-btn" data-action="strikethrough" title="Strikethrough"><s>S</s></button>
             </div>
             <div class="toolbar-sep"></div>
             <div class="toolbar-group">
@@ -1635,6 +1636,12 @@
       const tag = el.tagName;
       const isHeading = /^H[1-4]$/.test(tag);
       const level = isHeading ? parseInt(tag[1]) : null;
+      if (el.hasAttribute('data-outside-collapse')) {
+        const outsideLevel = parseInt(el.getAttribute('data-outside-collapse'));
+        if (collapsedLevel >= outsideLevel) {
+          collapsedLevel = Infinity;
+        }
+      }
       if (isHeading) {
         if (level <= collapsedLevel) {
           collapsedLevel = Infinity;
@@ -3226,7 +3233,22 @@
         if (!h.textContent && !h.querySelector('br, img')) {
           h.appendChild(document.createElement('br'));
         }
-        h.after(p);
+        // If the heading is collapsed, insert after the whole collapsed section
+        // so new content lands outside the header's domain
+        const isCollapsed = h.hasAttribute('data-collapsed');
+        let insertAfter = h;
+        if (isCollapsed) {
+          const level = parseInt(h.tagName[1]);
+          let sibling = h.nextElementSibling;
+          while (sibling) {
+            const t = sibling.tagName;
+            if (/^H[1-4]$/.test(t) && parseInt(t[1]) <= level) break;
+            insertAfter = sibling;
+            sibling = sibling.nextElementSibling;
+          }
+          p.setAttribute('data-outside-collapse', level.toString());
+        }
+        insertAfter.after(p);
         const r = document.createRange(); r.setStart(p, 0); r.collapse(true);
         sel.removeAllRanges(); sel.addRange(r);
         _capitalizeNext = true;
@@ -3393,6 +3415,8 @@
       startX   = e.clientX;
       startW   = sidebar.getBoundingClientRect().width;
       handle.classList.add('dragging');
+      // Disable transition during drag to eliminate lag
+      sidebar.style.transition = 'none';
       document.body.style.cursor     = 'col-resize';
       document.body.style.userSelect = 'none';
       e.preventDefault();
@@ -3409,6 +3433,8 @@
       if (!dragging) return;
       dragging = false;
       handle.classList.remove('dragging');
+      // Restore transition after drag ends
+      sidebar.style.transition = '';
       document.body.style.cursor     = '';
       document.body.style.userSelect = '';
       localStorage.setItem(STORAGE_KEY, Math.round(parseFloat(sidebar.style.width)));
