@@ -320,7 +320,7 @@
     /* WYSIWYG Editor */
     .editor-area { flex: 1; margin: 12px 24px 0; border-radius: var(--radius); overflow: hidden; background: linear-gradient(180deg, rgba(6, 10, 16, .97), rgba(3, 6, 12, .96)); border: 1px solid var(--glass-border); display: flex; min-height: 0; box-shadow: var(--shadow); position: relative; -webkit-backdrop-filter: blur(26px) saturate(145%); backdrop-filter: blur(26px) saturate(145%); }
     .editor-area::before { content: ''; position: absolute; inset: 0 0 auto 0; height: 1px; background: linear-gradient(90deg, rgba(255,255,255,0), var(--glass-highlight), rgba(255,255,255,0)); pointer-events: none; }
-    .editor { flex: 1; padding: 26px 30px; outline: none; overflow-y: auto; font-size: var(--editor-font-size, 15px); line-height: 1.75; color: var(--text); caret-color: var(--accent); cursor: text; word-wrap: break-word; background: linear-gradient(180deg, rgba(255,255,255,.03), rgba(255,255,255,.01)); }
+    .editor { flex: 1; padding: 26px 30px; outline: none; overflow-y: auto; font-size: var(--editor-font-size, 15px); line-height: 1.75; color: var(--text); caret-color: var(--accent); cursor: text; word-wrap: break-word; white-space: pre-wrap; tab-size: 4; background: linear-gradient(180deg, rgba(255,255,255,.03), rgba(255,255,255,.01)); }
     .editor.is-empty::before { content: attr(data-placeholder); color: var(--muted); opacity: .4; pointer-events: none; position: absolute; top: 26px; left: 30px; }
 
     /* Content styles */
@@ -417,6 +417,7 @@
     .modal-btn:hover { background: linear-gradient(180deg, rgba(255,255,255,.09), rgba(255,255,255,.04)); transform: translateY(-1px); }
     .modal-btn.primary { background: linear-gradient(135deg, var(--accent-h), var(--accent)); color: #fff; border-color: rgba(var(--orb-r), var(--orb-g), var(--orb-b), .24); }
     .modal-btn.primary:hover { background: linear-gradient(135deg, var(--accent-h), var(--accent)); filter: brightness(1.12); border-color: rgba(var(--orb-r), var(--orb-g), var(--orb-b), .34); }
+    body.light-mode .modal-btn.primary, body.light-mode .empty-cta, body.light-mode .fs-btn:hover { color: var(--text); }
 
     /* Toast */
     #toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(10px); padding: 10px 20px; background: linear-gradient(180deg, var(--surface-glass-strong), rgba(12, 18, 28, .74)); border: 1px solid var(--glass-border); border-radius: var(--radius-sm); font-size: 13px; color: var(--text2); z-index: 300; opacity: 0; pointer-events: none; white-space: nowrap; transition: opacity .2s, transform .2s; -webkit-backdrop-filter: blur(20px) saturate(140%); backdrop-filter: blur(20px) saturate(140%); }
@@ -456,22 +457,17 @@
     .toggle-slider::before { content: ''; position: absolute; width: 18px; height: 18px; left: 3px; top: 3px; background: var(--muted); border-radius: 50%; transition: transform .2s, background .2s; }
     .toggle input:checked + .toggle-slider { background: var(--accent); }
     .toggle input:checked + .toggle-slider::before { transform: translateX(18px); background: #fff; }
+    .settings-select { height: 30px; min-width: 104px; border-radius: var(--radius-xs); border: 1px solid var(--glass-border); background: linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.03)); color: var(--text2); font-size: 13px; font-family: var(--font); outline: none; padding: 0 8px; cursor: pointer; }
+    .settings-select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(var(--orb-r),var(--orb-g),var(--orb-b),.18); }
     .font-size-controls { display: flex; align-items: center; gap: 10px; }
     .fs-btn { width: 28px; height: 28px; border-radius: 8px; border: 1px solid var(--glass-border); background: linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.03)); color: var(--text2); font-size: 12px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background .12s, color .12s, border-color .12s; }
     .fs-btn:hover { background: linear-gradient(135deg, var(--accent-h), var(--accent)); color: #fff; border-color: rgba(var(--orb-r), var(--orb-g), var(--orb-b), .26); }
     .fs-val { font-size: 13px; color: var(--text2); min-width: 30px; text-align: center; font-variant-numeric: tabular-nums; }
-    .accent-swatches { display: flex; gap: 9px; align-items: center; }
-    .accent-swatch {
-      width: 22px; height: 22px; border-radius: 50%;
-      border: 2px solid transparent;
-      cursor: pointer;
-      transition: transform .15s, border-color .15s, box-shadow .15s;
-      outline: none;
-      background: transparent;
-      padding: 0;
-    }
-    .accent-swatch:hover { transform: scale(1.2); }
-    .accent-swatch.selected { border-color: var(--text); box-shadow: 0 0 0 2px rgba(255,255,255,.18); }
+    .accent-picker { position: relative; display: block; width: 34px; height: 34px; border: none; border-radius: 50%; flex-shrink: 0; cursor: pointer; background: none; padding: 0; }
+    .accent-picker::before { content: ''; position: absolute; inset: -3px; border-radius: 50%; background: conic-gradient(red, yellow, lime, cyan, blue, magenta, red); opacity: .95; }
+    .accent-picker::after { content: ''; position: absolute; inset: 3px; border-radius: 50%; background: var(--accent); border: 2px solid var(--surface); box-shadow: 0 0 0 1px var(--glass-border), inset 0 1px 0 rgba(255,255,255,.24); pointer-events: none; }
+    .accent-picker:hover { transform: translateY(-1px); }
+    .accent-color-input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; border: 0; padding: 0; cursor: pointer; }
 
     /* Loading overlay */
     #loading-overlay {
@@ -677,22 +673,18 @@
       <div class="modal-title"><i class="fa-solid fa-gear" style="margin-right:8px;opacity:.7;"></i>Settings</div>
       <div class="settings-rows">
         <div class="settings-row">
-          <span class="settings-label"><i class="fa-solid fa-sun"></i>Light Mode</span>
-          <label class="toggle">
-            <input type="checkbox" id="theme-toggle" />
-            <span class="toggle-slider"></span>
-          </label>
+          <span class="settings-label"><i class="fa-solid fa-circle-half-stroke"></i>Theme</span>
+          <select class="settings-select" id="theme-select" aria-label="Theme">
+            <option value="system">System</option>
+            <option value="dark">Dark</option>
+            <option value="light">Light</option>
+          </select>
         </div>
         <div class="settings-row">
           <span class="settings-label"><i class="fa-solid fa-palette"></i>Colour</span>
-          <div class="accent-swatches">
-            <button class="accent-swatch" data-accent="blue"   style="background:linear-gradient(135deg,#40d0ff,#00b4ff)" title="Blue"></button>
-            <button class="accent-swatch" data-accent="purple" style="background:linear-gradient(135deg,#b080ff,#8246ff)" title="Purple"></button>
-            <button class="accent-swatch" data-accent="green"  style="background:linear-gradient(135deg,#30f09a,#00d278)" title="Green"></button>
-            <button class="accent-swatch" data-accent="rose"   style="background:linear-gradient(135deg,#ff7aa0,#ff3770)" title="Rose"></button>
-            <button class="accent-swatch" data-accent="amber"  style="background:linear-gradient(135deg,#ffbf40,#ffa000)" title="Amber"></button>
-            <button class="accent-swatch" data-accent="teal"   style="background:linear-gradient(135deg,#30e3cf,#00c3af)" title="Teal"></button>
-          </div>
+          <label class="accent-picker" id="accent-picker-btn" title="Choose colour" aria-label="Choose colour">
+            <input class="accent-color-input" id="accent-color-input" type="color" aria-label="Choose colour" />
+          </label>
         </div>
         <div class="settings-row">
           <span class="settings-label"><i class="fa-solid fa-font"></i>Text Size</span>
@@ -804,7 +796,7 @@
 
   <script type="module">
   import { initializeApp }                                    from 'https://www.gstatic.com/firebasejs/12.13.0/firebase-app.js';
-  import { getAnalytics }                                     from 'https://www.gstatic.com/firebasejs/12.13.0/firebase-analytics.js';
+  import { getAnalytics, isSupported as isAnalyticsSupported } from 'https://www.gstatic.com/firebasejs/12.13.0/firebase-analytics.js';
   import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/12.13.0/firebase-auth.js';
   import {
     getFirestore, collection, doc, setDoc, deleteDoc, getDocs, getDoc,
@@ -812,35 +804,74 @@
     arrayUnion, arrayRemove
   } from 'https://www.gstatic.com/firebasejs/12.13.0/firebase-firestore.js';
 
-  const __env = window.__env || {};
-
-  if (!__env.FIREBASE_API_KEY) {
-    // firebase-config.local.js failed to load (network/CDN issue) — reload once to recover
-    if (!sessionStorage.getItem('_fb_cfg_retry')) {
-      sessionStorage.setItem('_fb_cfg_retry', '1');
-      location.reload();
-    } else {
-      sessionStorage.removeItem('_fb_cfg_retry');
-      console.error('Firebase config failed to load after retry. Check that firebase-config.local.js is deployed and accessible.');
-    }
-  }
-
-  sessionStorage.removeItem('_fb_cfg_retry');
-
-  const firebaseConfig = {
-    apiKey:            __env.FIREBASE_API_KEY,
-    authDomain:        __env.FIREBASE_AUTH_DOMAIN,
-    projectId:         __env.FIREBASE_PROJECT_ID,
-    storageBucket:     __env.FIREBASE_STORAGE_BUCKET,
-    messagingSenderId: __env.FIREBASE_MESSAGING_SENDER_ID,
-    appId:             __env.FIREBASE_APP_ID,
-    measurementId:     __env.FIREBASE_MEASUREMENT_ID
+  const injectedFirebaseConfig = {
+    apiKey:            "__FIREBASE_API_KEY__",
+    authDomain:        "__FIREBASE_AUTH_DOMAIN__",
+    projectId:         "__FIREBASE_PROJECT_ID__",
+    storageBucket:     "__FIREBASE_STORAGE_BUCKET__",
+    messagingSenderId: "__FIREBASE_MESSAGING_SENDER_ID__",
+    appId:             "__FIREBASE_APP_ID__",
+    measurementId:     "__FIREBASE_MEASUREMENT_ID__"
   };
 
+  const firebaseConfigKeys = ['apiKey', 'authDomain', 'projectId', 'storageBucket', 'messagingSenderId', 'appId', 'measurementId'];
+  const envKeyMap = {
+    apiKey: 'FIREBASE_API_KEY',
+    authDomain: 'FIREBASE_AUTH_DOMAIN',
+    projectId: 'FIREBASE_PROJECT_ID',
+    storageBucket: 'FIREBASE_STORAGE_BUCKET',
+    messagingSenderId: 'FIREBASE_MESSAGING_SENDER_ID',
+    appId: 'FIREBASE_APP_ID',
+    measurementId: 'FIREBASE_MEASUREMENT_ID'
+  };
+
+  function hasConfigValue(value) {
+    return typeof value === 'string' && value.trim() && !/^__FIREBASE_[A-Z_]+__$/.test(value.trim());
+  }
+
+  function hasCompleteConfig(config) {
+    return firebaseConfigKeys.every(key => hasConfigValue(config[key]));
+  }
+
+  function localFirebaseConfig() {
+    const env = window.__env || {};
+    return Object.fromEntries(firebaseConfigKeys.map(key => [key, env[envKeyMap[key]]]));
+  }
+
+  function showFirebaseConfigError(missingKeys) {
+    const loadingEl = document.getElementById('loading-overlay');
+    if (loadingEl) loadingEl.style.display = 'none';
+
+    const overlay = document.getElementById('auth-overlay');
+    if (overlay) overlay.style.display = 'flex';
+
+    const btn = document.getElementById('google-signin-btn');
+    if (btn) btn.disabled = true;
+
+    const err = document.getElementById('auth-error');
+    if (err) {
+      err.textContent = 'Login is temporarily unavailable because the app configuration did not load.';
+      err.style.display = '';
+    }
+
+    console.error('Firebase config missing or invalid:', missingKeys);
+  }
+
+  const firebaseConfig = hasCompleteConfig(injectedFirebaseConfig) ? injectedFirebaseConfig : localFirebaseConfig();
+  const missingFirebaseConfigKeys = firebaseConfigKeys.filter(key => !hasConfigValue(firebaseConfig[key]));
+
+  if (missingFirebaseConfigKeys.length) {
+    showFirebaseConfigError(missingFirebaseConfigKeys);
+    throw new Error(`Firebase config missing required values: ${missingFirebaseConfigKeys.join(', ')}`);
+  }
+
   const fbApp = initializeApp(firebaseConfig);
-  getAnalytics(fbApp);
   const auth  = getAuth(fbApp);
   const fsDb  = getFirestore(fbApp);
+
+  isAnalyticsSupported()
+    .then(supported => { if (supported) getAnalytics(fbApp); })
+    .catch(err => console.warn('Firebase analytics unavailable:', err));
 
   let notes         = {};
   let folders       = {};
@@ -1465,6 +1496,90 @@
     const range = document.createRange(), sel = window.getSelection();
     range.selectNodeContents(el); range.collapse(false);
     sel.removeAllRanges(); sel.addRange(range); el.focus();
+  }
+
+  function placeCaretAfterTabDelete(block, textNode, offset) {
+    const sel = window.getSelection();
+    if (!sel) return;
+
+    if (block && block !== getEd() && !block.textContent && !block.querySelector('img, hr, ul, ol')) {
+      block.innerHTML = '';
+      block.appendChild(document.createElement('br'));
+      placeCursorAtStart(block);
+      return;
+    }
+
+    const next = document.createRange();
+    if (textNode?.isConnected) {
+      next.setStart(textNode, Math.max(0, Math.min(offset, textNode.textContent.length)));
+    } else if (block && block.isConnected) {
+      next.setStart(block, 0);
+    } else {
+      next.setStart(getEd(), 0);
+    }
+    next.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(next);
+  }
+
+  function deletePreviousTabAtCaret() {
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount || !sel.isCollapsed) return false;
+    const range = sel.getRangeAt(0);
+    const node = range.startContainer;
+    const offset = range.startOffset;
+    const block = currentBlockFromSelection();
+
+    if (node.nodeType === Node.TEXT_NODE && offset > 0 && node.textContent[offset - 1] === '\t') {
+      pushUndo();
+      node.textContent = node.textContent.slice(0, offset - 1) + node.textContent.slice(offset);
+      placeCaretAfterTabDelete(block, node, offset - 1);
+      return true;
+    }
+
+    if (node.nodeType === Node.ELEMENT_NODE && offset > 0) {
+      const prev = node.childNodes[offset - 1];
+      if (prev?.nodeType === Node.TEXT_NODE && prev.textContent.endsWith('\t')) {
+        pushUndo();
+        prev.textContent = prev.textContent.slice(0, -1);
+        placeCaretAfterTabDelete(block, prev, prev.textContent.length);
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  function isEmptyListItem(li) {
+    if (!li || li.tagName !== 'LI' || li.querySelector(':scope > ul, :scope > ol')) return false;
+    return !li.textContent.replace(/\u00a0/g, ' ').replace(/\u200b/g, '').trim();
+  }
+
+  function removeEmptyListItem(li) {
+    const list = li.parentElement;
+    if (!list || !/^(UL|OL)$/.test(list.tagName)) return false;
+
+    const prev = li.previousElementSibling;
+    const next = li.nextElementSibling;
+    const parentLi = list.parentElement?.tagName === 'LI' ? list.parentElement : null;
+    li.remove();
+
+    if (!list.querySelector(':scope > li')) {
+      if (parentLi) {
+        list.remove();
+        placeCursorAtEnd(parentLi);
+      } else {
+        const p = createEmptyBlock('p');
+        list.replaceWith(p);
+        placeCursorAtStart(p);
+      }
+    } else if (prev) {
+      placeCursorAtEnd(prev);
+    } else if (next) {
+      placeCursorAtStart(next);
+    }
+
+    return true;
   }
 
   function decorateLink(link, href) {
@@ -2439,7 +2554,10 @@
   /* Settings */
   const FONT_MIN = 12, FONT_MAX = 24;
   let editorFontSize = parseInt(localStorage.getItem('notas_font_size') || '15');
-  let isLightMode = localStorage.getItem('notas_theme') === 'light';
+  const savedThemeMode = localStorage.getItem('notas_theme');
+  let themeMode = ['system', 'dark', 'light'].includes(savedThemeMode) ? savedThemeMode : 'dark';
+  let isLightMode = false;
+  const systemThemeQuery = window.matchMedia ? window.matchMedia('(prefers-color-scheme: light)') : null;
 
   const ACCENT_PALETTES = {
     blue:   { r:0,   g:180, b:255, r2:0,   g2:80,  b2:180, accent:'#00b4ff', accentH:'#40d0ff',
@@ -2461,10 +2579,57 @@
               muted:'#3a6868', text2:'#b8e4e0', border:'#183030',
               lightMuted:'#2a7070', lightText2:'#184040', lightBorder:'#60b4b0' },
   };
-  let accentKey = localStorage.getItem('notas_accent') || 'blue';
+  const DEFAULT_ACCENT = ACCENT_PALETTES.blue.accent;
+  let accentColor = localStorage.getItem('notas_accent') || DEFAULT_ACCENT;
 
-  function applyAccentColor(key) {
-    const p = ACCENT_PALETTES[key] || ACCENT_PALETTES.blue;
+  function clampColor(n) {
+    return Math.max(0, Math.min(255, Math.round(n)));
+  }
+
+  function rgbToHex({ r, g, b }) {
+    return '#' + [r, g, b].map(v => clampColor(v).toString(16).padStart(2, '0')).join('');
+  }
+
+  function hexToRgb(hex) {
+    const match = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex || '');
+    if (!match) return null;
+    return { r: parseInt(match[1], 16), g: parseInt(match[2], 16), b: parseInt(match[3], 16) };
+  }
+
+  function mixColor(a, b, weight) {
+    return {
+      r: a.r + (b.r - a.r) * weight,
+      g: a.g + (b.g - a.g) * weight,
+      b: a.b + (b.b - a.b) * weight
+    };
+  }
+
+  function normalizeAccentColor(value) {
+    if (ACCENT_PALETTES[value]) return ACCENT_PALETTES[value].accent;
+    return /^#[a-f\d]{6}$/i.test(value || '') ? value : DEFAULT_ACCENT;
+  }
+
+  function accentPalette(value) {
+    if (ACCENT_PALETTES[value]) return ACCENT_PALETTES[value];
+    const rgb = hexToRgb(normalizeAccentColor(value)) || hexToRgb(DEFAULT_ACCENT);
+    const deep = mixColor(rgb, { r: 0, g: 0, b: 0 }, .48);
+    return {
+      r: rgb.r, g: rgb.g, b: rgb.b,
+      r2: clampColor(deep.r), g2: clampColor(deep.g), b2: clampColor(deep.b),
+      accent: rgbToHex(rgb),
+      accentH: rgbToHex(mixColor(rgb, { r: 255, g: 255, b: 255 }, .28)),
+      muted: rgbToHex(mixColor(rgb, { r: 74, g: 86, b: 104 }, .68)),
+      text2: rgbToHex(mixColor(rgb, { r: 232, g: 240, b: 255 }, .72)),
+      border: rgbToHex(mixColor(rgb, { r: 18, g: 28, b: 44 }, .82)),
+      lightMuted: rgbToHex(mixColor(rgb, { r: 32, g: 68, b: 92 }, .62)),
+      lightText2: rgbToHex(mixColor(rgb, { r: 12, g: 28, b: 44 }, .7)),
+      lightBorder: rgbToHex(mixColor(rgb, { r: 160, g: 190, b: 215 }, .58))
+    };
+  }
+
+  function applyAccentColor(value) {
+    const normalized = normalizeAccentColor(value);
+    const p = accentPalette(normalized);
     const s = document.documentElement.style; // <html>
     const b = document.body.style;            // <body>
 
@@ -2494,14 +2659,24 @@
     b.setProperty('--ambient-b', `rgba(${p.r2},${p.g2},${p.b2},.12)`);
     b.setProperty('--ambient-c', `rgba(${Math.min(p.r+90,255)},${Math.min(p.g+30,255)},${Math.min(p.b+10,255)},${lm ? '.1' : '.08'})`);
 
-    document.querySelectorAll('.accent-swatch').forEach(el => {
-      el.classList.toggle('selected', el.dataset.accent === key);
-    });
+    const input = document.getElementById('accent-color-input');
+    if (input) input.value = normalized;
+  }
+
+  function setAccentColor(value) {
+    accentColor = normalizeAccentColor(value);
+    localStorage.setItem('notas_accent', accentColor);
+    applyAccentColor(accentColor);
+  }
+
+  function resolveLightMode() {
+    return themeMode === 'system' ? !!systemThemeQuery?.matches : themeMode === 'light';
   }
 
   function applyTheme() {
+    isLightMode = resolveLightMode();
     document.body.classList.toggle('light-mode', isLightMode);
-    applyAccentColor(accentKey);
+    applyAccentColor(accentColor);
   }
 
   function applyFontSize() {
@@ -2514,7 +2689,8 @@
     applyTheme(); // also calls applyAccentColor
     applyFontSize();
     document.getElementById('profile-settings-btn').addEventListener('click', () => {
-      document.getElementById('theme-toggle').checked = isLightMode;
+      document.getElementById('theme-select').value = themeMode;
+      document.getElementById('accent-color-input').value = normalizeAccentColor(accentColor);
       document.getElementById('settings-modal').classList.add('open');
     });
     document.getElementById('settings-modal').addEventListener('click', e => {
@@ -2523,17 +2699,19 @@
     document.getElementById('settings-close').addEventListener('click', () => {
       document.getElementById('settings-modal').classList.remove('open');
     });
-    document.getElementById('theme-toggle').addEventListener('change', e => {
-      isLightMode = e.target.checked;
-      localStorage.setItem('notas_theme', isLightMode ? 'light' : 'dark');
+    document.getElementById('theme-select').addEventListener('change', e => {
+      themeMode = e.target.value;
+      localStorage.setItem('notas_theme', themeMode);
       applyTheme();
     });
-    document.querySelectorAll('.accent-swatch').forEach(el => {
-      el.addEventListener('click', () => {
-        accentKey = el.dataset.accent;
-        localStorage.setItem('notas_accent', accentKey);
-        applyAccentColor(accentKey);
-      });
+    const onSystemThemeChange = () => {
+      if (themeMode === 'system') applyTheme();
+    };
+    if (systemThemeQuery?.addEventListener) systemThemeQuery.addEventListener('change', onSystemThemeChange);
+    else systemThemeQuery?.addListener?.(onSystemThemeChange);
+
+    document.getElementById('accent-color-input').addEventListener('input', e => {
+      setAccentColor(e.target.value);
     });
     document.getElementById('fs-inc').addEventListener('click', () => {
       if (editorFontSize < FONT_MAX) {
@@ -3135,6 +3313,23 @@
     }
 
     if (e.key === 'Backspace' && !e.metaKey && !e.ctrlKey && !e.altKey && !e.isComposing) {
+      const backspaceSel = window.getSelection();
+      if (backspaceSel && backspaceSel.rangeCount && backspaceSel.isCollapsed) {
+        const li = ancestorOfType(['li']);
+        if (li && isEmptyListItem(li)) {
+          e.preventDefault();
+          pushUndo();
+          if (removeEmptyListItem(li)) editorEl.dispatchEvent(new Event('input'));
+          return;
+        }
+
+        if (deletePreviousTabAtCaret()) {
+          e.preventDefault();
+          editorEl.dispatchEvent(new Event('input'));
+          return;
+        }
+      }
+
       const h = ancestorOfType(['h1','h2','h3','h4']);
       if (h) {
         const sel = window.getSelection();
@@ -3282,8 +3477,10 @@
         }
         getEd().dispatchEvent(new Event('input'));
       } else {
-        document.execCommand('insertText', false, '    ');
+        document.execCommand('insertText', false, '\t');
+        getEd().dispatchEvent(new Event('input'));
       }
+      return;
     }
   });
 
