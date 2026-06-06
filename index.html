@@ -820,6 +820,7 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="firebase-config.js"></script>
 
   <script type="module">
   import { initializeApp }                                    from 'https://www.gstatic.com/firebasejs/12.13.0/firebase-app.js';
@@ -834,61 +835,130 @@
     arrayUnion, arrayRemove
   } from 'https://www.gstatic.com/firebasejs/12.13.0/firebase-firestore.js';
 
-  const injectedFirebaseConfig = {
-    apiKey:            "__FIREBASE_API_KEY__",
-    authDomain:        "__FIREBASE_AUTH_DOMAIN__",
-    projectId:         "__FIREBASE_PROJECT_ID__",
-    storageBucket:     "__FIREBASE_STORAGE_BUCKET__",
-    messagingSenderId: "__FIREBASE_MESSAGING_SENDER_ID__",
-    appId:             "__FIREBASE_APP_ID__",
-    measurementId:     "__FIREBASE_MEASUREMENT_ID__"
-  };
-
-  const firebaseConfigKeys = [
-    'apiKey',
-    'authDomain',
-    'projectId',
-    'storageBucket',
-    'messagingSenderId',
-    'appId',
-    'measurementId'
+  const firebaseConfigFields = [
+    {
+      key: 'apiKey',
+      env: 'FIREBASE_API_KEY',
+      validate: value => /^AIza[0-9A-Za-z_-]{20,}$/.test(value),
+      expected: 'a Firebase web API key'
+    },
+    {
+      key: 'authDomain',
+      env: 'FIREBASE_AUTH_DOMAIN',
+      validate: value => /^[a-z0-9.-]+$/i.test(value) && value.includes('.') && !value.includes(':'),
+      expected: 'a Firebase auth domain such as project-id.firebaseapp.com'
+    },
+    {
+      key: 'projectId',
+      env: 'FIREBASE_PROJECT_ID',
+      validate: value => /^[a-z][a-z0-9-]{4,28}[a-z0-9]$/.test(value),
+      expected: 'a Firebase project ID such as project-id'
+    },
+    {
+      key: 'storageBucket',
+      env: 'FIREBASE_STORAGE_BUCKET',
+      validate: value => /^[a-z0-9.-]+$/i.test(value) && value.includes('.') && !value.includes(':'),
+      expected: 'a Firebase Storage bucket such as project-id.firebasestorage.app'
+    },
+    {
+      key: 'messagingSenderId',
+      env: 'FIREBASE_MESSAGING_SENDER_ID',
+      validate: value => /^\d+$/.test(value),
+      expected: 'the numeric Firebase messaging sender ID'
+    },
+    {
+      key: 'appId',
+      env: 'FIREBASE_APP_ID',
+      validate: value => /^\d+:\d+:web:[0-9a-z]+$/i.test(value),
+      expected: 'a Firebase web app ID such as 1:123456789:web:abcdef'
+    },
+    {
+      key: 'measurementId',
+      env: 'FIREBASE_MEASUREMENT_ID',
+      validate: value => /^G-[0-9A-Z]+$/i.test(value),
+      expected: 'a Firebase measurement ID such as G-ABC123'
+    }
   ];
-  const requiredFirebaseConfigKeys = ['apiKey', 'authDomain', 'projectId', 'appId'];
-  const firebaseEnvNameByKey = {
-    apiKey: 'FIREBASE_API_KEY',
-    authDomain: 'FIREBASE_AUTH_DOMAIN',
-    projectId: 'FIREBASE_PROJECT_ID',
-    storageBucket: 'FIREBASE_STORAGE_BUCKET',
-    messagingSenderId: 'FIREBASE_MESSAGING_SENDER_ID',
-    appId: 'FIREBASE_APP_ID',
-    measurementId: 'FIREBASE_MEASUREMENT_ID'
-  };
 
   function isFirebasePlaceholder(value) {
     return typeof value === 'string' && /^__FIREBASE_[A-Z_]+__$/.test(value.trim());
   }
 
-  function hasConfigValue(value) {
+  function hasFirebaseConfigValue(value) {
     return typeof value === 'string' && value.trim() && !isFirebasePlaceholder(value);
   }
 
-  function cleanFirebaseConfig(config) {
+  function readPublishedFirebaseConfig() {
+    const config = window.NOTAS_FIREBASE_CONFIG;
+    return config && typeof config === 'object' ? config : {};
+  }
+
+  function normalizeFirebaseConfig(config) {
     return Object.fromEntries(
-      firebaseConfigKeys
-        .filter(key => hasConfigValue(config[key]))
-        .map(key => [key, config[key].trim()])
+      firebaseConfigFields
+        .map(field => [field.key, typeof config[field.key] === 'string' ? config[field.key].trim() : ''])
+        .filter(([, value]) => value)
     );
   }
 
-  function missingRequiredConfigKeys(config) {
-    return requiredFirebaseConfigKeys.filter(key => !hasConfigValue(config[key]));
+  function findFirebaseConfigProblems(config) {
+    const missing = [];
+    const malformed = [];
+    const placeholders = [];
+
+    for (const field of firebaseConfigFields) {
+      const value = config[field.key];
+
+      if (isFirebasePlaceholder(value)) {
+        placeholders.push(field.env);
+        missing.push(field.env);
+        continue;
+      }
+
+      if (!hasFirebaseConfigValue(value)) {
+        missing.push(field.env);
+        continue;
+      }
+
+      if (!field.validate(value.trim())) {
+        malformed.push(`${field.env} should be ${field.expected}`);
+      }
+    }
+
+    return { missing, malformed, placeholders };
   }
 
-  function firebaseEnvNames(keys) {
-    return keys.map(key => firebaseEnvNameByKey[key] || key);
+  function isGitHubPagesHost() {
+    return /\.github\.io$/i.test(location.hostname);
   }
 
-  function showFirebaseConfigError({ missingKeys, unresolvedKeys }) {
+  function formatFirebaseConfigProblems(problems) {
+    const parts = [];
+    if (problems.missing.length) parts.push(`missing ${problems.missing.join(', ')}`);
+    if (problems.malformed.length) parts.push(`malformed ${problems.malformed.join('; ')}`);
+    return parts.join('; ');
+  }
+
+  function firebaseConfigErrorMessage(configError, problems) {
+    if (configError) return configError;
+
+    const allValuesMissing = problems.missing.length === firebaseConfigFields.length;
+    if (allValuesMissing && isGitHubPagesHost()) {
+      return 'Login is unavailable because the GitHub Pages deployment did not publish Firebase config from Actions secrets. Re-run the Pages workflow after confirming the repository secrets are set.';
+    }
+
+    if (allValuesMissing) {
+      return 'Login is unavailable because Firebase config was not loaded. Start the local server so .env can be served as firebase-config.js.';
+    }
+
+    if (problems.missing.length) {
+      return `Login is unavailable because Firebase config is missing: ${problems.missing.join(', ')}.`;
+    }
+
+    return `Login is unavailable because Firebase config values are malformed: ${problems.malformed.join('; ')}.`;
+  }
+
+  function showFirebaseConfigError(message, problems) {
     const loadingEl = document.getElementById('loading-overlay');
     if (loadingEl) loadingEl.style.display = 'none';
 
@@ -900,56 +970,55 @@
 
     const err = document.getElementById('auth-error');
     if (err) {
-      err.textContent = unresolvedKeys.length
-        ? 'Login is unavailable because Firebase configuration was not injected. Start the local dev server so .env can be loaded.'
-        : `Login is unavailable because Firebase configuration is missing: ${firebaseEnvNames(missingKeys).join(', ')}.`;
+      err.textContent = message;
       err.style.display = '';
     }
 
     console.error('Firebase config missing or invalid:', {
-      missing: firebaseEnvNames(missingKeys),
-      unresolvedPlaceholders: firebaseEnvNames(unresolvedKeys)
+      source: window.NOTAS_FIREBASE_CONFIG_SOURCE || 'missing',
+      missing: problems.missing,
+      malformed: problems.malformed,
+      unresolvedPlaceholders: problems.placeholders
     });
   }
 
-  const unresolvedFirebaseConfigKeys = firebaseConfigKeys.filter(key => isFirebasePlaceholder(injectedFirebaseConfig[key]));
-  const firebaseConfig = cleanFirebaseConfig(injectedFirebaseConfig);
-  const missingFirebaseConfigKeys = missingRequiredConfigKeys(firebaseConfig);
+  async function initializeFirebaseServices(config) {
+    const app = initializeApp(config);
+    const authInstance = getAuth(app);
+    const firestore = getFirestore(app);
 
-  if (missingFirebaseConfigKeys.length) {
-    showFirebaseConfigError({
-      missingKeys: missingFirebaseConfigKeys,
-      unresolvedKeys: unresolvedFirebaseConfigKeys
-    });
-    throw new Error(`Firebase config missing required values: ${missingFirebaseConfigKeys.join(', ')}`);
+    try {
+      await setPersistence(authInstance, browserLocalPersistence);
+    } catch (err) {
+      console.warn('Firebase auth persistence unavailable; continuing with default persistence:', err);
+    }
+
+    if (hasFirebaseConfigValue(config.measurementId) && location.protocol === 'https:') {
+      isAnalyticsSupported()
+        .then(supported => { if (supported) getAnalytics(app); })
+        .catch(err => console.warn('Firebase analytics unavailable:', err));
+    }
+
+    return { auth: authInstance, fsDb: firestore };
   }
 
-  const missingOptionalFirebaseConfigKeys = firebaseConfigKeys.filter(
-    key => !requiredFirebaseConfigKeys.includes(key) && !hasConfigValue(firebaseConfig[key])
-  );
-  if (missingOptionalFirebaseConfigKeys.length) {
-    console.warn('Firebase optional config values missing; login will continue:', {
-      missing: firebaseEnvNames(missingOptionalFirebaseConfigKeys)
-    });
+  const firebaseConfigLoadError = typeof window.NOTAS_FIREBASE_CONFIG_ERROR === 'string'
+    ? window.NOTAS_FIREBASE_CONFIG_ERROR
+    : '';
+  const firebaseConfig = normalizeFirebaseConfig(readPublishedFirebaseConfig());
+  const firebaseConfigProblems = findFirebaseConfigProblems(firebaseConfig);
+
+  if (firebaseConfigLoadError || firebaseConfigProblems.missing.length || firebaseConfigProblems.malformed.length) {
+    const message = firebaseConfigErrorMessage(firebaseConfigLoadError, firebaseConfigProblems);
+    showFirebaseConfigError(message, firebaseConfigProblems);
+    throw new Error(`Firebase config unavailable: ${formatFirebaseConfigProblems(firebaseConfigProblems) || firebaseConfigLoadError}`);
   }
 
-  const fbApp = initializeApp(firebaseConfig);
-  const auth  = getAuth(fbApp);
-  const fsDb  = getFirestore(fbApp);
+  const { auth, fsDb } = await initializeFirebaseServices(firebaseConfig);
   const googleProvider = new GoogleAuthProvider();
+  googleProvider.addScope('email');
+  googleProvider.addScope('profile');
   googleProvider.setCustomParameters({ prompt: 'select_account' });
-
-  try {
-    await setPersistence(auth, browserLocalPersistence);
-  } catch (err) {
-    console.warn('Firebase auth persistence unavailable; continuing with default persistence:', err);
-  }
-
-  if (hasConfigValue(firebaseConfig.measurementId) && location.protocol === 'https:') {
-    isAnalyticsSupported()
-      .then(supported => { if (supported) getAnalytics(fbApp); })
-      .catch(err => console.warn('Firebase analytics unavailable:', err));
-  }
 
   let notes         = {};
   let folders       = {};
