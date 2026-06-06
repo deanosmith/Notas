@@ -2,7 +2,7 @@
 
 ## Firebase Config
 
-Hosted GitHub Pages builds inject Firebase values into `index.html` from repository secrets. Hosted URLs use those injected values only; they do not load `firebase-config.local.js`.
+Hosted GitHub Pages builds inject Firebase values into `index.html` from repository secrets.
 
 Required hosted secrets:
 
@@ -17,18 +17,16 @@ Optional hosted secrets:
 - `FIREBASE_MESSAGING_SENDER_ID`
 - `FIREBASE_MEASUREMENT_ID`
 
-For local development, create a local config file from `.env`:
+For local development, use `.env` directly through the local server:
 
 ```sh
 cp .env.example .env
 # Fill .env with the local Firebase app values.
-node scripts/write-local-firebase-config.mjs
+node scripts/serve-local.mjs
 ```
 
-Then serve the directory locally, for example:
+Then open:
 
-```sh
-python3 -m http.server 8000
-```
+http://127.0.0.1:8000/
 
-The generated `firebase-config.local.js` and `.env` files are ignored by git.
+The local server reads `.env` on each page request and injects only the Firebase browser config values into `index.html`. The `.env` file is ignored by git and is never served as a static file.
