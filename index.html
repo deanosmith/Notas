@@ -21,6 +21,8 @@
       --muted:            #4a6a8a;
       --accent:           #00b4ff;
       --accent-h:         #40d0ff;
+      --accent-text:      #04121c;
+      --note-subtext:     rgba(232, 240, 255, .72);
       --editor-font-size: 15px;
       --danger:           #ff453a;
       --success:          #32d74b;
@@ -59,6 +61,7 @@
       --muted:     #2a6090;
       --accent:    #0088cc;
       --accent-h:  #00b4ff;
+      --note-subtext: rgba(12, 28, 44, .68);
       --shadow:    0 2px 10px rgba(0,0,0,.1), 0 1px 3px rgba(0,0,0,.08);
       --shadow-lg: 0 16px 56px rgba(0,0,0,.18), 0 4px 14px rgba(0,0,0,.12);
       --glass-border:     rgba(255, 255, 255, .46);
@@ -244,7 +247,7 @@
     .sidebar-header { padding: 20px 16px 10px; display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
     .app-logo { font-size: 17px; font-weight: 700; letter-spacing: -.4px; }
     .new-note-btn { width: 30px; height: 30px; border-radius: 9px; border: 1px solid rgba(255,255,255,.08); background: linear-gradient(135deg, rgba(var(--orb-r), var(--orb-g), var(--orb-b), .18), rgba(12, 20, 36, .72)); color: var(--text2); font-size: 14px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background .14s, color .14s, transform .14s, border-color .14s; box-shadow: inset 0 1px 0 rgba(255,255,255,.08); }
-    .new-note-btn:hover { background: linear-gradient(135deg, var(--accent-h), var(--accent)); color: #fff; border-color: rgba(255,255,255,.16); transform: translateY(-1px); }
+    .new-note-btn:hover { background: linear-gradient(135deg, var(--accent-h), var(--accent)); color: var(--accent-text); border-color: rgba(255,255,255,.16); transform: translateY(-1px); }
     .sidebar-search { padding: 0 12px 12px; flex-shrink: 0; }
     .sidebar-search input { width: 100%; padding: 8px 12px 8px 30px; border-radius: var(--radius-sm); border: 1px solid var(--glass-border); background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02)); color: var(--text); font-size: 13px; font-family: var(--font); outline: none; transition: border-color .14s, box-shadow .14s, background .14s; -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='13' height='13' viewBox='0 0 24 24' fill='none' stroke='%238c8c95' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cline x1='21' y1='21' x2='16.65' y2='16.65'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: 9px center; }
     .sidebar-search input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(var(--orb-r),var(--orb-g),var(--orb-b),.18); }
@@ -260,7 +263,7 @@
     .sidebar-item.active .item-icon { color: var(--accent); }
     .item-info { flex: 1; min-width: 0; }
     .item-name { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .item-preview { font-size: 11.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+    .item-preview { font-size: 11.5px; color: var(--note-subtext); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
     .modal-btn.danger { background: linear-gradient(135deg, rgba(255,69,58,.45), rgba(180,30,24,.35)); color: #fff; border-color: rgba(255,69,58,.4); }
     .modal-btn.danger:hover { background: linear-gradient(135deg, rgba(255,69,58,.65), rgba(180,30,24,.55)); border-color: rgba(255,69,58,.55); }
     .sidebar-item[draggable="true"] { cursor: grab; }
@@ -284,7 +287,7 @@
     .note-shared-badge { color: var(--accent); font-size: 10px; flex-shrink: 0; opacity: .65; margin-right: 2px; }
     .item-action-btn { opacity: 0; border: none; background: none; color: var(--muted); font-size: 11px; cursor: pointer; padding: 4px 5px; border-radius: 6px; flex-shrink: 0; transition: opacity .12s, color .12s, background .12s; }
     .folder-row:hover .item-action-btn { opacity: 1; }
-    .item-action-btn:hover { color: var(--accent); background: rgba(var(--orb-r),var(--orb-g),var(--orb-b),.14); }
+    .item-action-btn:hover { color: var(--text); background: rgba(var(--orb-r),var(--orb-g),var(--orb-b),.14); }
     .folder-notes { padding-left: 14px; margin-top: 2px; }
     .folder-note-item { border-left: 2px solid var(--border); border-radius: 0 var(--radius-sm) var(--radius-sm) 0 !important; margin-left: 2px; }
     .folder-note-item:hover { border-left-color: var(--accent); }
@@ -292,7 +295,7 @@
 
     .sidebar-bottom { padding: 12px; border-top: 1px solid var(--border); display: flex; gap: 8px; flex-shrink: 0; }
     .bottom-btn { flex: 1; padding: 8px 10px; background: linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.01)); border: 1px solid var(--glass-border); border-radius: var(--radius-xs); color: var(--muted); font-size: 12px; font-family: var(--font); font-weight: 500; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 5px; transition: color .12s, border-color .12s, background .12s, transform .12s; -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); }
-    .bottom-btn:hover { color: var(--accent-h); border-color: rgba(var(--orb-r), var(--orb-g), var(--orb-b), .34); background: linear-gradient(135deg, rgba(var(--orb-r), var(--orb-g), var(--orb-b), .14), rgba(255,255,255,.02)); transform: translateY(-1px); }
+    .bottom-btn:hover { color: var(--text); border-color: rgba(var(--orb-r), var(--orb-g), var(--orb-b), .34); background: linear-gradient(135deg, rgba(var(--orb-r), var(--orb-g), var(--orb-b), .14), rgba(255,255,255,.02)); transform: translateY(-1px); }
 
     /* Main */
     #main { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
@@ -300,7 +303,7 @@
     .empty-icon  { font-size: 44px; opacity: .18; margin-bottom: 6px; color: var(--muted); }
     .empty-title { font-size: 17px; font-weight: 600; color: var(--muted); }
     .empty-sub   { font-size: 13.5px; color: var(--muted); opacity: .6; }
-    .empty-cta { margin-top: 16px; padding: 10px 24px; background: linear-gradient(135deg, var(--accent-h), var(--accent)); color: #fff; border: none; border-radius: var(--radius-sm); font-size: 14px; font-family: var(--font); font-weight: 500; cursor: pointer; transition: background .14s, transform .14s; box-shadow: 0 10px 28px rgba(var(--orb-r),var(--orb-g),var(--orb-b),.22); }
+    .empty-cta { margin-top: 16px; padding: 10px 24px; background: linear-gradient(135deg, var(--accent-h), var(--accent)); color: var(--accent-text); border: none; border-radius: var(--radius-sm); font-size: 14px; font-family: var(--font); font-weight: 600; cursor: pointer; transition: background .14s, transform .14s; box-shadow: 0 10px 28px rgba(var(--orb-r),var(--orb-g),var(--orb-b),.22); }
     .empty-cta:hover { background: linear-gradient(135deg, var(--accent-h), var(--accent)); filter: brightness(1.12); transform: translateY(-1px); }
     #editorView { display: none; flex-direction: column; flex: 1; overflow: hidden; }
 
@@ -415,9 +418,9 @@
     .modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
     .modal-btn { padding: 9px 18px; border-radius: var(--radius-xs); border: 1px solid var(--glass-border); background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02)); color: var(--text); font-size: 13px; font-family: var(--font); font-weight: 500; cursor: pointer; transition: background .12s, transform .12s; }
     .modal-btn:hover { background: linear-gradient(180deg, rgba(255,255,255,.09), rgba(255,255,255,.04)); transform: translateY(-1px); }
-    .modal-btn.primary { background: linear-gradient(135deg, var(--accent-h), var(--accent)); color: #fff; border-color: rgba(var(--orb-r), var(--orb-g), var(--orb-b), .24); }
+    .modal-btn.primary { background: linear-gradient(135deg, var(--accent-h), var(--accent)); color: var(--accent-text); border-color: rgba(var(--orb-r), var(--orb-g), var(--orb-b), .24); font-weight: 600; }
     .modal-btn.primary:hover { background: linear-gradient(135deg, var(--accent-h), var(--accent)); filter: brightness(1.12); border-color: rgba(var(--orb-r), var(--orb-g), var(--orb-b), .34); }
-    body.light-mode .modal-btn.primary, body.light-mode .empty-cta, body.light-mode .fs-btn:hover { color: var(--text); }
+    body.light-mode .modal-btn.primary, body.light-mode .empty-cta, body.light-mode .fs-btn:hover { color: var(--accent-text); }
 
     /* Toast */
     #toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(10px); padding: 10px 20px; background: linear-gradient(180deg, var(--surface-glass-strong), rgba(12, 18, 28, .74)); border: 1px solid var(--glass-border); border-radius: var(--radius-sm); font-size: 13px; color: var(--text2); z-index: 300; opacity: 0; pointer-events: none; white-space: nowrap; transition: opacity .2s, transform .2s; -webkit-backdrop-filter: blur(20px) saturate(140%); backdrop-filter: blur(20px) saturate(140%); }
@@ -430,7 +433,7 @@
     .auth-card { text-align:center; max-width:340px; width:100%; padding:0 28px; }
     .auth-logo { margin-bottom:18px; }
     .auth-title { font-size:30px; font-weight:700; letter-spacing:-.6px; margin-bottom:8px; color:#e8f0ff; }
-    .auth-sub { font-size:14px; color:var(--muted); margin-bottom:36px; line-height:1.6; }
+    .auth-sub { font-size:14px; color:rgba(232,240,255,.78); margin-bottom:36px; line-height:1.6; }
     #google-signin-btn { display:flex; align-items:center; justify-content:center; gap:12px; width:100%; padding:14px 20px; background:linear-gradient(135deg,rgba(255,255,255,.1),rgba(255,255,255,.05)); border:1px solid rgba(var(--orb-r),var(--orb-g),var(--orb-b),.16); border-radius:var(--radius-sm); color:#e8f0ff; font-size:14px; font-family:var(--font); font-weight:500; cursor:pointer; transition:background .14s,transform .14s,border-color .14s; }
     #google-signin-btn:hover { background:linear-gradient(135deg,rgba(255,255,255,.16),rgba(255,255,255,.08)); border-color:rgba(var(--orb-r),var(--orb-g),var(--orb-b),.3); transform:translateY(-1px); }
     #google-signin-btn:disabled { opacity:.5; cursor:not-allowed; transform:none; }
@@ -447,8 +450,10 @@
     ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
 
     /* Settings Modal */
-    .settings-rows { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; margin-bottom: 20px; }
+    .settings-rows { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: visible; margin-bottom: 20px; }
     .settings-row { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02)); }
+    .settings-row:first-child { border-radius: var(--radius-sm) var(--radius-sm) 0 0; }
+    .settings-row:last-child { border-radius: 0 0 var(--radius-sm) var(--radius-sm); }
     .settings-row + .settings-row { border-top: 1px solid var(--border); }
     .settings-label { font-size: 14px; color: var(--text2); display: flex; align-items: center; gap: 8px; }
     .toggle { position: relative; width: 42px; height: 24px; cursor: pointer; flex-shrink: 0; }
@@ -461,13 +466,27 @@
     .settings-select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(var(--orb-r),var(--orb-g),var(--orb-b),.18); }
     .font-size-controls { display: flex; align-items: center; gap: 10px; }
     .fs-btn { width: 28px; height: 28px; border-radius: 8px; border: 1px solid var(--glass-border); background: linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.03)); color: var(--text2); font-size: 12px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background .12s, color .12s, border-color .12s; }
-    .fs-btn:hover { background: linear-gradient(135deg, var(--accent-h), var(--accent)); color: #fff; border-color: rgba(var(--orb-r), var(--orb-g), var(--orb-b), .26); }
+    .fs-btn:hover { background: linear-gradient(135deg, var(--accent-h), var(--accent)); color: var(--accent-text); border-color: rgba(var(--orb-r), var(--orb-g), var(--orb-b), .26); }
     .fs-val { font-size: 13px; color: var(--text2); min-width: 30px; text-align: center; font-variant-numeric: tabular-nums; }
+    .color-control { position: relative; flex-shrink: 0; }
     .accent-picker { position: relative; display: block; width: 34px; height: 34px; border: none; border-radius: 50%; flex-shrink: 0; cursor: pointer; background: none; padding: 0; }
     .accent-picker::before { content: ''; position: absolute; inset: -3px; border-radius: 50%; background: conic-gradient(red, yellow, lime, cyan, blue, magenta, red); opacity: .95; }
     .accent-picker::after { content: ''; position: absolute; inset: 3px; border-radius: 50%; background: var(--accent); border: 2px solid var(--surface); box-shadow: 0 0 0 1px var(--glass-border), inset 0 1px 0 rgba(255,255,255,.24); pointer-events: none; }
     .accent-picker:hover { transform: translateY(-1px); }
-    .accent-color-input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; border: 0; padding: 0; cursor: pointer; }
+    .color-popover { position: absolute; right: 0; top: calc(100% + 12px); width: 238px; padding: 14px; border-radius: var(--radius); border: 1px solid var(--glass-border); background: linear-gradient(180deg, var(--surface-glass-strong), rgba(14, 22, 32, .92)); box-shadow: var(--shadow-lg); z-index: 260; -webkit-backdrop-filter: blur(24px) saturate(150%); backdrop-filter: blur(24px) saturate(150%); }
+    .color-popover[hidden] { display: none; }
+    .color-popover::before { content: ''; position: absolute; right: 13px; top: -7px; width: 14px; height: 14px; transform: rotate(45deg); border-left: 1px solid var(--glass-border); border-top: 1px solid var(--glass-border); background: var(--surface-glass-strong); }
+    .color-sv { position: relative; height: 138px; border-radius: var(--radius-sm); overflow: hidden; cursor: crosshair; background: linear-gradient(to top, #000, transparent), linear-gradient(to right, #fff, hsl(var(--picker-hue, 205) 100% 50%)); border: 1px solid rgba(255,255,255,.16); margin-bottom: 12px; touch-action: none; }
+    .color-sv-cursor { position: absolute; width: 16px; height: 16px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.7), 0 2px 8px rgba(0,0,0,.45); transform: translate(-50%, -50%); pointer-events: none; }
+    .color-hue { width: 100%; height: 14px; border-radius: 999px; appearance: none; background: linear-gradient(90deg, red, yellow, lime, cyan, blue, magenta, red); cursor: pointer; margin-bottom: 12px; }
+    .color-hue::-webkit-slider-thumb { appearance: none; width: 18px; height: 18px; border-radius: 50%; background: #fff; border: 2px solid rgba(0,0,0,.38); box-shadow: 0 1px 6px rgba(0,0,0,.35); }
+    .color-hue::-moz-range-thumb { width: 18px; height: 18px; border-radius: 50%; background: #fff; border: 2px solid rgba(0,0,0,.38); box-shadow: 0 1px 6px rgba(0,0,0,.35); }
+    .color-fields { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    .color-field { display: flex; flex-direction: column; gap: 5px; align-items: center; color: var(--text2); font-size: 11px; font-weight: 600; }
+    .color-field input { width: 100%; height: 34px; border-radius: var(--radius-xs); border: 1px solid var(--glass-border); background: rgba(255,255,255,.06); color: var(--text); text-align: center; font: 600 13px var(--font); outline: none; }
+    .color-field input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(var(--orb-r),var(--orb-g),var(--orb-b),.18); }
+    body.light-mode .color-popover { background: #ffffff; border-color: var(--border); }
+    body.light-mode .color-popover::before { background: #ffffff; border-color: var(--border); }
 
     /* Loading overlay */
     #loading-overlay {
@@ -682,9 +701,18 @@
         </div>
         <div class="settings-row">
           <span class="settings-label"><i class="fa-solid fa-palette"></i>Colour</span>
-          <label class="accent-picker" id="accent-picker-btn" title="Choose colour" aria-label="Choose colour">
-            <input class="accent-color-input" id="accent-color-input" type="color" aria-label="Choose colour" />
-          </label>
+          <div class="color-control" id="color-control">
+            <button class="accent-picker" id="accent-picker-btn" type="button" title="Choose colour" aria-label="Choose colour" aria-expanded="false"></button>
+            <div class="color-popover" id="color-popover" hidden>
+              <div class="color-sv" id="color-sv"><span class="color-sv-cursor" id="color-sv-cursor"></span></div>
+              <input class="color-hue" id="color-hue" type="range" min="0" max="360" step="1" aria-label="Hue" />
+              <div class="color-fields">
+                <label class="color-field">R<input id="color-r" type="number" min="0" max="255" inputmode="numeric" /></label>
+                <label class="color-field">G<input id="color-g" type="number" min="0" max="255" inputmode="numeric" /></label>
+                <label class="color-field">B<input id="color-b" type="number" min="0" max="255" inputmode="numeric" /></label>
+              </div>
+            </div>
+          </div>
         </div>
         <div class="settings-row">
           <span class="settings-label"><i class="fa-solid fa-font"></i>Text Size</span>
@@ -792,7 +820,6 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-  <script src="firebase-config.local.js" onerror="void 0"></script>
 
   <script type="module">
   import { initializeApp }                                    from 'https://www.gstatic.com/firebasejs/12.13.0/firebase-app.js';
@@ -815,6 +842,7 @@
   };
 
   const firebaseConfigKeys = ['apiKey', 'authDomain', 'projectId', 'storageBucket', 'messagingSenderId', 'appId', 'measurementId'];
+  const requiredFirebaseConfigKeys = ['apiKey', 'authDomain', 'projectId', 'appId'];
   const envKeyMap = {
     apiKey: 'FIREBASE_API_KEY',
     authDomain: 'FIREBASE_AUTH_DOMAIN',
@@ -825,12 +853,44 @@
     measurementId: 'FIREBASE_MEASUREMENT_ID'
   };
 
+  function isLocalHostname(hostname) {
+    const normalized = (hostname || '').toLowerCase();
+    return normalized === '' ||
+      normalized === 'localhost' ||
+      normalized === '127.0.0.1' ||
+      normalized === '0.0.0.0' ||
+      normalized === '::1' ||
+      normalized === '[::1]' ||
+      normalized.endsWith('.local') ||
+      /^10\./.test(normalized) ||
+      /^192\.168\./.test(normalized) ||
+      /^172\.(1[6-9]|2\d|3[01])\./.test(normalized);
+  }
+
+  const isLocalRuntime = location.protocol === 'file:' || isLocalHostname(location.hostname);
+
+  function loadLocalFirebaseConfig() {
+    if (!isLocalRuntime || window.__env) return Promise.resolve(!!window.__env);
+
+    return new Promise(resolve => {
+      const script = document.createElement('script');
+      script.src = 'firebase-config.local.js';
+      script.onload = () => resolve(!!window.__env);
+      script.onerror = () => resolve(false);
+      document.head.appendChild(script);
+    });
+  }
+
   function hasConfigValue(value) {
     return typeof value === 'string' && value.trim() && !/^__FIREBASE_[A-Z_]+__$/.test(value.trim());
   }
 
-  function hasCompleteConfig(config) {
-    return firebaseConfigKeys.every(key => hasConfigValue(config[key]));
+  function cleanFirebaseConfig(config) {
+    return Object.fromEntries(
+      firebaseConfigKeys
+        .filter(key => hasConfigValue(config[key]))
+        .map(key => [key, config[key].trim()])
+    );
   }
 
   function localFirebaseConfig() {
@@ -838,7 +898,11 @@
     return Object.fromEntries(firebaseConfigKeys.map(key => [key, env[envKeyMap[key]]]));
   }
 
-  function showFirebaseConfigError(missingKeys) {
+  function missingRequiredConfigKeys(config) {
+    return requiredFirebaseConfigKeys.filter(key => !hasConfigValue(config[key]));
+  }
+
+  function showFirebaseConfigError({ missingKeys, source, localConfigLoaded }) {
     const loadingEl = document.getElementById('loading-overlay');
     if (loadingEl) loadingEl.style.display = 'none';
 
@@ -850,28 +914,52 @@
 
     const err = document.getElementById('auth-error');
     if (err) {
-      err.textContent = 'Login is temporarily unavailable because the app configuration did not load.';
+      err.textContent = source === 'local'
+        ? 'Login is temporarily unavailable because the local app configuration did not load.'
+        : 'Login is temporarily unavailable because the hosted app configuration did not load.';
       err.style.display = '';
     }
 
-    console.error('Firebase config missing or invalid:', missingKeys);
+    console.error('Firebase config missing or invalid:', {
+      source,
+      missingKeys,
+      localConfigLoaded
+    });
   }
 
-  const firebaseConfig = hasCompleteConfig(injectedFirebaseConfig) ? injectedFirebaseConfig : localFirebaseConfig();
-  const missingFirebaseConfigKeys = firebaseConfigKeys.filter(key => !hasConfigValue(firebaseConfig[key]));
+  const localConfigLoaded = await loadLocalFirebaseConfig();
+  const firebaseConfigSource = isLocalRuntime ? 'local' : 'hosted';
+  const firebaseConfig = cleanFirebaseConfig(isLocalRuntime ? localFirebaseConfig() : injectedFirebaseConfig);
+  const missingFirebaseConfigKeys = missingRequiredConfigKeys(firebaseConfig);
 
   if (missingFirebaseConfigKeys.length) {
-    showFirebaseConfigError(missingFirebaseConfigKeys);
+    showFirebaseConfigError({
+      missingKeys: missingFirebaseConfigKeys,
+      source: firebaseConfigSource,
+      localConfigLoaded
+    });
     throw new Error(`Firebase config missing required values: ${missingFirebaseConfigKeys.join(', ')}`);
+  }
+
+  const missingOptionalFirebaseConfigKeys = firebaseConfigKeys.filter(
+    key => !requiredFirebaseConfigKeys.includes(key) && !hasConfigValue(firebaseConfig[key])
+  );
+  if (missingOptionalFirebaseConfigKeys.length) {
+    console.warn('Firebase optional config values missing; login will continue:', {
+      source: firebaseConfigSource,
+      missingKeys: missingOptionalFirebaseConfigKeys
+    });
   }
 
   const fbApp = initializeApp(firebaseConfig);
   const auth  = getAuth(fbApp);
   const fsDb  = getFirestore(fbApp);
 
-  isAnalyticsSupported()
-    .then(supported => { if (supported) getAnalytics(fbApp); })
-    .catch(err => console.warn('Firebase analytics unavailable:', err));
+  if (hasConfigValue(firebaseConfig.measurementId)) {
+    isAnalyticsSupported()
+      .then(supported => { if (supported) getAnalytics(fbApp); })
+      .catch(err => console.warn('Firebase analytics unavailable:', err));
+  }
 
   let notes         = {};
   let folders       = {};
@@ -2604,6 +2692,70 @@
     };
   }
 
+  function relativeLuminance({ r, g, b }) {
+    const linear = [r, g, b].map(value => {
+      const channel = clampColor(value) / 255;
+      return channel <= .03928 ? channel / 12.92 : ((channel + .055) / 1.055) ** 2.4;
+    });
+    return .2126 * linear[0] + .7152 * linear[1] + .0722 * linear[2];
+  }
+
+  function contrastRatio(a, b) {
+    const lighter = Math.max(relativeLuminance(a), relativeLuminance(b));
+    const darker = Math.min(relativeLuminance(a), relativeLuminance(b));
+    return (lighter + .05) / (darker + .05);
+  }
+
+  function accentTextColor(palette) {
+    const accent = { r: palette.r, g: palette.g, b: palette.b };
+    const accentH = hexToRgb(palette.accentH) || accent;
+    const lightText = { r: 255, g: 255, b: 255 };
+    const darkText = { r: 4, g: 18, b: 28 };
+    const lightScore = Math.min(contrastRatio(accent, lightText), contrastRatio(accentH, lightText));
+    const darkScore = Math.min(contrastRatio(accent, darkText), contrastRatio(accentH, darkText));
+    return darkScore >= lightScore ? '#04121c' : '#ffffff';
+  }
+
+  function rgbToHsv({ r, g, b }) {
+    r = clampColor(r) / 255;
+    g = clampColor(g) / 255;
+    b = clampColor(b) / 255;
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    const delta = max - min;
+    let h = 0;
+
+    if (delta) {
+      if (max === r) h = ((g - b) / delta) % 6;
+      else if (max === g) h = (b - r) / delta + 2;
+      else h = (r - g) / delta + 4;
+      h *= 60;
+      if (h < 0) h += 360;
+    }
+
+    return { h, s: max ? delta / max : 0, v: max };
+  }
+
+  function hsvToRgb({ h, s, v }) {
+    const c = v * s;
+    const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+    const m = v - c;
+    let rgb = [0, 0, 0];
+
+    if (h < 60) rgb = [c, x, 0];
+    else if (h < 120) rgb = [x, c, 0];
+    else if (h < 180) rgb = [0, c, x];
+    else if (h < 240) rgb = [0, x, c];
+    else if (h < 300) rgb = [x, 0, c];
+    else rgb = [c, 0, x];
+
+    return {
+      r: (rgb[0] + m) * 255,
+      g: (rgb[1] + m) * 255,
+      b: (rgb[2] + m) * 255
+    };
+  }
+
   function normalizeAccentColor(value) {
     if (ACCENT_PALETTES[value]) return ACCENT_PALETTES[value].accent;
     return /^#[a-f\d]{6}$/i.test(value || '') ? value : DEFAULT_ACCENT;
@@ -2646,27 +2798,71 @@
     // Accent on both <html> and <body> — body inline style beats body.light-mode CSS rule
     s.setProperty('--accent',   p.accent);
     s.setProperty('--accent-h', p.accentH);
+    s.setProperty('--accent-text', accentTextColor(p));
     b.setProperty('--accent',   p.accent);
     b.setProperty('--accent-h', p.accentH);
+    b.setProperty('--accent-text', accentTextColor(p));
 
     // Mode-dependent vars — set on <body> so they override body.light-mode CSS in both modes
     const lm = isLightMode;
     b.setProperty('--muted',  lm ? p.lightMuted  : p.muted);
     b.setProperty('--text2',  lm ? p.lightText2  : p.text2);
     b.setProperty('--border', lm ? p.lightBorder : p.border);
+    b.setProperty('--note-subtext', lm ? 'rgba(12, 28, 44, .68)' : 'rgba(232, 240, 255, .72)');
     // Ambient glows adapt in both modes
     b.setProperty('--ambient-a', `rgba(${p.r},${p.g},${p.b},${lm ? '.14' : '.18'})`);
     b.setProperty('--ambient-b', `rgba(${p.r2},${p.g2},${p.b2},.12)`);
     b.setProperty('--ambient-c', `rgba(${Math.min(p.r+90,255)},${Math.min(p.g+30,255)},${Math.min(p.b+10,255)},${lm ? '.1' : '.08'})`);
 
-    const input = document.getElementById('accent-color-input');
-    if (input) input.value = normalized;
+    updateColorPickerUI(normalized);
   }
 
   function setAccentColor(value) {
     accentColor = normalizeAccentColor(value);
     localStorage.setItem('notas_accent', accentColor);
     applyAccentColor(accentColor);
+  }
+
+  let pickerHsv = rgbToHsv(hexToRgb(normalizeAccentColor(accentColor)) || hexToRgb(DEFAULT_ACCENT));
+
+  function updateColorPickerUI(value = accentColor) {
+    const rgb = hexToRgb(normalizeAccentColor(value)) || hexToRgb(DEFAULT_ACCENT);
+    pickerHsv = rgbToHsv(rgb);
+
+    const popover = document.getElementById('color-popover');
+    const sv = document.getElementById('color-sv');
+    const cursor = document.getElementById('color-sv-cursor');
+    const hue = document.getElementById('color-hue');
+    const rInput = document.getElementById('color-r');
+    const gInput = document.getElementById('color-g');
+    const bInput = document.getElementById('color-b');
+
+    if (popover) popover.style.setProperty('--picker-hue', Math.round(pickerHsv.h));
+    if (sv) sv.style.setProperty('--picker-hue', Math.round(pickerHsv.h));
+    if (cursor) {
+      cursor.style.left = `${pickerHsv.s * 100}%`;
+      cursor.style.top = `${(1 - pickerHsv.v) * 100}%`;
+    }
+    if (hue) hue.value = Math.round(pickerHsv.h);
+    if (rInput) rInput.value = clampColor(rgb.r);
+    if (gInput) gInput.value = clampColor(rgb.g);
+    if (bInput) bInput.value = clampColor(rgb.b);
+  }
+
+  function colorFromPickerHsv() {
+    return rgbToHex(hsvToRgb(pickerHsv));
+  }
+
+  function setPickerFromRgbInputs() {
+    const r = document.getElementById('color-r');
+    const g = document.getElementById('color-g');
+    const b = document.getElementById('color-b');
+    if (!r || !g || !b) return;
+    setAccentColor(rgbToHex({
+      r: clampColor(Number(r.value)),
+      g: clampColor(Number(g.value)),
+      b: clampColor(Number(b.value))
+    }));
   }
 
   function resolveLightMode() {
@@ -2688,16 +2884,44 @@
   function initSettings() {
     applyTheme(); // also calls applyAccentColor
     applyFontSize();
+    const settingsModal = document.getElementById('settings-modal');
+    const colorControl = document.getElementById('color-control');
+    const pickerBtn = document.getElementById('accent-picker-btn');
+    const colorPopover = document.getElementById('color-popover');
+    const colorSv = document.getElementById('color-sv');
+    const colorHue = document.getElementById('color-hue');
+    const colorInputs = ['color-r', 'color-g', 'color-b'].map(id => document.getElementById(id)).filter(Boolean);
+
+    function closeColorPopover() {
+      if (!colorPopover) return;
+      colorPopover.hidden = true;
+      pickerBtn?.setAttribute('aria-expanded', 'false');
+    }
+
+    function updateFromSaturationValueEvent(e) {
+      if (!colorSv) return;
+      const rect = colorSv.getBoundingClientRect();
+      const x = Math.max(0, Math.min(rect.width, e.clientX - rect.left));
+      const y = Math.max(0, Math.min(rect.height, e.clientY - rect.top));
+      pickerHsv.s = rect.width ? x / rect.width : 0;
+      pickerHsv.v = rect.height ? 1 - (y / rect.height) : 0;
+      setAccentColor(colorFromPickerHsv());
+    }
+
     document.getElementById('profile-settings-btn').addEventListener('click', () => {
       document.getElementById('theme-select').value = themeMode;
-      document.getElementById('accent-color-input').value = normalizeAccentColor(accentColor);
-      document.getElementById('settings-modal').classList.add('open');
+      updateColorPickerUI(accentColor);
+      settingsModal.classList.add('open');
     });
-    document.getElementById('settings-modal').addEventListener('click', e => {
-      if (e.target === e.currentTarget) document.getElementById('settings-modal').classList.remove('open');
+    settingsModal.addEventListener('click', e => {
+      if (e.target === e.currentTarget) {
+        closeColorPopover();
+        settingsModal.classList.remove('open');
+      }
     });
     document.getElementById('settings-close').addEventListener('click', () => {
-      document.getElementById('settings-modal').classList.remove('open');
+      closeColorPopover();
+      settingsModal.classList.remove('open');
     });
     document.getElementById('theme-select').addEventListener('change', e => {
       themeMode = e.target.value;
@@ -2710,8 +2934,36 @@
     if (systemThemeQuery?.addEventListener) systemThemeQuery.addEventListener('change', onSystemThemeChange);
     else systemThemeQuery?.addListener?.(onSystemThemeChange);
 
-    document.getElementById('accent-color-input').addEventListener('input', e => {
-      setAccentColor(e.target.value);
+    pickerBtn?.addEventListener('click', e => {
+      e.stopPropagation();
+      if (!colorPopover) return;
+      colorPopover.hidden = !colorPopover.hidden;
+      pickerBtn.setAttribute('aria-expanded', colorPopover.hidden ? 'false' : 'true');
+      updateColorPickerUI(accentColor);
+    });
+
+    document.addEventListener('click', e => {
+      if (!colorPopover || colorPopover.hidden || colorControl?.contains(e.target)) return;
+      closeColorPopover();
+    });
+
+    colorSv?.addEventListener('pointerdown', e => {
+      e.preventDefault();
+      colorSv.setPointerCapture(e.pointerId);
+      updateFromSaturationValueEvent(e);
+    });
+    colorSv?.addEventListener('pointermove', e => {
+      if (e.buttons !== 1) return;
+      updateFromSaturationValueEvent(e);
+    });
+
+    colorHue?.addEventListener('input', e => {
+      pickerHsv.h = Number(e.target.value) || 0;
+      setAccentColor(colorFromPickerHsv());
+    });
+
+    colorInputs.forEach(input => {
+      input.addEventListener('input', setPickerFromRgbInputs);
     });
     document.getElementById('fs-inc').addEventListener('click', () => {
       if (editorFontSize < FONT_MAX) {
