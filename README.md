@@ -1,17 +1,17 @@
 # Notas
 
-## Firebase Config
+Another note taking app... What makes mine competitive you ask?
+- Real-time saving and sharing
+  - _Actually real-time_
+- Google auth and sharing
+- Lightweight, fast and effective
+- Customisable UI
 
-Hosted GitHub Pages builds generate `firebase-config.local.js` from repository secrets during the Actions deploy. The deployed app reads that generated file; Firebase values are not committed to `index.html`.
 
-Required repository secrets:
+## Mobile Version
 
-- `FIREBASE_API_KEY`
-- `FIREBASE_AUTH_DOMAIN`
-- `FIREBASE_PROJECT_ID`
-- `FIREBASE_STORAGE_BUCKET`
-- `FIREBASE_MESSAGING_SENDER_ID`
-- `FIREBASE_APP_ID`
-- `FIREBASE_MEASUREMENT_ID`
+<img width="496" height="1012" alt="image" src="https://github.com/user-attachments/assets/1bc45d32-4363-4ae7-8c4f-cf3f6fabbee4" />
 
-The deploy workflow checks that these secrets are present before publishing GitHub Pages. There is no separate local Firebase config path.
+## Desktop Version
+
+<img width="1077" height="1008" alt="image" src="https://github.com/user-attachments/assets/99fe4cbb-6f20-4903-afb0-9f7a3431b73f" />
