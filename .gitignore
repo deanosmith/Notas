@@ -1,5 +1,4 @@
 .env
 .env.*
-!.env.example
 dist/
-firebase-config.js
+firebase-config.local.js

@@ -820,205 +820,33 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-  <script src="firebase-config.js"></script>
+  <script src="firebase-config.local.js"></script>
 
   <script type="module">
   import { initializeApp }                                    from 'https://www.gstatic.com/firebasejs/12.13.0/firebase-app.js';
-  import { getAnalytics, isSupported as isAnalyticsSupported } from 'https://www.gstatic.com/firebasejs/12.13.0/firebase-analytics.js';
-  import {
-    getAuth, GoogleAuthProvider, browserLocalPersistence, setPersistence,
-    getRedirectResult, signInWithPopup, signInWithRedirect, signOut, onAuthStateChanged
-  } from 'https://www.gstatic.com/firebasejs/12.13.0/firebase-auth.js';
+  import { getAnalytics }                                     from 'https://www.gstatic.com/firebasejs/12.13.0/firebase-analytics.js';
+  import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/12.13.0/firebase-auth.js';
   import {
     getFirestore, collection, doc, setDoc, deleteDoc, getDocs, getDoc,
     onSnapshot, query, where, Timestamp, writeBatch, serverTimestamp, deleteField,
     arrayUnion, arrayRemove
   } from 'https://www.gstatic.com/firebasejs/12.13.0/firebase-firestore.js';
 
-  const firebaseConfigFields = [
-    {
-      key: 'apiKey',
-      env: 'FIREBASE_API_KEY',
-      validate: value => /^AIza[0-9A-Za-z_-]{20,}$/.test(value),
-      expected: 'a Firebase web API key'
-    },
-    {
-      key: 'authDomain',
-      env: 'FIREBASE_AUTH_DOMAIN',
-      validate: value => /^[a-z0-9.-]+$/i.test(value) && value.includes('.') && !value.includes(':'),
-      expected: 'a Firebase auth domain such as project-id.firebaseapp.com'
-    },
-    {
-      key: 'projectId',
-      env: 'FIREBASE_PROJECT_ID',
-      validate: value => /^[a-z][a-z0-9-]{4,28}[a-z0-9]$/.test(value),
-      expected: 'a Firebase project ID such as project-id'
-    },
-    {
-      key: 'storageBucket',
-      env: 'FIREBASE_STORAGE_BUCKET',
-      validate: value => /^[a-z0-9.-]+$/i.test(value) && value.includes('.') && !value.includes(':'),
-      expected: 'a Firebase Storage bucket such as project-id.firebasestorage.app'
-    },
-    {
-      key: 'messagingSenderId',
-      env: 'FIREBASE_MESSAGING_SENDER_ID',
-      validate: value => /^\d+$/.test(value),
-      expected: 'the numeric Firebase messaging sender ID'
-    },
-    {
-      key: 'appId',
-      env: 'FIREBASE_APP_ID',
-      validate: value => /^\d+:\d+:web:[0-9a-z]+$/i.test(value),
-      expected: 'a Firebase web app ID such as 1:123456789:web:abcdef'
-    },
-    {
-      key: 'measurementId',
-      env: 'FIREBASE_MEASUREMENT_ID',
-      validate: value => /^G-[0-9A-Z]+$/i.test(value),
-      expected: 'a Firebase measurement ID such as G-ABC123'
-    }
-  ];
+  const __env = window.__env || {};
+  const firebaseConfig = {
+    apiKey:            __env.FIREBASE_API_KEY            || '__FIREBASE_API_KEY__',
+    authDomain:        __env.FIREBASE_AUTH_DOMAIN        || '__FIREBASE_AUTH_DOMAIN__',
+    projectId:         __env.FIREBASE_PROJECT_ID         || '__FIREBASE_PROJECT_ID__',
+    storageBucket:     __env.FIREBASE_STORAGE_BUCKET     || '__FIREBASE_STORAGE_BUCKET__',
+    messagingSenderId: __env.FIREBASE_MESSAGING_SENDER_ID || '__FIREBASE_MESSAGING_SENDER_ID__',
+    appId:             __env.FIREBASE_APP_ID             || '__FIREBASE_APP_ID__',
+    measurementId:     __env.FIREBASE_MEASUREMENT_ID     || '__FIREBASE_MEASUREMENT_ID__'
+  };
 
-  function isFirebasePlaceholder(value) {
-    return typeof value === 'string' && /^__FIREBASE_[A-Z_]+__$/.test(value.trim());
-  }
-
-  function hasFirebaseConfigValue(value) {
-    return typeof value === 'string' && value.trim() && !isFirebasePlaceholder(value);
-  }
-
-  function readPublishedFirebaseConfig() {
-    const config = window.NOTAS_FIREBASE_CONFIG;
-    return config && typeof config === 'object' ? config : {};
-  }
-
-  function normalizeFirebaseConfig(config) {
-    return Object.fromEntries(
-      firebaseConfigFields
-        .map(field => [field.key, typeof config[field.key] === 'string' ? config[field.key].trim() : ''])
-        .filter(([, value]) => value)
-    );
-  }
-
-  function findFirebaseConfigProblems(config) {
-    const missing = [];
-    const malformed = [];
-    const placeholders = [];
-
-    for (const field of firebaseConfigFields) {
-      const value = config[field.key];
-
-      if (isFirebasePlaceholder(value)) {
-        placeholders.push(field.env);
-        missing.push(field.env);
-        continue;
-      }
-
-      if (!hasFirebaseConfigValue(value)) {
-        missing.push(field.env);
-        continue;
-      }
-
-      if (!field.validate(value.trim())) {
-        malformed.push(`${field.env} should be ${field.expected}`);
-      }
-    }
-
-    return { missing, malformed, placeholders };
-  }
-
-  function isGitHubPagesHost() {
-    return /\.github\.io$/i.test(location.hostname);
-  }
-
-  function formatFirebaseConfigProblems(problems) {
-    const parts = [];
-    if (problems.missing.length) parts.push(`missing ${problems.missing.join(', ')}`);
-    if (problems.malformed.length) parts.push(`malformed ${problems.malformed.join('; ')}`);
-    return parts.join('; ');
-  }
-
-  function firebaseConfigErrorMessage(configError, problems) {
-    if (configError) return configError;
-
-    const allValuesMissing = problems.missing.length === firebaseConfigFields.length;
-    if (allValuesMissing && isGitHubPagesHost()) {
-      return 'Login is unavailable because the GitHub Pages deployment did not publish Firebase config from Actions secrets. Re-run the Pages workflow after confirming the repository secrets are set.';
-    }
-
-    if (allValuesMissing) {
-      return 'Login is unavailable because Firebase config was not loaded. Start the local server so .env can be served as firebase-config.js.';
-    }
-
-    if (problems.missing.length) {
-      return `Login is unavailable because Firebase config is missing: ${problems.missing.join(', ')}.`;
-    }
-
-    return `Login is unavailable because Firebase config values are malformed: ${problems.malformed.join('; ')}.`;
-  }
-
-  function showFirebaseConfigError(message, problems) {
-    const loadingEl = document.getElementById('loading-overlay');
-    if (loadingEl) loadingEl.style.display = 'none';
-
-    const overlay = document.getElementById('auth-overlay');
-    if (overlay) overlay.style.display = 'flex';
-
-    const btn = document.getElementById('google-signin-btn');
-    if (btn) btn.disabled = true;
-
-    const err = document.getElementById('auth-error');
-    if (err) {
-      err.textContent = message;
-      err.style.display = '';
-    }
-
-    console.error('Firebase config missing or invalid:', {
-      source: window.NOTAS_FIREBASE_CONFIG_SOURCE || 'missing',
-      missing: problems.missing,
-      malformed: problems.malformed,
-      unresolvedPlaceholders: problems.placeholders
-    });
-  }
-
-  async function initializeFirebaseServices(config) {
-    const app = initializeApp(config);
-    const authInstance = getAuth(app);
-    const firestore = getFirestore(app);
-
-    try {
-      await setPersistence(authInstance, browserLocalPersistence);
-    } catch (err) {
-      console.warn('Firebase auth persistence unavailable; continuing with default persistence:', err);
-    }
-
-    if (hasFirebaseConfigValue(config.measurementId) && location.protocol === 'https:') {
-      isAnalyticsSupported()
-        .then(supported => { if (supported) getAnalytics(app); })
-        .catch(err => console.warn('Firebase analytics unavailable:', err));
-    }
-
-    return { auth: authInstance, fsDb: firestore };
-  }
-
-  const firebaseConfigLoadError = typeof window.NOTAS_FIREBASE_CONFIG_ERROR === 'string'
-    ? window.NOTAS_FIREBASE_CONFIG_ERROR
-    : '';
-  const firebaseConfig = normalizeFirebaseConfig(readPublishedFirebaseConfig());
-  const firebaseConfigProblems = findFirebaseConfigProblems(firebaseConfig);
-
-  if (firebaseConfigLoadError || firebaseConfigProblems.missing.length || firebaseConfigProblems.malformed.length) {
-    const message = firebaseConfigErrorMessage(firebaseConfigLoadError, firebaseConfigProblems);
-    showFirebaseConfigError(message, firebaseConfigProblems);
-    throw new Error(`Firebase config unavailable: ${formatFirebaseConfigProblems(firebaseConfigProblems) || firebaseConfigLoadError}`);
-  }
-
-  const { auth, fsDb } = await initializeFirebaseServices(firebaseConfig);
-  const googleProvider = new GoogleAuthProvider();
-  googleProvider.addScope('email');
-  googleProvider.addScope('profile');
-  googleProvider.setCustomParameters({ prompt: 'select_account' });
+  const fbApp = initializeApp(firebaseConfig);
+  getAnalytics(fbApp);
+  const auth  = getAuth(fbApp);
+  const fsDb  = getFirestore(fbApp);
 
   let notes         = {};
   let folders       = {};
@@ -1112,63 +940,6 @@
   }
 
   /* Auth */
-  let signInPending = false;
-
-  function setGoogleSignInBusy(isBusy, label = 'Continue with Google') {
-    const btn = document.getElementById('google-signin-btn');
-    const labelEl = document.getElementById('google-signin-label');
-    if (btn) btn.disabled = isBusy;
-    if (labelEl) labelEl.textContent = label;
-  }
-
-  function showAuthError(message) {
-    const err = document.getElementById('auth-error');
-    if (!err) return;
-    err.textContent = message;
-    err.style.display = message ? '' : 'none';
-  }
-
-  function authErrorMessage(error) {
-    const code = error?.code || '';
-    const host = location.hostname || 'this domain';
-    const messages = {
-      'auth/popup-closed-by-user': 'Google sign-in was closed before it completed.',
-      'auth/cancelled-popup-request': 'A Google sign-in window is already open.',
-      'auth/popup-blocked': 'The browser blocked the Google sign-in window.',
-      'auth/operation-not-supported-in-this-environment': 'This browser cannot open Google sign-in in a popup.',
-      'auth/unauthorized-domain': `Firebase Authentication is not authorized for ${host}.`,
-      'auth/operation-not-allowed': 'Google sign-in is not enabled for this Firebase project.',
-      'auth/network-request-failed': 'Network error while contacting Firebase. Check your connection and try again.',
-      'auth/invalid-api-key': 'Firebase rejected FIREBASE_API_KEY.',
-      'auth/configuration-not-found': 'Firebase Authentication is not configured for this project.'
-    };
-    return messages[code] || error?.message || 'Could not start Google sign-in. Try again.';
-  }
-
-  function shouldPreferRedirectSignIn() {
-    return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
-      window.matchMedia?.('(pointer: coarse)').matches === true;
-  }
-
-  function shouldFallbackToRedirect(error) {
-    return [
-      'auth/popup-blocked',
-      'auth/operation-not-supported-in-this-environment'
-    ].includes(error?.code);
-  }
-
-  async function startGoogleRedirectSignIn() {
-    setGoogleSignInBusy(true, 'Opening Google...');
-    await signInWithRedirect(auth, googleProvider);
-  }
-
-  getRedirectResult(auth).catch(error => {
-    console.error('Google redirect sign-in failed:', error);
-    signInPending = false;
-    setGoogleSignInBusy(false);
-    showAuthError(authErrorMessage(error));
-  });
-
   onAuthStateChanged(auth, async user => {
     const loadingEl = document.getElementById('loading-overlay');
     if (loadingEl) { loadingEl.style.opacity = '0'; setTimeout(() => { loadingEl.style.display = 'none'; }, 300); }
@@ -1190,8 +961,8 @@
       if (_sharedFolderId) importSharedFolder(_sharedFolderId);
     } else {
       overlay.style.display = 'flex';
-      signInPending = false;
-      setGoogleSignInBusy(false);
+      const signInBtn = document.getElementById('google-signin-btn');
+      if (signInBtn) signInBtn.disabled = false;
       const av = document.getElementById('user-avatar');
       av.style.display = 'none';
       const signoutRow = document.getElementById('signout-row');
@@ -1209,37 +980,15 @@
   });
 
   async function signInWithGoogle() {
-    if (signInPending) return;
-
-    signInPending = true;
-    showAuthError('');
-    setGoogleSignInBusy(true, 'Opening Google...');
-
+    const btn = document.getElementById('google-signin-btn');
+    const err = document.getElementById('auth-error');
+    btn.disabled = true; err.style.display = 'none';
     try {
-      if (shouldPreferRedirectSignIn()) {
-        await startGoogleRedirectSignIn();
-        return;
-      }
-
-      await signInWithPopup(auth, googleProvider);
+      await signInWithPopup(auth, new GoogleAuthProvider());
     } catch (e) {
-      console.error('Google sign-in failed:', e);
-
-      if (shouldFallbackToRedirect(e)) {
-        try {
-          showAuthError('Opening Google sign-in in this tab...');
-          await startGoogleRedirectSignIn();
-          return;
-        } catch (redirectError) {
-          console.error('Google redirect sign-in failed:', redirectError);
-          showAuthError(authErrorMessage(redirectError));
-        }
-      } else {
-        showAuthError(authErrorMessage(e));
-      }
-
-      signInPending = false;
-      setGoogleSignInBusy(false);
+      console.error('signInWithPopup:', e);
+      err.textContent = e.message || e.code;
+      err.style.display = ''; btn.disabled = false;
     }
   }
 

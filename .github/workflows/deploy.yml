@@ -25,11 +25,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
       - name: Build Pages artifact
         env:
           FIREBASE_API_KEY: ${{ secrets.FIREBASE_API_KEY }}
@@ -40,17 +35,45 @@ jobs:
           FIREBASE_APP_ID: ${{ secrets.FIREBASE_APP_ID }}
           FIREBASE_MEASUREMENT_ID: ${{ secrets.FIREBASE_MEASUREMENT_ID }}
         run: |
+          required=(
+            FIREBASE_API_KEY
+            FIREBASE_AUTH_DOMAIN
+            FIREBASE_PROJECT_ID
+            FIREBASE_STORAGE_BUCKET
+            FIREBASE_MESSAGING_SENDER_ID
+            FIREBASE_APP_ID
+            FIREBASE_MEASUREMENT_ID
+          )
+
+          for name in "${required[@]}"; do
+            if [ -z "${!name}" ]; then
+              echo "::error::$name is not set"
+              exit 1
+            fi
+          done
+
           mkdir -p dist
           cp index.html icon.png dist/
           touch dist/.nojekyll
-          node scripts/firebase-config.mjs --out=dist/firebase-config.js --source=github-actions
+
+          {
+            echo "window.__env = {"
+            echo "  FIREBASE_API_KEY:             '${FIREBASE_API_KEY}',"
+            echo "  FIREBASE_AUTH_DOMAIN:         '${FIREBASE_AUTH_DOMAIN}',"
+            echo "  FIREBASE_PROJECT_ID:          '${FIREBASE_PROJECT_ID}',"
+            echo "  FIREBASE_STORAGE_BUCKET:      '${FIREBASE_STORAGE_BUCKET}',"
+            echo "  FIREBASE_MESSAGING_SENDER_ID: '${FIREBASE_MESSAGING_SENDER_ID}',"
+            echo "  FIREBASE_APP_ID:              '${FIREBASE_APP_ID}',"
+            echo "  FIREBASE_MEASUREMENT_ID:      '${FIREBASE_MEASUREMENT_ID}'"
+            echo "};"
+          } > dist/firebase-config.local.js
 
       - name: Verify Pages artifact
         run: |
           test -s dist/index.html
           test -s dist/icon.png
-          test -s dist/firebase-config.js
-          ! grep -R '"__FIREBASE_[A-Z_]*__"' dist
+          test -s dist/firebase-config.local.js
+          ! grep -E "__FIREBASE_[A-Z_]+__" dist/firebase-config.local.js
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
