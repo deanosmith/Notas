@@ -38,17 +38,21 @@ jobs:
           node <<'NODE'
           const fs = require('fs');
 
-          const secretNames = [
+          const requiredSecretNames = [
             'FIREBASE_API_KEY',
             'FIREBASE_AUTH_DOMAIN',
             'FIREBASE_PROJECT_ID',
+            'FIREBASE_APP_ID'
+          ];
+
+          const optionalSecretNames = [
             'FIREBASE_STORAGE_BUCKET',
             'FIREBASE_MESSAGING_SENDER_ID',
-            'FIREBASE_APP_ID',
             'FIREBASE_MEASUREMENT_ID'
           ];
 
-          const missing = secretNames.filter(name => !process.env[name]);
+          const secretNames = [...requiredSecretNames, ...optionalSecretNames];
+          const missing = requiredSecretNames.filter(name => !process.env[name]);
           if (missing.length) {
             console.error(`Missing required Firebase secrets: ${missing.join(', ')}`);
             process.exit(1);
@@ -61,7 +65,7 @@ jobs:
               console.error(`Missing Firebase config token in index.html: ${token}`);
               process.exit(1);
             }
-            html = html.replaceAll(token, JSON.stringify(process.env[name]));
+            html = html.replaceAll(token, JSON.stringify(process.env[name] || ''));
           }
 
           fs.writeFileSync('index.html', html);
