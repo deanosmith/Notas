@@ -3,27 +3,18 @@ import { createServer } from 'node:http';
 import { existsSync, readFileSync } from 'node:fs';
 import { extname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+  createFirebaseConfig,
+  describeFirebaseConfigProblems,
+  getFirebaseConfigProblems,
+  parseDotEnv,
+  renderFirebaseConfigErrorScript,
+  renderFirebaseConfigScript
+} from './firebase-config.mjs';
 
 const rootDir = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const envFile = resolve(rootDir, '.env');
 const indexFile = resolve(rootDir, 'index.html');
-
-const firebaseEnvNames = [
-  'FIREBASE_API_KEY',
-  'FIREBASE_AUTH_DOMAIN',
-  'FIREBASE_PROJECT_ID',
-  'FIREBASE_STORAGE_BUCKET',
-  'FIREBASE_MESSAGING_SENDER_ID',
-  'FIREBASE_APP_ID',
-  'FIREBASE_MEASUREMENT_ID'
-];
-
-const requiredFirebaseEnvNames = [
-  'FIREBASE_API_KEY',
-  'FIREBASE_AUTH_DOMAIN',
-  'FIREBASE_PROJECT_ID',
-  'FIREBASE_APP_ID'
-];
 
 const mimeTypes = {
   '.css': 'text/css; charset=utf-8',
@@ -39,30 +30,6 @@ const mimeTypes = {
 
 let lastConfigStatus = '';
 
-function parseEnv(source) {
-  const env = {};
-
-  for (const rawLine of source.split(/\r?\n/)) {
-    let line = rawLine.trim();
-    if (!line || line.startsWith('#')) continue;
-    if (line.startsWith('export ')) line = line.slice('export '.length).trim();
-
-    const separator = line.indexOf('=');
-    if (separator < 1) continue;
-
-    const key = line.slice(0, separator).trim();
-    let value = line.slice(separator + 1).trim();
-
-    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
-      value = value.slice(1, -1);
-    }
-
-    env[key] = value;
-  }
-
-  return env;
-}
-
 function loadLocalEnv() {
   if (!existsSync(envFile)) {
     return {
@@ -72,38 +39,19 @@ function loadLocalEnv() {
   }
 
   return {
-    env: parseEnv(readFileSync(envFile, 'utf8')),
+    env: parseDotEnv(readFileSync(envFile, 'utf8')),
     error: ''
   };
 }
 
-function injectFirebaseConfig(html, env) {
-  let output = html;
-  const missingTokens = [];
-
-  for (const name of firebaseEnvNames) {
-    const token = `"__${name}__"`;
-    if (!output.includes(token)) {
-      missingTokens.push(token);
-      continue;
-    }
-    output = output.replaceAll(token, JSON.stringify(env[name] || ''));
-  }
-
-  if (missingTokens.length) {
-    throw new Error(`index.html is missing Firebase config token(s): ${missingTokens.join(', ')}`);
-  }
-
-  return output;
-}
-
 function reportConfigStatus(env, error) {
-  const missing = requiredFirebaseEnvNames.filter(name => !env[name]);
-  const status = error || (missing.length ? `Missing required Firebase values in .env: ${missing.join(', ')}` : 'Firebase config loaded from .env.');
+  const config = createFirebaseConfig(env);
+  const problems = getFirebaseConfigProblems(config);
+  const status = error || describeFirebaseConfigProblems(problems) || 'Firebase config loaded from .env.';
   if (status === lastConfigStatus) return;
 
   lastConfigStatus = status;
-  if (error || missing.length) console.warn(status);
+  if (error || problems.missing.length || problems.malformed.length) console.warn(status);
   else console.log(status);
 }
 
@@ -122,8 +70,24 @@ function isHiddenPath(pathname) {
 function serveIndex(res) {
   const { env, error } = loadLocalEnv();
   reportConfigStatus(env, error);
-  const html = injectFirebaseConfig(readFileSync(indexFile, 'utf8'), env);
-  send(res, 200, html, mimeTypes['.html']);
+  send(res, 200, readFileSync(indexFile, 'utf8'), mimeTypes['.html']);
+}
+
+function serveFirebaseConfig(res) {
+  const { env, error } = loadLocalEnv();
+  reportConfigStatus(env, error);
+
+  if (error) {
+    send(res, 200, renderFirebaseConfigErrorScript(error, { source: 'local-env' }), mimeTypes['.js']);
+    return;
+  }
+
+  try {
+    const config = createFirebaseConfig(env);
+    send(res, 200, renderFirebaseConfigScript(config, { source: 'local-env' }), mimeTypes['.js']);
+  } catch (configError) {
+    send(res, 200, renderFirebaseConfigErrorScript(configError.message, { source: 'local-env' }), mimeTypes['.js']);
+  }
 }
 
 function serveStatic(pathname, res) {
@@ -158,6 +122,11 @@ const server = createServer((req, res) => {
 
     if (decodedPathname === '/' || decodedPathname === '/index.html') {
       serveIndex(res);
+      return;
+    }
+
+    if (decodedPathname === '/firebase-config.js') {
+      serveFirebaseConfig(res);
       return;
     }
 
