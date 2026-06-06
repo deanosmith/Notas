@@ -25,7 +25,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Generate Firebase config
+      - name: Inject Firebase config
         env:
           FIREBASE_API_KEY: ${{ secrets.FIREBASE_API_KEY }}
           FIREBASE_AUTH_DOMAIN: ${{ secrets.FIREBASE_AUTH_DOMAIN }}
@@ -35,17 +35,37 @@ jobs:
           FIREBASE_APP_ID: ${{ secrets.FIREBASE_APP_ID }}
           FIREBASE_MEASUREMENT_ID: ${{ secrets.FIREBASE_MEASUREMENT_ID }}
         run: |
-          {
-            echo "window.__env = {"
-            echo "  FIREBASE_API_KEY:             '${FIREBASE_API_KEY}',"
-            echo "  FIREBASE_AUTH_DOMAIN:         '${FIREBASE_AUTH_DOMAIN}',"
-            echo "  FIREBASE_PROJECT_ID:          '${FIREBASE_PROJECT_ID}',"
-            echo "  FIREBASE_STORAGE_BUCKET:      '${FIREBASE_STORAGE_BUCKET}',"
-            echo "  FIREBASE_MESSAGING_SENDER_ID: '${FIREBASE_MESSAGING_SENDER_ID}',"
-            echo "  FIREBASE_APP_ID:              '${FIREBASE_APP_ID}',"
-            echo "  FIREBASE_MEASUREMENT_ID:      '${FIREBASE_MEASUREMENT_ID}'"
-            echo "};"
-          } > firebase-config.local.js
+          node <<'NODE'
+          const fs = require('fs');
+
+          const secretNames = [
+            'FIREBASE_API_KEY',
+            'FIREBASE_AUTH_DOMAIN',
+            'FIREBASE_PROJECT_ID',
+            'FIREBASE_STORAGE_BUCKET',
+            'FIREBASE_MESSAGING_SENDER_ID',
+            'FIREBASE_APP_ID',
+            'FIREBASE_MEASUREMENT_ID'
+          ];
+
+          const missing = secretNames.filter(name => !process.env[name]);
+          if (missing.length) {
+            console.error(`Missing required Firebase secrets: ${missing.join(', ')}`);
+            process.exit(1);
+          }
+
+          let html = fs.readFileSync('index.html', 'utf8');
+          for (const name of secretNames) {
+            const token = `"__${name}__"`;
+            if (!html.includes(token)) {
+              console.error(`Missing Firebase config token in index.html: ${token}`);
+              process.exit(1);
+            }
+            html = html.replaceAll(token, JSON.stringify(process.env[name]));
+          }
+
+          fs.writeFileSync('index.html', html);
+          NODE
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
