@@ -1,0 +1,7 @@
+{
+  "private": true,
+  "scripts": {
+    "dev": "node scripts/dev-config.mjs && node scripts/dev-server.mjs",
+    "dev:config": "node scripts/dev-config.mjs"
+  }
+}
