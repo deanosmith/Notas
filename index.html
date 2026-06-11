@@ -215,7 +215,7 @@
       align-items: center; justify-content: space-between;
       padding: 0 14px; padding-top: env(safe-area-inset-top, 0); z-index: 100;
     }
-    .mob-logo { position: absolute; left: 50%; transform: translateX(-50%); display: flex; align-items: center; justify-content: center; gap: 7px; width: 148px; height: 38px; overflow: hidden; }
+    .mob-logo { position: absolute; left: 50%; transform: translateX(-50%); display: flex; align-items: center; justify-content: center; gap: 7px; width: 148px; height: 38px; overflow: hidden; border: 0; background: none; color: inherit; cursor: pointer; padding: 0; }
     .mob-btn { width: 38px; height: 38px; border-radius: 10px; border: none; background: none; color: var(--text2); font-size: 18px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background .12s; -webkit-tap-highlight-color: transparent; }
     .mob-btn:active { background: var(--surface2); }
     .mob-btn.accent { color: var(--accent); }
@@ -248,7 +248,8 @@
       transition: width .22s cubic-bezier(.4,0,.2,1), min-width .22s cubic-bezier(.4,0,.2,1);
     }
     .sidebar-header { padding: 20px 16px 10px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-shrink: 0; }
-    .app-logo { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; height: 36px; }
+    .app-logo { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; height: 36px; border: 0; background: none; color: inherit; cursor: pointer; padding: 0; text-align: left; border-radius: var(--radius-xs); }
+    .app-logo:focus-visible, .mob-logo:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
     .app-logo .brand-icon { width: 30px; height: 30px; flex-shrink: 0; }
     .app-logo .brand-wordmark { width: clamp(72px, calc(100% - 38px), 104px); height: 30px; }
     #sidebar.logo-compact .app-logo { flex: 0 0 30px; }
@@ -288,6 +289,10 @@
     .move-folder-item.is-current { color: var(--muted); pointer-events: none; font-style: italic; }
     .move-folder-item .mfi { color: var(--accent); opacity: .8; font-size: 12px; width: 14px; flex-shrink: 0; }
     .modal-note-info { font-size: 12.5px; color: var(--muted); margin-bottom: 16px; padding: 8px 12px; background: rgba(255,255,255,.04); border-radius: var(--radius-xs); border: 1px solid var(--glass-border); white-space: normal; overflow: hidden; text-overflow: ellipsis; }
+    .delete-message { margin-bottom: 18px; padding: 12px 14px; border-radius: var(--radius-xs); border: 1px solid rgba(255,69,58,.36); background: linear-gradient(180deg, rgba(255,69,58,.16), rgba(255,69,58,.07)); color: var(--text); }
+    .delete-message.remove { border-color: var(--glass-border); background: linear-gradient(180deg, rgba(255,255,255,.07), rgba(255,255,255,.025)); }
+    .delete-target { display: block; margin-bottom: 6px; color: var(--text); font-size: 14px; font-weight: 800; line-height: 1.3; word-break: break-word; }
+    .delete-copy { color: var(--text); font-size: 13px; font-weight: 650; line-height: 1.45; }
 
     /* Folder items */
     .folder-item { margin-bottom: 2px; }
@@ -295,8 +300,10 @@
     .folder-row:hover { background: linear-gradient(180deg, rgba(255,255,255,.1), rgba(255,255,255,.04)); border-color: rgba(255,255,255,.08); }
     .folder-chevron { color: var(--muted); font-size: 9px; width: 10px; flex-shrink: 0; transition: transform .16s; }
     .folder-chevron.expanded { transform: rotate(90deg); }
+    .folder-icon { color: var(--folder-color, var(--accent)); opacity: .9; }
     .folder-shared-badge { color: var(--accent); font-size: 10px; flex-shrink: 0; opacity: .7; }
     .note-shared-badge { color: var(--accent); font-size: 10px; flex-shrink: 0; opacity: .65; margin-right: 2px; }
+    .note-pin-badge { color: var(--accent); font-size: 10px; flex-shrink: 0; opacity: .92; margin-right: 2px; }
     .item-action-btn { opacity: 0; border: none; background: none; color: var(--muted); font-size: 11px; cursor: pointer; padding: 4px 5px; border-radius: 6px; flex-shrink: 0; transition: opacity .12s, color .12s, background .12s; }
     .folder-row:hover .item-action-btn { opacity: 1; }
     .item-action-btn:hover { color: var(--text); background: rgba(var(--orb-r),var(--orb-g),var(--orb-b),.14); }
@@ -306,13 +313,22 @@
     .folder-note-item { border-left: 2px solid var(--border); border-radius: var(--radius-sm) !important; margin-left: 2px; }
     .folder-note-item:hover { border-left-color: var(--accent); }
     .folder-note-item.active { border-left-color: var(--accent) !important; }
+    .pinned-notes-section { margin-bottom: 8px; }
 
-    .sidebar-bottom { padding: 12px; border-top: 1px solid var(--border); display: flex; gap: 8px; flex-shrink: 0; }
-    .bottom-btn { flex: 1; padding: 8px 10px; background: linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.01)); border: 1px solid var(--glass-border); border-radius: var(--radius-xs); color: var(--muted); font-size: 12px; font-family: var(--font); font-weight: 500; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 5px; transition: color .12s, border-color .12s, background .12s, transform .12s; -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); }
+    .sidebar-bottom { padding: 12px; border-top: 1px solid var(--border); display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
+    .bottom-btn { height: 34px; padding: 8px 10px; background: linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.01)); border: 1px solid var(--glass-border); border-radius: var(--radius-xs); color: var(--muted); font-size: 12px; font-family: var(--font); font-weight: 500; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 5px; transition: color .12s, border-color .12s, background .12s, transform .12s; -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); }
+    .bottom-btn.settings-main { flex: 1; justify-content: flex-start; min-width: 0; }
+    .bottom-btn.icon-only { position: relative; flex: 0 0 34px; width: 34px; padding: 0; }
+    .bottom-btn.icon-only i { font-size: 13px; }
     .bottom-btn:hover { color: var(--text); border-color: rgba(var(--orb-r), var(--orb-g), var(--orb-b), .34); background: linear-gradient(135deg, rgba(var(--orb-r), var(--orb-g), var(--orb-b), .14), rgba(255,255,255,.02)); transform: translateY(-1px); }
     .notification-btn { position: relative; }
     .notification-badge { position: absolute; top: -4px; right: -4px; min-width: 15px; height: 15px; padding: 0 4px; border-radius: 999px; background: var(--danger); color: #fff; font-size: 9px; font-weight: 700; line-height: 15px; text-align: center; box-shadow: 0 0 0 2px var(--surface); }
     .notification-badge[hidden] { display: none; }
+    .alarm-row { cursor: pointer; align-items: flex-start; }
+    .alarm-row.due { border-color: rgba(255,159,10,.36); background: linear-gradient(180deg, rgba(255,159,10,.13), rgba(255,255,255,.02)); }
+    .alarm-icon { width: 26px; height: 26px; border-radius: 50%; flex-shrink: 0; background: rgba(var(--orb-r),var(--orb-g),var(--orb-b),.14); color: var(--accent); display: flex; align-items: center; justify-content: center; font-size: 11px; }
+    .alarm-text { font-size: 12.5px; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .alarm-note-title { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
     /* Main */
     #main { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
@@ -405,6 +421,9 @@
     .editor ul.checklist ul.checklist { margin-left: 22px; }
     .editor a  { color: var(--text); text-decoration: none; background: linear-gradient(180deg, rgba(var(--orb-r), var(--orb-g), var(--orb-b), .22), rgba(var(--orb-r), var(--orb-g), var(--orb-b), .08)); padding: 1px 6px; border-radius: 999px; border: 1px solid rgba(var(--orb-r), var(--orb-g), var(--orb-b), .18); box-shadow: inset 0 1px 0 rgba(255,255,255,.08); cursor: pointer; }
     .editor a:hover { background: linear-gradient(180deg, rgba(var(--orb-r), var(--orb-g), var(--orb-b), .3), rgba(var(--orb-r), var(--orb-g), var(--orb-b), .14)); }
+    .editor .note-alarm { display: inline; color: var(--text); background: linear-gradient(180deg, rgba(255,159,10,.26), rgba(255,159,10,.1)); border: 1px solid rgba(255,159,10,.3); border-radius: 999px; padding: 1px 7px; box-shadow: inset 0 1px 0 rgba(255,255,255,.08); }
+    .editor .note-alarm::before { content: '\f017'; font-family: 'Font Awesome 6 Free'; font-weight: 900; font-size: .78em; margin-right: 5px; opacity: .82; }
+    .editor .note-alarm.alarm-due { background: linear-gradient(180deg, rgba(255,69,58,.28), rgba(255,159,10,.12)); border-color: rgba(255,69,58,.36); }
     .editor .mention { display: inline-flex; align-items: center; max-width: 100%; color: var(--text); background: linear-gradient(180deg, rgba(var(--orb-r), var(--orb-g), var(--orb-b), .24), rgba(var(--orb-r), var(--orb-g), var(--orb-b), .1)); border: 1px solid rgba(var(--orb-r), var(--orb-g), var(--orb-b), .22); border-radius: 999px; padding: 0 7px; font-weight: 600; white-space: nowrap; }
     .editor strong { font-weight: 650; color: var(--text); }
     .editor em { font-style: italic; }
@@ -456,8 +475,18 @@
     .profile-name { font-size: 12.5px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .profile-sub { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .profile-empty { padding: 10px 2px; color: var(--muted); font-size: 12px; line-height: 1.45; }
+    .profile-approval-card { display: flex; align-items: center; gap: 10px; min-width: 0; margin-bottom: 12px; padding: 10px 12px; border: 1px solid var(--glass-border); border-radius: var(--radius-xs); background: linear-gradient(180deg, rgba(var(--orb-r),var(--orb-g),var(--orb-b),.12), rgba(255,255,255,.02)); }
+    .profile-approval-note { margin-bottom: 18px; color: var(--text); font-size: 13px; font-weight: 650; line-height: 1.45; }
     .share-profile-panel { margin: 0 0 18px; padding-top: 2px; }
     .share-section-title { display: flex; align-items: center; gap: 7px; color: var(--text2); font-size: 12.5px; font-weight: 650; margin-bottom: 8px; }
+    .share-link-panel { margin-bottom: 18px; padding: 10px; border: 1px solid var(--glass-border); border-radius: var(--radius-sm); background: linear-gradient(180deg, rgba(255,255,255,.045), rgba(255,255,255,.015)); }
+    .share-link-header { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-bottom: 10px; }
+    .share-link-title { display: flex; align-items: center; gap: 8px; color: var(--text); font-size: 13px; font-weight: 700; }
+    .share-link-sub { color: var(--muted); font-size: 11px; margin-top: 1px; }
+    .share-link-actions { display: flex; gap: 8px; }
+    .share-link-panel.link-off #share-link-input { opacity: .56; }
+    .share-link-panel.link-off .share-link-actions .modal-btn { opacity: .55; }
+    .share-link-panel .modal-input { margin-bottom: 8px; font-size: 12px; cursor: text; }
     .notifications-list { display: flex; flex-direction: column; gap: 7px; max-height: min(420px, 54vh); overflow-y: auto; margin-bottom: 16px; }
     .notification-row { align-items: flex-start; cursor: pointer; }
     .notification-row.unread { border-color: rgba(var(--orb-r), var(--orb-g), var(--orb-b), .32); background: linear-gradient(180deg, rgba(var(--orb-r),var(--orb-g),var(--orb-b),.13), rgba(255,255,255,.02)); }
@@ -535,6 +564,22 @@
     .color-field input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(var(--orb-r),var(--orb-g),var(--orb-b),.18); }
     body.light-mode .color-popover { background: #ffffff; border-color: var(--border); }
     body.light-mode .color-popover::before { background: #ffffff; border-color: var(--border); }
+    .alarm-target-card { margin-bottom: 14px; padding: 11px 12px; border: 1px solid var(--glass-border); border-radius: var(--radius-sm); background: linear-gradient(180deg, rgba(var(--orb-r),var(--orb-g),var(--orb-b),.12), rgba(255,255,255,.02)); }
+    .alarm-target-label { display: block; color: var(--muted); font-size: 10.5px; font-weight: 750; letter-spacing: .04em; text-transform: uppercase; margin-bottom: 4px; }
+    .alarm-target-text { display: block; color: var(--text); font-size: 13px; font-weight: 700; line-height: 1.35; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .alarm-picker-grid { display: grid; gap: 12px; margin-bottom: 18px; }
+    .alarm-presets { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
+    .alarm-preset { min-width: 0; padding: 8px 7px; border-radius: var(--radius-xs); border: 1px solid var(--glass-border); background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02)); color: var(--text2); font: 650 12px var(--font); cursor: pointer; }
+    .alarm-preset:hover,
+    .alarm-preset.active { color: var(--accent-text); background: linear-gradient(135deg, var(--accent-h), var(--accent)); border-color: rgba(var(--orb-r),var(--orb-g),var(--orb-b),.26); }
+    .alarm-fields { display: grid; grid-template-columns: 1fr 138px; gap: 10px; }
+    .alarm-field { display: flex; flex-direction: column; gap: 6px; color: var(--text2); font-size: 11px; font-weight: 700; }
+    .alarm-field .modal-input { margin: 0; }
+    .alarm-summary { min-height: 18px; color: var(--muted); font-size: 12px; margin: -4px 0 16px; }
+    @media (max-width: 480px) {
+      .alarm-fields { grid-template-columns: 1fr; }
+      .alarm-presets { grid-template-columns: 1fr; }
+    }
 
     /* Loading overlay */
     #loading-overlay {
@@ -584,7 +629,6 @@
     #sidebar.minimized #new-folder-btn,
     #sidebar.minimized #new-note-btn,
     #sidebar.minimized #notifications-btn,
-    #sidebar.minimized #sidebar-minimize-btn,
     #sidebar.minimized .sidebar-search,
     #sidebar.minimized .sidebar-list,
     #sidebar.minimized .sidebar-bottom { display: none !important; }
@@ -623,11 +667,18 @@
     /* Floating context menu */
     #ctx-menu { position: fixed; z-index: 500; background: linear-gradient(180deg, var(--surface-glass-strong), rgba(14,22,32,.96)); border: 1px solid var(--glass-border); border-radius: var(--radius-sm); box-shadow: var(--shadow-lg); -webkit-backdrop-filter: blur(24px) saturate(140%); backdrop-filter: blur(24px) saturate(140%); min-width: 178px; padding: 5px; opacity: 0; pointer-events: none; transform: scale(.95) translateY(-4px); transition: opacity .14s, transform .14s cubic-bezier(.34,1.4,.64,1); }
     #ctx-menu.open { opacity: 1; pointer-events: all; transform: scale(1) translateY(0); }
-    .ctx-row { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: var(--radius-xs); cursor: pointer; font-size: 13px; color: var(--text2); transition: background .1s, color .1s; white-space: nowrap; -webkit-tap-highlight-color: transparent; }
+    .ctx-row { position: relative; display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: var(--radius-xs); cursor: pointer; font-size: 13px; color: var(--text2); transition: background .1s, color .1s; white-space: nowrap; -webkit-tap-highlight-color: transparent; }
     .ctx-row:hover { background: rgba(var(--orb-r),var(--orb-g),var(--orb-b),.12); color: var(--text); }
     .ctx-row.danger { color: var(--danger); }
     .ctx-row.danger:hover { background: rgba(255,69,58,.12); }
     .ctx-row i { width: 14px; text-align: center; font-size: 12px; flex-shrink: 0; opacity: .8; }
+    .ctx-row span:not(.ctx-color-dot):not(.ctx-sub-arrow) { flex: 1; }
+    .ctx-row.has-submenu { padding-right: 8px; }
+    .ctx-sub-arrow { color: var(--muted); font-size: 10px; margin-left: 8px; }
+    .ctx-submenu { display: none; position: absolute; top: -5px; left: calc(100% + 5px); min-width: 170px; padding: 5px; border: 1px solid var(--glass-border); border-radius: var(--radius-sm); background: linear-gradient(180deg, var(--surface-glass-strong), rgba(14,22,32,.98)); box-shadow: var(--shadow-lg); z-index: 501; }
+    .ctx-row.has-submenu:hover > .ctx-submenu,
+    .ctx-row.submenu-open > .ctx-submenu { display: block; }
+    .ctx-color-dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; border: 1px solid rgba(255,255,255,.4); box-shadow: 0 0 0 1px rgba(0,0,0,.24); }
     .ctx-sep { height: 1px; background: var(--border); margin: 4px 2px; }
   </style>
 </head>
@@ -637,10 +688,10 @@
 
   <header id="mob-header">
     <button class="mob-btn" id="drawer-btn"><i class="fa-solid fa-bars"></i></button>
-    <span class="mob-logo">
+    <button class="mob-logo" id="mob-logo-btn" type="button" title="Open Sidebar" aria-label="Open Sidebar">
       <img class="brand-icon" src="notas-icon.png" alt="" />
       <img class="brand-wordmark" src="notas.png" alt="Notas" />
-    </span>
+    </button>
     <button class="mob-btn accent" id="mob-new-btn"><i class="fa-solid fa-plus"></i></button>
   </header>
 
@@ -649,18 +700,13 @@
   <div id="app">
     <aside id="sidebar">
       <div class="sidebar-header">
-        <div class="app-logo">
+        <button class="app-logo" id="sidebar-logo-btn" type="button" title="Collapse Sidebar" aria-label="Collapse Sidebar">
           <img class="brand-icon" src="notas-icon.png" alt="" />
           <img class="brand-wordmark" src="notas.png" alt="Notas" />
-        </div>
+        </button>
         <div style="display:flex;gap:6px;align-items:center;">
-          <button class="new-note-btn notification-btn" id="notifications-btn" title="Notifications" aria-label="Notifications">
-            <i class="fa-solid fa-bell"></i>
-            <span class="notification-badge" id="notification-badge" hidden>0</span>
-          </button>
           <button class="new-note-btn" id="new-note-btn" title="New Note"><i class="fa-solid fa-plus"></i></button>
           <button class="new-note-btn" id="new-folder-btn" title="New Folder"><i class="fa-solid fa-folder-plus"></i></button>
-          <button class="new-note-btn" id="sidebar-minimize-btn" title="Collapse Sidebar" style="opacity:.65;"><i class="fa-solid fa-angles-left"></i></button>
         </div>
       </div>
       <div class="sidebar-search">
@@ -668,9 +714,17 @@
       </div>
       <div class="sidebar-list" id="sidebar-list"></div>
       <div class="sidebar-bottom">
-        <button class="bottom-btn" id="profile-settings-btn" style="gap:8px;">
+        <button class="bottom-btn settings-main" id="profile-settings-btn" title="Settings" aria-label="Settings">
           <img id="user-avatar" src="" alt="" referrerpolicy="no-referrer" style="display:none;width:22px;height:22px;border-radius:50%;object-fit:cover;flex-shrink:0;" />
           <i class="fa-solid fa-gear"></i>
+        </button>
+        <button class="bottom-btn icon-only notification-btn" id="notifications-btn" title="Notifications" aria-label="Notifications">
+          <i class="fa-solid fa-bell"></i>
+          <span class="notification-badge" id="notification-badge" hidden>0</span>
+        </button>
+        <button class="bottom-btn icon-only" id="alarm-btn" title="Alarms" aria-label="Alarms">
+          <i class="fa-solid fa-clock"></i>
+          <span class="notification-badge" id="alarm-badge" hidden>0</span>
         </button>
       </div>
     </aside>
@@ -708,6 +762,10 @@
             <div class="toolbar-group">
               <button class="tb-btn" data-action="indentLeft"  title="Outdent"><i class="fa-solid fa-outdent"></i></button>
               <button class="tb-btn" data-action="indentRight" title="Indent"><i class="fa-solid fa-indent"></i></button>
+            </div>
+            <div class="toolbar-sep"></div>
+            <div class="toolbar-group">
+              <button class="tb-btn" data-action="alarm" title="Set Alarm"><i class="fa-solid fa-clock"></i></button>
             </div>
           </div>
         </div>
@@ -792,7 +850,7 @@
         </div>
         <div class="settings-row">
           <span class="settings-label"><i class="fa-solid fa-tag"></i>Version</span>
-          <span style="font-size:12px;color:var(--muted);">0.3</span>
+          <span style="font-size:12px;color:var(--muted);">1.1</span>
         </div>
         <div class="settings-row" id="signout-row" style="display:none;">
           <span class="settings-label"><i class="fa-solid fa-arrow-right-from-bracket"></i>Sign Out</span>
@@ -801,6 +859,18 @@
       </div>
       <div class="modal-actions">
         <button class="modal-btn primary" id="settings-close">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="profile-link-modal">
+    <div class="modal">
+      <div class="modal-title"><i class="fa-solid fa-user-check" style="margin-right:8px;opacity:.7;"></i>Link Profile?</div>
+      <div class="profile-approval-card" id="profile-link-preview"></div>
+      <p class="profile-approval-note">Approve to add this profile for direct shares and @mentions. Deny cancels the link.</p>
+      <div class="modal-actions">
+        <button class="modal-btn" id="profile-link-deny" type="button">Deny</button>
+        <button class="modal-btn primary" id="profile-link-approve" type="button">Approve</button>
       </div>
     </div>
   </div>
@@ -829,14 +899,24 @@
   <div class="modal-overlay" id="share-modal">
     <div class="modal">
       <div class="modal-title"><i class="fa-solid fa-arrow-up-from-bracket" style="margin-right:8px;opacity:.7;"></i><span id="share-modal-title">Share Note</span></div>
-      <div style="margin-bottom:16px;">
-        <input class="modal-input" id="share-link-input" type="text" readonly style="margin-bottom:8px;font-size:12px;cursor:text;" />
-        <div style="display:flex;gap:8px;">
+      <div class="share-link-panel" id="share-link-panel">
+        <div class="share-link-header">
+          <div>
+            <div class="share-link-title"><i class="fa-solid fa-link"></i><span>Link Sharing</span></div>
+            <div class="share-link-sub" id="share-link-status">Off</div>
+          </div>
+          <label class="toggle" title="Link Sharing">
+            <input id="share-link-toggle" type="checkbox" aria-label="Link Sharing" />
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <input class="modal-input" id="share-link-input" type="text" readonly />
+        <div class="share-link-actions">
           <button class="modal-btn primary" id="copy-link-btn" style="flex:1;justify-content:center;display:flex;gap:6px;"><i class="fa-solid fa-copy"></i> Copy Link</button>
           <button class="modal-btn primary" id="native-share-btn" style="flex:1;justify-content:center;display:none;gap:6px;"><i class="fa-solid fa-share-nodes"></i> Share</button>
         </div>
       </div>
-      <p style="font-size:12px;color:var(--muted);margin-bottom:20px;line-height:1.5;" id="share-modal-desc">Anyone with this link who signs in can view this note.</p>
+      <p style="font-size:12px;color:var(--muted);margin-bottom:20px;line-height:1.5;" id="share-modal-desc">Linked profiles receive this note directly.</p>
       <div class="share-profile-panel" id="share-profile-panel">
         <div class="share-section-title"><i class="fa-solid fa-user-group"></i><span>Share To Linked Profiles</span></div>
         <div class="profile-list" id="share-profiles-list"></div>
@@ -855,6 +935,48 @@
       <div class="modal-actions">
         <button class="modal-btn" id="notifications-mark-read">Mark All Read</button>
         <button class="modal-btn primary" id="notifications-close">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="alarms-modal">
+    <div class="modal wide">
+      <div class="modal-title"><i class="fa-solid fa-clock" style="margin-right:8px;opacity:.7;"></i>Alarms</div>
+      <div class="notifications-list" id="alarms-list"></div>
+      <div class="modal-actions">
+        <button class="modal-btn primary" id="alarms-close">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="note-alarm-modal">
+    <div class="modal">
+      <div class="modal-title"><i class="fa-solid fa-clock" style="margin-right:8px;opacity:.7;"></i>Set Alarm</div>
+      <div class="alarm-target-card">
+        <span class="alarm-target-label">Alarm Text</span>
+        <span class="alarm-target-text" id="alarm-target-text">New alarm text</span>
+      </div>
+      <div class="alarm-picker-grid">
+        <div class="alarm-presets" id="alarm-date-presets">
+          <button class="alarm-preset" type="button" data-alarm-date-preset="today">Today</button>
+          <button class="alarm-preset" type="button" data-alarm-date-preset="tomorrow">Tomorrow</button>
+          <button class="alarm-preset" type="button" data-alarm-date-preset="next-week">Next Week</button>
+        </div>
+        <div class="alarm-fields">
+          <label class="alarm-field">Date<input class="modal-input" id="alarm-date-input" type="date" aria-label="Alarm date" /></label>
+          <label class="alarm-field">Time<input class="modal-input" id="alarm-time-input" type="time" aria-label="Alarm time" /></label>
+        </div>
+        <div class="alarm-presets" id="alarm-time-presets">
+          <button class="alarm-preset" type="button" data-alarm-time-preset="09:00">Morning</button>
+          <button class="alarm-preset" type="button" data-alarm-time-preset="13:00">Afternoon</button>
+          <button class="alarm-preset" type="button" data-alarm-time-preset="18:00">Evening</button>
+        </div>
+      </div>
+      <div class="alarm-summary" id="alarm-summary"></div>
+      <div class="modal-actions">
+        <button class="modal-btn" id="alarm-clear" type="button">Clear</button>
+        <button class="modal-btn" id="alarm-cancel" type="button">Cancel</button>
+        <button class="modal-btn primary" id="alarm-save" type="button">Save</button>
       </div>
     </div>
   </div>
@@ -884,7 +1006,7 @@
   <div class="modal-overlay" id="delete-modal">
     <div class="modal">
       <div class="modal-title" id="delete-modal-title">Delete Note?</div>
-      <p class="modal-note-info" id="delete-modal-body"></p>
+      <div class="delete-message" id="delete-modal-body"></div>
       <div class="modal-actions">
         <button class="modal-btn" id="delete-modal-cancel">Cancel</button>
         <button class="modal-btn danger" id="delete-modal-confirm"><i class="fa-solid fa-trash" style="margin-right:6px;"></i>Delete</button>
@@ -905,6 +1027,7 @@
 
   <div id="ctx-menu"></div>
   <div id="mention-popover" class="mention-popover" hidden></div>
+  <input id="folder-color-input" type="color" hidden />
 
   <div class="modal-overlay" id="link-modal">
     <div class="modal">
@@ -956,6 +1079,7 @@
   let currentProfile = null;
   let linkedProfiles = {};
   let readNotifications = {};
+  let noteAlarms = {};
   let profileShareNotifications = {};
   let notificationsUnavailable = false;
   let saveTimer     = null;
@@ -968,6 +1092,10 @@
   let sharedLibraryMeta = {};  // noteId → recipient-owned metadata, e.g. local folder placement
   let _deletePending  = null;
   let _moveNoteId     = null;
+  let _alarmNoteId    = null;
+  let _alarmContext   = null;
+  const FOLDER_ICON_THEME = 'theme';
+  const FOLDER_ICON_GREY = '#8e8e93';
   let _capitalizeNext = false;
   let _draggingNoteId = null;
   let _ctxAnchor      = null;
@@ -976,6 +1104,7 @@
   let _mentionActiveIndex = 0;
   let _mentionSaveTimer = null;
   let _mentionShareResolver = null;
+  let _pendingProfileLink = null;
   let _linkedProfileRefreshTimer = null;
   let _refreshingLinkedProfiles = false;
   let declinedMentionShares = new Set();
@@ -1013,6 +1142,7 @@
     ed.innerHTML = prev;
     _lastUndoSnapshot = prev;
     restoreChecklistState(ed);
+    restoreAlarmMarks(ed);
     refreshEmpty(ed);
     if (syncActiveNoteFromEditor()) scheduleSave();
   }
@@ -1025,6 +1155,7 @@
     ed.innerHTML = next;
     _lastUndoSnapshot = next;
     restoreChecklistState(ed);
+    restoreAlarmMarks(ed);
     refreshEmpty(ed);
     if (syncActiveNoteFromEditor()) scheduleSave();
   }
@@ -1054,8 +1185,11 @@
   function closeTransientSurfaces() {
     [
       'settings-modal',
+      'profile-link-modal',
       'share-modal',
       'notifications-modal',
+      'alarms-modal',
+      'note-alarm-modal',
       'mention-share-modal',
       'modal',
       'folder-modal',
@@ -1066,8 +1200,12 @@
     document.getElementById('color-popover')?.setAttribute('hidden', '');
     closeCtxMenu();
     hideMentionPopover();
+    _pendingProfileLink = null;
+    _alarmNoteId = null;
+    _alarmContext = null;
     document.getElementById('sidebar')?.classList.remove('open');
     document.getElementById('drawer-overlay')?.classList.remove('open');
+    updateMobileSidebarToggleLabel(false);
     if (_mentionShareResolver) {
       const resolve = _mentionShareResolver;
       _mentionShareResolver = null;
@@ -1129,6 +1267,7 @@
       currentProfile = null;
       linkedProfiles = {};
       readNotifications = {};
+      noteAlarms = {};
       profileShareNotifications = {};
       notificationsUnavailable = false;
       declinedMentionShares = new Set();
@@ -1136,6 +1275,7 @@
       showEditorView(false);
       renderSidebar();
       renderNotificationButton();
+      renderAlarmButton();
       renderProfileConnectionUI();
     }
   });
@@ -1173,6 +1313,10 @@
 
   function _notificationStateStorageKey() {
     return 'notas_read_notifications_' + userId;
+  }
+
+  function _noteAlarmsStorageKey() {
+    return 'notas_note_alarms_' + userId;
   }
 
   function _readLinkedProfilesFromLocal() {
@@ -1228,6 +1372,65 @@
     const out = {};
     states.forEach(state => {
       Object.keys(state || {}).forEach(id => { if (state[id]) out[id] = true; });
+    });
+    return out;
+  }
+
+  function normalizeAlarmAt(value) {
+    if (!value) return '';
+    const date = value?.toDate?.() || new Date(value);
+    return date instanceof Date && Number.isFinite(date.getTime()) ? date.toISOString() : '';
+  }
+
+  function _readNoteAlarmsFromLocal() {
+    if (!userId) return {};
+    try {
+      const raw = localStorage.getItem(_noteAlarmsStorageKey());
+      const parsed = raw ? JSON.parse(raw) : {};
+      const out = {};
+      Object.keys(parsed || {}).forEach(id => {
+        const alarmAt = normalizeAlarmAt(parsed[id]);
+        if (alarmAt) out[id] = alarmAt;
+      });
+      return out;
+    } catch (err) {
+      console.error('read note alarms local:', err);
+      return {};
+    }
+  }
+
+  function _writeNoteAlarmsToLocal() {
+    if (!userId) return;
+    try {
+      const keys = Object.keys(noteAlarms).filter(id => normalizeAlarmAt(noteAlarms[id]));
+      if (keys.length) localStorage.setItem(_noteAlarmsStorageKey(), JSON.stringify(keys.reduce((acc, id) => {
+        acc[id] = normalizeAlarmAt(noteAlarms[id]);
+        return acc;
+      }, {})));
+      else localStorage.removeItem(_noteAlarmsStorageKey());
+    } catch (err) {
+      console.error('write note alarms local:', err);
+    }
+  }
+
+  function _readNoteAlarms(data) {
+    const raw = data?.noteAlarms && typeof data.noteAlarms === 'object' ? data.noteAlarms : {};
+    const out = {};
+    Object.keys(raw).forEach(id => {
+      const alarmAt = normalizeAlarmAt(raw[id]);
+      if (alarmAt) out[id] = alarmAt;
+    });
+    return out;
+  }
+
+  function _mergeNoteAlarms(...states) {
+    const out = {};
+    states.forEach(state => {
+      Object.keys(state || {}).forEach(id => {
+        const alarmAt = normalizeAlarmAt(state[id]);
+        if (!alarmAt) return;
+        if (!out[id] || new Date(alarmAt) > new Date(out[id])) out[id] = alarmAt;
+      });
     });
     return out;
   }
@@ -1359,10 +1562,24 @@
       setDoc(_getUserDocRef(), { readNotifications: localOnly }, { merge: true })
         .catch(err => console.error('sync local notification reads:', err));
     }
+    const remoteNoteAlarms = _readNoteAlarms(data);
+    const localNoteAlarms = _readNoteAlarmsFromLocal();
+    noteAlarms = _mergeNoteAlarms(remoteNoteAlarms, localNoteAlarms);
+    _writeNoteAlarmsToLocal();
+    const localOnlyAlarms = {};
+    Object.keys(localNoteAlarms).forEach(id => {
+      if (!remoteNoteAlarms[id]) localOnlyAlarms[id] = localNoteAlarms[id];
+    });
+    if (Object.keys(localOnlyAlarms).length) {
+      setDoc(_getUserDocRef(), { noteAlarms: localOnlyAlarms }, { merge: true })
+        .catch(err => console.error('sync local note alarms:', err));
+    }
     renderProfileConnectionUI();
     renderShareProfileList();
     renderNotificationButton();
+    renderAlarmButton();
     if (document.getElementById('notifications-modal')?.classList.contains('open')) renderNotificationsList();
+    if (document.getElementById('alarms-modal')?.classList.contains('open')) renderAlarmsList();
   }
 
   function scheduleLinkedProfileRefresh() {
@@ -1451,11 +1668,20 @@
     return !!(note?.linkPublic || normalizePublicFolderIds(note?.publicFolderIds).length || hasProfileShareMetadata(note));
   }
 
+  function normalizePinnedAt(value) {
+    if (!value) return '';
+    const date = value?.toDate?.() || new Date(value);
+    if (date instanceof Date && Number.isFinite(date.getTime())) return date.toISOString();
+    return '';
+  }
+
   function hydrateNoteShareState(data, base = {}) {
     const sharedWith = normalizeSharedWith(data?.sharedWith);
     const sharedAccessKeys = normalizeSharedAccessKeys(data?.sharedAccessKeys);
     const publicFolderIds = normalizePublicFolderIds(data?.publicFolderIds);
     const linkPublic = noteLinkPublicFromData(data);
+    const pinnedAt = normalizePinnedAt(_hasOwn(base, 'pinnedAt') ? base.pinnedAt : data?.pinnedAt);
+    const pinScope = pinnedAt ? ((_hasOwn(base, 'pinScope') ? base.pinScope : data?.pinScope) === 'minor' ? 'minor' : 'major') : '';
     return {
       ...base,
       public: !!data?.public,
@@ -1463,6 +1689,8 @@
       publicFolderIds,
       sharedWith,
       sharedAccessKeys,
+      pinnedAt,
+      pinScope,
       mentionedUids: Array.isArray(data?.mentionedUids) ? data.mentionedUids : []
     };
   }
@@ -1496,6 +1724,51 @@
     list.querySelectorAll('[data-remove-profile]').forEach(btn => {
       btn.addEventListener('click', () => removeLinkedProfile(btn.dataset.removeProfile));
     });
+  }
+
+  function openProfileLinkApproval(profile) {
+    const modal = document.getElementById('profile-link-modal');
+    const preview = document.getElementById('profile-link-preview');
+    if (!modal || !preview) return;
+    _pendingProfileLink = profile;
+    preview.innerHTML =
+      renderProfileAvatar(profile) +
+      '<div class="profile-main"><div class="profile-name">' + esc(profile.displayName || 'Linked Profile') + '</div><div class="profile-sub">' + esc(profile.email || 'Google profile') + '</div></div>';
+    modal.classList.add('open');
+  }
+
+  function closeProfileLinkApproval() {
+    document.getElementById('profile-link-modal')?.classList.remove('open');
+    _pendingProfileLink = null;
+  }
+
+  async function approvePendingProfileLink() {
+    const profile = _pendingProfileLink;
+    if (!profile) return;
+    closeProfileLinkApproval();
+    await commitLinkedProfile(profile);
+  }
+
+  async function commitLinkedProfile(profile) {
+    const input = document.getElementById('connect-profile-email-input');
+    const email = normalizeEmail(profile?.email || '');
+    Object.keys(linkedProfiles).forEach(key => {
+      if (normalizeEmail(linkedProfiles[key]?.email) === email && key !== profile.uid) delete linkedProfiles[key];
+    });
+    linkedProfiles[profile.uid] = profile;
+    _writeLinkedProfilesToLocal();
+    if (input) input.value = '';
+    renderProfileConnectionUI();
+    renderShareProfileList();
+    scheduleLinkedProfileRefresh();
+
+    try {
+      await setDoc(_getUserDocRef(), { linkedProfiles: { [profile.uid]: profile } }, { merge: true });
+      showToast(profile.emailOnly ? 'Email Linked' : 'Profile Linked', 'success');
+    } catch (err) {
+      console.warn('persist linked profile:', err);
+      showToast('Email Linked', 'success');
+    }
   }
 
   async function connectProfileByEmail() {
@@ -1536,23 +1809,7 @@
       console.warn('profile email lookup:', err);
     }
 
-    Object.keys(linkedProfiles).forEach(key => {
-      if (normalizeEmail(linkedProfiles[key]?.email) === email && key !== profile.uid) delete linkedProfiles[key];
-    });
-    linkedProfiles[profile.uid] = profile;
-    _writeLinkedProfilesToLocal();
-    if (input) input.value = '';
-    renderProfileConnectionUI();
-    renderShareProfileList();
-    scheduleLinkedProfileRefresh();
-
-    try {
-      await setDoc(_getUserDocRef(), { linkedProfiles: { [profile.uid]: profile } }, { merge: true });
-      showToast(profile.emailOnly ? 'Email Linked' : 'Profile Linked', 'success');
-    } catch (err) {
-      console.warn('persist linked profile:', err);
-      showToast('Email Linked', 'success');
-    }
+    openProfileLinkApproval(profile);
   }
 
   async function removeLinkedProfile(uid) {
@@ -1604,7 +1861,7 @@
             titleEl.value = d.title || 'Untitled Note';
             ed.innerHTML  = renderMarkdownContent(d.content || '');
             linkifyTextNodes(ed); ensureLinkAttrs(ed);
-            restoreChecklistState(ed); refreshEmpty(ed); updateCounts();
+            restoreChecklistState(ed); restoreAlarmMarks(ed); refreshEmpty(ed); updateCounts();
           }
         }
       });
@@ -1632,6 +1889,8 @@
         const id = ch.doc.id;
         if (ch.type === 'removed') { delete folders[id]; return; }
         const d = ch.doc.data();
+        const iconColor = normalizeFolderIconColor(d.iconColor, d.iconColorMode) || FOLDER_ICON_THEME;
+        const iconColorMode = iconColor === FOLDER_ICON_THEME ? 'theme' : 'manual';
         folders[id] = {
           id,
           title:    d.title   || 'Untitled Folder',
@@ -1639,6 +1898,8 @@
           shared:   !!d.shared,
           sharedWith: normalizeSharedWith(d.sharedWith),
           sharedAccessKeys: normalizeSharedAccessKeys(d.sharedAccessKeys),
+          iconColor,
+          iconColorMode,
           sourceFolderId: d.sourceFolderId || '',
           sourceOwnerUid: d.sourceOwnerUid || '',
           sourceOwnerName: d.sourceOwnerName || '',
@@ -1646,6 +1907,10 @@
           created:  d.created?.toDate?.()?.toISOString()  || new Date().toISOString(),
           modified: d.modified?.toDate?.()?.toISOString() || new Date().toISOString()
         };
+        if (d.iconColor !== iconColor || d.iconColorMode !== iconColorMode) {
+          setDoc(doc(fsDb, 'folders', id), { iconColor, iconColorMode }, { merge: true })
+            .catch(err => console.error('persist default folder colour:', err));
+        }
       });
       renderSidebar();
     }, err => { console.error('onSnapshot folders:', err); });
@@ -1669,6 +1934,8 @@
         payload.linkPublic = !!note.linkPublic;
         payload.publicFolderIds = normalizePublicFolderIds(note.publicFolderIds);
         payload.created = Timestamp.fromDate(new Date(note.created));
+        payload.pinnedAt = note.pinnedAt ? Timestamp.fromDate(new Date(note.pinnedAt)) : deleteField();
+        payload.pinScope = note.pinnedAt ? (note.pinScope === 'minor' ? 'minor' : 'major') : deleteField();
         if (Array.isArray(note.mentionedUids)) payload.mentionedUids = note.mentionedUids;
         if (note.folderId) payload.folderId = note.folderId;
       }
@@ -1689,6 +1956,8 @@
         owner:    userId,
         public:   folder.public || false,
         title:    folder.title,
+        iconColor: normalizeFolderIconColor(folder.iconColor, folder.iconColorMode) || FOLDER_ICON_THEME,
+        iconColorMode: (normalizeFolderIconColor(folder.iconColor, folder.iconColorMode) || FOLDER_ICON_THEME) === FOLDER_ICON_THEME ? 'theme' : 'manual',
         sharedWith: normalizeSharedWith(folder.sharedWith),
         sharedAccessKeys: normalizeSharedAccessKeys(folder.sharedAccessKeys),
         created:  Timestamp.fromDate(new Date(folder.created)),
@@ -1817,6 +2086,8 @@
       sharedAccessKeys: [],
       mentionedUids: [],
       folderId: folderId || null,
+      pinnedAt: '',
+      pinScope: '',
       created: now,
       modified: now
     };
@@ -1832,7 +2103,7 @@
   function createFolder(title) {
     const id  = 'folder_' + Date.now();
     const now = new Date().toISOString();
-    const folder = { id, title: title.trim() || 'Untitled Folder', public: false, sharedWith: {}, sharedAccessKeys: [], created: now, modified: now };
+    const folder = { id, title: title.trim() || 'Untitled Folder', public: false, iconColor: FOLDER_ICON_THEME, iconColorMode: 'theme', sharedWith: {}, sharedAccessKeys: [], created: now, modified: now };
     folders[id] = folder;
     expandedFolders.add(id);
     activeFolderId = id;
@@ -1926,6 +2197,7 @@
 
   async function setFolderPublic(folderId, isPublic) {
     if (!folders[folderId]) return;
+    const previousPublic = !!folders[folderId].public;
     folders[folderId].public = isPublic;
     try {
       await setDoc(doc(fsDb, 'folders', folderId), { public: isPublic }, { merge: true });
@@ -1943,7 +2215,34 @@
       }));
       return true;
     }
-    catch (err) { console.error('setFolderPublic:', err); showToast('Failed To Update Folder Sharing', 'error'); return false; }
+    catch (err) {
+      console.error('setFolderPublic:', err);
+      folders[folderId].public = previousPublic;
+      renderSidebar();
+      showToast('Failed To Update Folder Sharing', 'error');
+      return false;
+    }
+  }
+
+  async function setFolderIconColor(folderId, color) {
+    const folder = folders[folderId];
+    const iconColor = normalizeFolderIconColor(color, color === FOLDER_ICON_THEME ? 'theme' : 'manual');
+    if (!folder || !iconColor) return;
+    const previous = normalizeFolderIconColor(folder.iconColor, folder.iconColorMode) || FOLDER_ICON_THEME;
+    const previousMode = folder.iconColorMode || (previous === FOLDER_ICON_THEME ? 'theme' : 'manual');
+    folder.iconColor = iconColor;
+    folder.iconColorMode = iconColor === FOLDER_ICON_THEME ? 'theme' : 'manual';
+    renderSidebar();
+    try {
+      await setDoc(doc(fsDb, 'folders', folderId), { iconColor, iconColorMode: folder.iconColorMode, modified: serverTimestamp() }, { merge: true });
+      showToast('Folder Colour Updated', 'success');
+    } catch (err) {
+      console.error('setFolderIconColor:', err);
+      folder.iconColor = previous;
+      folder.iconColorMode = previousMode;
+      renderSidebar();
+      showToast('Could Not Update Folder Colour', 'error');
+    }
   }
 
   function deleteNote(id) {
@@ -1982,6 +2281,7 @@
     const linkified = linkifyTextNodes(ed);
     ensureLinkAttrs(ed);
     restoreChecklistState(ed);
+    restoreAlarmMarks(ed);
     restoreCollapsedState(id);
     if (linkified || ed.innerHTML !== (note.content || '')) note.content = ed.innerHTML;
     refreshEmpty(ed);
@@ -2000,8 +2300,26 @@
   const esc = s =>
     s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   const looksLikeHtml = s => /<\/?[a-z][^>]*>/i.test(s);
+  const noteTime = value => {
+    const time = new Date(value || 0).getTime();
+    return Number.isFinite(time) ? time : 0;
+  };
+  const isPinnedNote = note => !!normalizePinnedAt(note?.pinnedAt);
+  const pinScopeForNote = note => isPinnedNote(note) ? (note?.pinScope === 'minor' ? 'minor' : 'major') : '';
+  const isMajorPinnedNote = note => isPinnedNote(note) && (pinScopeForNote(note) === 'major' || !hasVisibleFolder(note));
+  const compareNotes = (a, b) => {
+    const ap = isPinnedNote(a), bp = isPinnedNote(b);
+    if (ap !== bp) return ap ? -1 : 1;
+    if (ap && bp) {
+      const pinDiff = noteTime(b.pinnedAt) - noteTime(a.pinnedAt);
+      if (pinDiff) return pinDiff;
+    }
+    const modifiedDiff = noteTime(b.modified) - noteTime(a.modified);
+    if (modifiedDiff) return modifiedDiff;
+    return String(a?.title || '').localeCompare(String(b?.title || ''));
+  };
   const sortedIds = () =>
-    Object.keys(notes).sort((a, b) => new Date(notes[b].modified) - new Date(notes[a].modified));
+    Object.keys(notes).sort((a, b) => compareNotes(notes[a], notes[b]));
   const isMobile = () => window.innerWidth <= 767;
 
   function renderMarkdownContent(content) {
@@ -2329,13 +2647,17 @@
     titleEl.textContent = isOwned
       ? (type === 'note' ? 'Delete Note?' : 'Delete Folder?')
       : (type === 'note' ? 'Remove Shared Note?' : 'Remove Shared Folder?');
-    bodyEl.textContent = isOwned
+    bodyEl.className = 'delete-message' + (isOwned ? '' : ' remove');
+    const copy = isOwned
       ? (type === 'note'
-        ? '"' + name + '" will be permanently deleted for everyone with access. This cannot be recovered.'
-        : '"' + name + '" will be deleted from your workspace. Notes inside will be moved to uncategorised, not deleted.')
+        ? 'Permanently deletes this note for everyone. This cannot be undone.'
+        : 'Deletes the folder. Notes inside move to Notes.')
       : (type === 'note'
-        ? '"' + name + '" will be removed from your library only. The owner\'s original note will not be deleted.'
-        : '"' + name + '" and its shared notes will be removed from your library only. The owner\'s original folder and notes will not be deleted.');
+        ? 'Removes it from your library only. The owner keeps the note.'
+        : 'Removes this folder and its shared notes from your library only.');
+    bodyEl.innerHTML =
+      '<strong class="delete-target">' + esc(name) + '</strong>' +
+      '<div class="delete-copy">' + esc(copy) + '</div>';
     confirmBtn.innerHTML = isOwned
       ? '<i class="fa-solid fa-trash" style="margin-right:6px;"></i>Delete'
       : '<i class="fa-solid fa-xmark" style="margin-right:6px;"></i>Remove';
@@ -2442,6 +2764,47 @@
     }
   }
 
+  async function setNotePinned(noteId, pinned, scope = 'major') {
+    const note = notes[noteId];
+    if (!note) return;
+    const previous = normalizePinnedAt(note.pinnedAt);
+    const previousScope = note.pinScope || '';
+    const nextPinnedAt = pinned ? new Date().toISOString() : '';
+    const nextScope = pinned ? (scope === 'minor' ? 'minor' : 'major') : '';
+    note.pinnedAt = nextPinnedAt;
+    note.pinScope = nextScope;
+    renderSidebar();
+    try {
+      if (isOwnedNote(note)) {
+        await setDoc(doc(fsDb, 'notes', noteId), {
+          pinnedAt: nextPinnedAt ? Timestamp.fromDate(new Date(nextPinnedAt)) : deleteField(),
+          pinScope: nextPinnedAt ? nextScope : deleteField()
+        }, { merge: true });
+      } else {
+        const ok = await _setSharedNotePinned(noteId, nextPinnedAt, nextScope);
+        showToast(
+          ok
+            ? (nextPinnedAt ? 'Note Pinned' : 'Note Unpinned')
+            : (nextPinnedAt ? 'Note pinned locally; cloud sync failed' : 'Note unpinned locally; cloud sync failed'),
+          ok ? 'success' : 'error'
+        );
+        return;
+      }
+      showToast(nextPinnedAt ? 'Note Pinned' : 'Note Unpinned', 'success');
+    } catch (err) {
+      console.error('set note pinned:', err);
+      note.pinnedAt = previous;
+      note.pinScope = previousScope;
+      if (!isOwnedNote(note) && sharedLibraryMeta[noteId]) {
+        sharedLibraryMeta[noteId].pinnedAt = previous;
+        sharedLibraryMeta[noteId].pinScope = previousScope;
+        _writeSharedLibraryToLocal();
+      }
+      renderSidebar();
+      showToast('Could Not Update Pin', 'error');
+    }
+  }
+
   function recomputeCollapsedSections() {
     let collapsedLevel = Infinity;
     for (const el of getEd().children) {
@@ -2491,6 +2854,10 @@
   function getCleanHTML() {
     const clone = getEd().cloneNode(true);
     clone.querySelectorAll('[data-collapsed]').forEach(el => el.removeAttribute('data-collapsed'));
+    clone.querySelectorAll('.note-alarm').forEach(el => {
+      el.classList.remove('alarm-due');
+      if (!el.classList.length) el.removeAttribute('class');
+    });
     clone.querySelectorAll('[style]').forEach(el => { el.style.display = ''; if (!el.getAttribute('style')) el.removeAttribute('style'); });
     return clone.innerHTML;
   }
@@ -2606,15 +2973,36 @@
     closeCtxMenu();
     const menu = document.getElementById('ctx-menu');
     menu.innerHTML = '';
-    items.forEach(item => {
+
+    const buildCtxRow = item => {
       if (item === 'sep') {
-        const s = document.createElement('div'); s.className = 'ctx-sep'; menu.appendChild(s); return;
+        const s = document.createElement('div'); s.className = 'ctx-sep'; return s;
       }
       const row = document.createElement('div');
-      row.className = 'ctx-row' + (item.danger ? ' danger' : '');
-      row.innerHTML = '<i class="' + item.icon + '"></i><span>' + item.label + '</span>';
-      row.addEventListener('click', () => { closeCtxMenu(); item.action(); });
-      menu.appendChild(row);
+      const hasSubmenu = Array.isArray(item.children) && item.children.length;
+      row.className = 'ctx-row' + (item.danger ? ' danger' : '') + (hasSubmenu ? ' has-submenu' : '');
+      const icon = item.color
+        ? '<span class="ctx-color-dot" style="background:' + esc(item.color) + ';"></span>'
+        : '<i class="' + item.icon + '"></i>';
+      row.innerHTML = icon + '<span>' + esc(item.label) + '</span>' + (hasSubmenu ? '<span class="ctx-sub-arrow">&rsaquo;</span>' : '');
+      if (hasSubmenu) {
+        const sub = document.createElement('div');
+        sub.className = 'ctx-submenu';
+        item.children.forEach(child => sub.appendChild(buildCtxRow(child)));
+        row.appendChild(sub);
+        row.addEventListener('click', e => {
+          if (e.target.closest('.ctx-submenu')) return;
+          e.stopPropagation();
+          row.classList.toggle('submenu-open');
+        });
+      } else {
+        row.addEventListener('click', e => { e.stopPropagation(); closeCtxMenu(); item.action(); });
+      }
+      return row;
+    };
+
+    items.forEach(item => {
+      menu.appendChild(buildCtxRow(item));
     });
     _ctxAnchor = anchorEl;
     anchorEl.classList.add('open');
@@ -2646,6 +3034,24 @@
   function makeSidebarNoteEl(note, { inFolder = false } = {}) {
     const active   = note.id === activeId;
     const isOwned  = isOwnedNote(note);
+    const isPinned = isPinnedNote(note);
+    const pinScope = pinScopeForNote(note);
+    const canChoosePinScope = hasVisibleFolder(note);
+    const pinMenu = canChoosePinScope
+      ? {
+          icon: 'fa-solid fa-thumbtack',
+          label: 'Pin',
+          children: [
+            { icon: 'fa-solid fa-thumbtack', label: pinScope === 'minor' ? 'Minor Pin Active' : 'Minor Pin', action: () => setNotePinned(note.id, true, 'minor') },
+            { icon: 'fa-solid fa-arrow-up', label: pinScope === 'major' ? 'Major Pin Active' : 'Major Pin', action: () => setNotePinned(note.id, true, 'major') },
+            ...(isPinned ? ['sep', { icon: 'fa-solid fa-xmark', label: 'Unpin', action: () => setNotePinned(note.id, false) }] : [])
+          ]
+        }
+      : {
+          icon: 'fa-solid fa-thumbtack',
+          label: isPinned ? 'Unpin from Sidebar' : 'Pin to Sidebar',
+          action: () => setNotePinned(note.id, !isPinnedNote(note), 'major')
+        };
     const snippet  = note.content.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 65) || 'Empty Note';
     const accessAvatars = renderAccessAvatars(accessProfilesForNote(note), isOwned ? 'Shared with' : 'Shared by');
     const el       = document.createElement('div');
@@ -2655,6 +3061,7 @@
     el.innerHTML   =
       '<div class="item-info"><div class="item-name">' + esc(note.title) + '</div><div class="item-preview">' + esc(snippet) + '</div></div>' +
       accessAvatars +
+      (isPinned ? '<span class="note-pin-badge" title="' + (pinScope === 'minor' ? 'Pinned in folder' : 'Pinned to sidebar') + '"><i class="fa-solid fa-thumbtack"></i></span>' : '') +
       (isOwned ? '' : '<span class="note-shared-badge" title="Shared with you"><i class="fa-solid fa-link"></i></span>') +
       '<button class="item-menu-btn" title="More Options"><i class="fa-solid fa-ellipsis"></i></button>';
     el.addEventListener('click', e => {
@@ -2664,6 +3071,7 @@
       e.stopPropagation();
       const items = isOwned
         ? [
+            pinMenu,
             { icon: 'fa-solid fa-arrow-up-from-bracket', label: 'Share',              action: () => openShareModal('note', note.id) },
             ...(inFolder ? [{ icon: 'fa-solid fa-folder-minus', label: 'Remove from Folder', action: () => moveNoteToFolder(note.id, null) }] : []),
             { icon: 'fa-solid fa-folder-open',            label: 'Move to Folder',    action: () => openMoveModal(note.id) },
@@ -2671,6 +3079,7 @@
             { icon: 'fa-solid fa-trash', label: 'Delete', danger: true,              action: () => deleteNote(note.id) }
           ]
         : [
+            pinMenu,
             ...(inFolder ? [{ icon: 'fa-solid fa-folder-minus', label: 'Remove from Folder', action: () => moveNoteToFolder(note.id, null) }] : []),
             { icon: 'fa-solid fa-folder-open', label: 'Move to Folder', action: () => openMoveModal(note.id) },
             'sep',
@@ -2700,17 +3109,31 @@
     const sortedFolderList = Object.values(folders)
       .sort((a, b) => new Date(a.created) - new Date(b.created));
 
-    const looseNotes = sortedIds().map(id => notes[id])
-      .filter(n => !hasVisibleFolder(n))
+    const filteredNotes = sortedIds().map(id => notes[id])
       .filter(n => !filter || noteMatchesFilter(n, filter));
-    const uncategorized = looseNotes.filter(n => isOwnedNote(n));
-    const sharedUncategorized = looseNotes.filter(n => !isOwnedNote(n));
+    const pinnedLooseNotes = filteredNotes.filter(n => isMajorPinnedNote(n));
+    const looseNotes = filteredNotes.filter(n => !hasVisibleFolder(n) && !isMajorPinnedNote(n));
+    const uncategorized = looseNotes.filter(n => !isPinnedNote(n) && isOwnedNote(n));
+    const sharedUncategorized = looseNotes.filter(n => !isPinnedNote(n) && !isOwnedNote(n));
 
     let hasContent = false;
+
+    if (pinnedLooseNotes.length) {
+      hasContent = true;
+      const pinnedWrap = document.createElement('div');
+      pinnedWrap.className = 'pinned-notes-section';
+      const lbl = document.createElement('div');
+      lbl.className = 'sidebar-section-label';
+      lbl.textContent = 'Pinned';
+      pinnedWrap.appendChild(lbl);
+      pinnedLooseNotes.forEach(note => pinnedWrap.appendChild(makeSidebarNoteEl(note)));
+      list.appendChild(pinnedWrap);
+    }
 
     sortedFolderList.forEach(folder => {
       const folderNotes = sortedIds().map(id => notes[id])
         .filter(n => n.folderId === folder.id)
+        .filter(n => !isMajorPinnedNote(n))
         .filter(n => !filter || noteMatchesFilter(n, filter));
       if (filter && !folder.title.toLowerCase().includes(filter) && !folderNotes.length) return;
       hasContent = true;
@@ -2724,10 +3147,11 @@
         ? '<span class="folder-shared-badge" title="Shared"><i class="fa-solid fa-link"></i></span>'
         : '';
       const folderAccessAvatars = renderAccessAvatars(folderAccessProfiles, isOwnedFolder(folder) ? 'Folder shared with' : 'Shared by');
+      const folderColor = resolveFolderIconColor(folder.iconColor, folder.iconColorMode);
       folderEl.innerHTML =
-        '<div class="folder-row" data-fid="' + folder.id + '">' +
+        '<div class="folder-row" data-fid="' + folder.id + '" style="--folder-color:' + esc(folderColor) + ';">' +
           '<span class="folder-chevron' + (isExpanded ? ' expanded' : '') + '"><i class="fa-solid fa-chevron-right"></i></span>' +
-          '<span class="item-icon folder-icon" style="color:var(--accent);opacity:.8"><i class="fa-solid fa-folder' + (isExpanded ? '-open' : '') + '"></i></span>' +
+          '<span class="item-icon folder-icon"><i class="fa-solid fa-folder' + (isExpanded ? '-open' : '') + '"></i></span>' +
           '<div class="item-info"><div class="item-name">' + esc(folder.title) + '</div></div>' +
           folderAccessAvatars +
           sharedBadge +
@@ -2781,14 +3205,26 @@
       });
       row.querySelector('.item-menu-btn').addEventListener('click', e => {
         e.stopPropagation();
+        const colourItem = {
+          icon: 'fa-solid fa-palette',
+          label: 'Folder Colour',
+          children: FOLDER_COLOR_OPTIONS.map(option => ({
+            color: option.color,
+            label: option.label,
+            action: () => option.action ? option.action(folder.id) : setFolderIconColor(folder.id, option.value)
+          }))
+        };
         const folderItems = isOwnedFolder(folder)
           ? [
               { icon: 'fa-solid fa-plus',                  label: 'New Note in Folder', action: () => { activeFolderId = folder.id; expandedFolders.add(folder.id); openModal(); } },
               { icon: 'fa-solid fa-arrow-up-from-bracket', label: 'Share Folder',       action: () => openShareModal('folder', folder.id) },
+              colourItem,
               'sep',
               { icon: 'fa-solid fa-trash', label: 'Delete Folder', danger: true,        action: () => deleteFolder(folder.id) }
             ]
           : [
+              colourItem,
+              'sep',
               { icon: 'fa-solid fa-xmark', label: 'Remove from Library', danger: true,  action: () => deleteFolder(folder.id) }
             ];
         openCtxMenu(e.currentTarget, folderItems);
@@ -2838,6 +3274,8 @@
       list.innerHTML = '<div style="padding:20px;color:var(--muted);font-size:12.5px;text-align:center;">' +
         (filter ? 'No Matching Notes' : 'No Notes Yet') + '</div>';
     }
+    renderAlarmButton();
+    if (document.getElementById('alarms-modal')?.classList.contains('open')) renderAlarmsList();
   }
 
   /* WYSIWYG Toolbar */
@@ -3266,6 +3704,7 @@
     code:          insertInlineCode,
     codeblock:     insertCodeBlock,
     link:          insertLink,
+    alarm:         () => openNoteAlarmModal(activeId),
     hr:            () => { cmd('insertHorizontalRule'); getEd().focus(); },
     indentLeft:    () => {
       const li = ancestorOfType(['li']);
@@ -3290,8 +3729,42 @@
   };
 
   /* Drawer */
-  const openDrawer  = () => { document.getElementById('sidebar').classList.add('open');    document.getElementById('drawer-overlay').classList.add('open'); };
-  const closeDrawer = () => { document.getElementById('sidebar').classList.remove('open'); document.getElementById('drawer-overlay').classList.remove('open'); };
+  function updateMobileSidebarToggleLabel(open) {
+    const drawerBtn = document.getElementById('drawer-btn');
+    const mobileLogoBtn = document.getElementById('mob-logo-btn');
+    if (drawerBtn) {
+      drawerBtn.title = open ? 'Close Sidebar' : 'Open Sidebar';
+      drawerBtn.setAttribute('aria-label', open ? 'Close Sidebar' : 'Open Sidebar');
+      const icon = drawerBtn.querySelector('i');
+      if (icon) icon.className = open ? 'fa-solid fa-xmark' : 'fa-solid fa-bars';
+    }
+    if (mobileLogoBtn) {
+      mobileLogoBtn.title = open ? 'Close Sidebar' : 'Open Sidebar';
+      mobileLogoBtn.setAttribute('aria-label', open ? 'Close Sidebar' : 'Open Sidebar');
+    }
+  }
+
+  function openDrawer() {
+    document.getElementById('sidebar').classList.add('open');
+    document.getElementById('drawer-overlay').classList.add('open');
+    updateMobileSidebarToggleLabel(true);
+  }
+
+  function closeDrawer() {
+    document.getElementById('sidebar').classList.remove('open');
+    document.getElementById('drawer-overlay').classList.remove('open');
+    updateMobileSidebarToggleLabel(false);
+  }
+
+  function toggleDrawer() {
+    document.getElementById('sidebar').classList.contains('open') ? closeDrawer() : openDrawer();
+  }
+
+  function toggleSidebarFromLogo(e) {
+    e?.stopPropagation?.();
+    if (isMobile()) { toggleDrawer(); return; }
+    setSidebarMinimized(!sidebarMinimized);
+  }
 
   /* Modal */
   const openModal  = () => {
@@ -3352,6 +3825,14 @@
   };
   const DEFAULT_ACCENT = ACCENT_PALETTES.blue.accent;
   let accentColor = localStorage.getItem('notas_accent') || DEFAULT_ACCENT;
+
+  const FOLDER_COLOR_OPTIONS = [
+    { label: 'App Theme',    value: FOLDER_ICON_THEME, color: 'var(--accent)' },
+    { label: 'White',        value: '#ffffff',          color: '#ffffff' },
+    { label: 'Black',        value: '#111111',          color: '#111111' },
+    { label: 'Grey',         value: FOLDER_ICON_GREY,   color: FOLDER_ICON_GREY },
+    { label: 'Colour Wheel', action: openFolderColorPicker, color: 'conic-gradient(red, yellow, lime, cyan, blue, magenta, red)' }
+  ];
 
   function clampColor(n) {
     return Math.max(0, Math.min(255, Math.round(n)));
@@ -3442,6 +3923,38 @@
   function normalizeAccentColor(value) {
     if (ACCENT_PALETTES[value]) return ACCENT_PALETTES[value].accent;
     return /^#[a-f\d]{6}$/i.test(value || '') ? value : DEFAULT_ACCENT;
+  }
+
+  function normalizeManualFolderIconColor(value) {
+    return /^#[a-f\d]{6}$/i.test(value || '') ? value.toLowerCase() : '';
+  }
+
+  function isLegacyThemeFolderColor(value) {
+    const normalized = normalizeManualFolderIconColor(value);
+    if (!normalized) return false;
+    return Object.values(ACCENT_PALETTES).some(p => p.accent.toLowerCase() === normalized);
+  }
+
+  function normalizeFolderIconColor(value, mode = '') {
+    if (mode === 'theme' || value === FOLDER_ICON_THEME || value === 'app-theme' || value === 'auto') return FOLDER_ICON_THEME;
+    const manual = normalizeManualFolderIconColor(value);
+    if (!manual) return '';
+    if (mode === 'manual') return manual;
+    return isLegacyThemeFolderColor(manual) ? FOLDER_ICON_THEME : manual;
+  }
+
+  function resolveFolderIconColor(value, mode = '') {
+    const normalized = normalizeFolderIconColor(value, mode) || FOLDER_ICON_THEME;
+    return normalized === FOLDER_ICON_THEME ? 'var(--accent)' : normalized;
+  }
+
+  function openFolderColorPicker(folderId) {
+    const folder = folders[folderId];
+    const input = document.getElementById('folder-color-input');
+    if (!folder || !input) return;
+    input.value = normalizeManualFolderIconColor(folder.iconColor) || normalizeAccentColor(accentColor);
+    input.dataset.folderId = folderId;
+    input.click();
   }
 
   function accentPalette(value) {
@@ -3681,10 +4194,10 @@
     const sidebar = document.getElementById('sidebar');
     sidebar.classList.toggle('minimized', val);
     sidebar.classList.toggle('logo-compact', false);
-    const btn = document.getElementById('sidebar-minimize-btn');
-    if (btn) {
-      btn.querySelector('i').className = val ? 'fa-solid fa-angles-right' : 'fa-solid fa-angles-left';
-      btn.title = val ? 'Expand Sidebar' : 'Collapse Sidebar';
+    const logoBtn = document.getElementById('sidebar-logo-btn');
+    if (logoBtn) {
+      logoBtn.title = val ? 'Expand Sidebar' : 'Collapse Sidebar';
+      logoBtn.setAttribute('aria-label', val ? 'Expand Sidebar' : 'Collapse Sidebar');
     }
     localStorage.setItem('notas_sidebar_minimized', val ? '1' : '0');
     if (!val) {
@@ -3710,6 +4223,26 @@
 
   let _shareCtx = null; // { type: 'note'|'folder', id }
 
+  function isShareLinkEnabled() {
+    if (!_shareCtx) return false;
+    if (_shareCtx.type === 'note') return !!notes[_shareCtx.id]?.linkPublic;
+    return !!folders[_shareCtx.id]?.public;
+  }
+
+  function updateShareLinkUI() {
+    const panel = document.getElementById('share-link-panel');
+    const toggle = document.getElementById('share-link-toggle');
+    const status = document.getElementById('share-link-status');
+    const copyBtn = document.getElementById('copy-link-btn');
+    const nativeBtn = document.getElementById('native-share-btn');
+    const active = isShareLinkEnabled();
+    if (panel) panel.classList.toggle('link-off', !active);
+    if (toggle) toggle.checked = active;
+    if (status) status.textContent = active ? 'On' : 'Off';
+    if (copyBtn) copyBtn.disabled = !active;
+    if (nativeBtn) nativeBtn.disabled = !active;
+  }
+
   function openShareModal(type, id) {
     if (type === 'note'   && !notes[id])   return;
     if (type === 'folder' && !folders[id]) return;
@@ -3719,12 +4252,13 @@
 
     document.getElementById('share-modal-title').textContent = type === 'note' ? 'Share Note' : 'Share Folder';
     document.getElementById('share-modal-desc').textContent  = type === 'note'
-      ? 'Copying the link allows anyone signed in with it to view and edit. Linked profiles receive this note directly.'
-      : 'Copying the link allows anyone signed in with it to access this folder. Linked profiles receive this folder directly.';
+      ? 'Linked profiles receive this note directly.'
+      : 'Linked profiles receive this folder directly.';
     document.getElementById('share-link-input').value = url;
 
     const nativeBtn = document.getElementById('native-share-btn');
     nativeBtn.style.display = navigator.share ? 'flex' : 'none';
+    updateShareLinkUI();
     renderShareProfileList();
 
     document.getElementById('share-modal').classList.add('open');
@@ -4211,6 +4745,8 @@
 
   async function setNotePublic(noteId, isPublic) {
     if (!notes[noteId]) return;
+    const previousLinkPublic = !!notes[noteId].linkPublic;
+    const previousPublic = !!notes[noteId].public;
     notes[noteId].linkPublic = isPublic;
     notes[noteId].public = computeEffectiveNotePublic(notes[noteId]);
     try {
@@ -4220,18 +4756,36 @@
       }, { merge: true });
       return true;
     }
-    catch (err) { console.error('setNotePublic:', err); showToast('Failed To Update Sharing', 'error'); return false; }
+    catch (err) {
+      console.error('setNotePublic:', err);
+      notes[noteId].linkPublic = previousLinkPublic;
+      notes[noteId].public = previousPublic;
+      showToast('Failed To Update Sharing', 'error');
+      return false;
+    }
   }
 
-  async function ensureLinkShareEnabled() {
+  async function setShareLinkEnabled(enabled) {
     if (!_shareCtx) return false;
-    if (_shareCtx.type === 'note') return await setNotePublic(_shareCtx.id, true);
-    return await setFolderPublic(_shareCtx.id, true);
+    const toggle = document.getElementById('share-link-toggle');
+    if (toggle) toggle.disabled = true;
+    const ok = _shareCtx.type === 'note'
+      ? await setNotePublic(_shareCtx.id, enabled)
+      : await setFolderPublic(_shareCtx.id, enabled);
+    if (toggle) toggle.disabled = false;
+    updateShareLinkUI();
+    if (ok) {
+      renderSidebar();
+      showToast(enabled ? 'Link Sharing On' : 'Link Sharing Off', 'success');
+    }
+    return ok;
   }
 
   async function copyShareLink() {
-    const ok = await ensureLinkShareEnabled();
-    if (!ok) return;
+    if (!isShareLinkEnabled()) {
+      showToast('Turn On Link Sharing First', 'error');
+      return;
+    }
     const val = document.getElementById('share-link-input').value;
     navigator.clipboard?.writeText(val).catch(() => {
       const inp = document.getElementById('share-link-input');
@@ -4242,8 +4796,10 @@
 
   async function nativeShare() {
     if (!_shareCtx) return;
-    const ok = await ensureLinkShareEnabled();
-    if (!ok) return;
+    if (!isShareLinkEnabled()) {
+      showToast('Turn On Link Sharing First', 'error');
+      return;
+    }
     const url   = _shareCtx.type === 'note' ? getShareUrl(_shareCtx.id) : getFolderShareUrl(_shareCtx.id);
     const title = _shareCtx.type === 'note' ? (notes[_shareCtx.id]?.title || 'Note') : (folders[_shareCtx.id]?.title || 'Folder');
     navigator.share({ title, url }).catch(() => {});
@@ -4310,11 +4866,15 @@
     const now = new Date().toISOString();
     const existing = folders[id];
     const title = info.title || existing?.title || 'Shared Folder';
+    const iconColor = normalizeFolderIconColor(existing?.iconColor, existing?.iconColorMode) || FOLDER_ICON_THEME;
+    const iconColorMode = iconColor === FOLDER_ICON_THEME ? 'theme' : 'manual';
     folders[id] = {
       id,
       title,
       public: false,
       shared: true,
+      iconColor,
+      iconColorMode,
       sourceFolderId: info.sourceFolderId,
       sourceOwnerUid: info.sourceOwnerUid || existing?.sourceOwnerUid || '',
       sourceOwnerName: info.sourceOwnerName || existing?.sourceOwnerName || '',
@@ -4332,6 +4892,8 @@
       sourceOwnerUid: info.sourceOwnerUid || existing?.sourceOwnerUid || '',
       sourceOwnerName: info.sourceOwnerName || existing?.sourceOwnerName || '',
       sourceOwnerPhotoURL: info.sourceOwnerPhotoURL || existing?.sourceOwnerPhotoURL || '',
+      iconColor,
+      iconColorMode,
       title,
       modified: serverTimestamp()
     };
@@ -4368,9 +4930,20 @@
         const folders = (!Array.isArray(parsed) && parsed && typeof parsed === 'object')
           ? (parsed.folders || parsed.sharedNoteFolders || {})
           : {};
+        const pins = (!Array.isArray(parsed) && parsed && typeof parsed === 'object')
+          ? (parsed.pins || parsed.sharedNotePins || {})
+          : {};
+        const pinScopes = (!Array.isArray(parsed) && parsed && typeof parsed === 'object')
+          ? (parsed.pinScopes || parsed.sharedNotePinScopes || {})
+          : {};
         ids.forEach(id => {
           if (typeof id !== 'string' || !id) return;
-          meta[id] = { folderId: _normalizeSharedFolderId(folders[id]) };
+          const pinnedAt = normalizePinnedAt(pins[id]);
+          meta[id] = {
+            folderId: _normalizeSharedFolderId(folders[id]),
+            pinnedAt,
+            pinScope: pinnedAt ? (pinScopes[id] === 'minor' ? 'minor' : 'major') : ''
+          };
         });
       }
 
@@ -4391,11 +4964,16 @@
     try {
       const ids = Object.keys(meta);
       const folders = {};
+      const pins = {};
+      const pinScopes = {};
       ids.forEach(id => {
         const folderId = _normalizeSharedFolderId(meta[id]?.folderId);
         if (folderId) folders[id] = folderId;
+        const pinnedAt = normalizePinnedAt(meta[id]?.pinnedAt);
+        if (pinnedAt) pins[id] = pinnedAt;
+        if (pinnedAt) pinScopes[id] = meta[id]?.pinScope === 'minor' ? 'minor' : 'major';
       });
-      if (ids.length) localStorage.setItem(_sharedLibraryStorageKey(), JSON.stringify({ ids, folders }));
+      if (ids.length) localStorage.setItem(_sharedLibraryStorageKey(), JSON.stringify({ ids, folders, pins, pinScopes }));
       else            localStorage.removeItem(_sharedLibraryStorageKey());
       localStorage.removeItem(_legacySharedStorageKey());
     } catch (err) { console.error('write shared library local:', err); }
@@ -4407,10 +4985,20 @@
     const folders = data.sharedNoteFolders && typeof data.sharedNoteFolders === 'object'
       ? data.sharedNoteFolders
       : {};
+    const pins = data.sharedNotePins && typeof data.sharedNotePins === 'object'
+      ? data.sharedNotePins
+      : {};
+    const pinScopes = data.sharedNotePinScopes && typeof data.sharedNotePinScopes === 'object'
+      ? data.sharedNotePinScopes
+      : {};
     ids.forEach(id => {
       if (typeof id !== 'string' || !id) return;
       meta[id] = {};
       if (_hasOwn(folders, id)) meta[id].folderId = _normalizeSharedFolderId(folders[id]);
+      if (_hasOwn(pins, id)) {
+        meta[id].pinnedAt = normalizePinnedAt(pins[id]);
+        meta[id].pinScope = meta[id].pinnedAt ? (pinScopes[id] === 'minor' ? 'minor' : 'major') : '';
+      }
     });
     return meta;
   }
@@ -4421,6 +5009,8 @@
       Object.keys(lib || {}).forEach(id => {
         if (!merged[id]) merged[id] = { folderId: null };
         if (_hasOwn(lib[id], 'folderId')) merged[id].folderId = _normalizeSharedFolderId(lib[id].folderId);
+        if (_hasOwn(lib[id], 'pinnedAt')) merged[id].pinnedAt = normalizePinnedAt(lib[id].pinnedAt);
+        if (_hasOwn(lib[id], 'pinScope')) merged[id].pinScope = lib[id].pinScope === 'minor' ? 'minor' : (merged[id].pinnedAt ? 'major' : '');
       });
     });
     return merged;
@@ -4428,6 +5018,14 @@
 
   function _getSharedNoteFolder(noteId) {
     return _normalizeSharedFolderId(sharedLibraryMeta[noteId]?.folderId);
+  }
+
+  function _getSharedNotePinnedAt(noteId) {
+    return normalizePinnedAt(sharedLibraryMeta[noteId]?.pinnedAt);
+  }
+
+  function _getSharedNotePinScope(noteId) {
+    return _getSharedNotePinnedAt(noteId) ? (sharedLibraryMeta[noteId]?.pinScope === 'minor' ? 'minor' : 'major') : '';
   }
 
   function hasSharedAccess(sharedWith, sharedAccessKeys = []) {
@@ -4459,7 +5057,11 @@
   function _applySharedLibraryMeta(meta) {
     sharedLibraryMeta = meta;
     Object.keys(notes).forEach(id => {
-      if (notes[id] && !isOwnedNote(notes[id])) notes[id].folderId = _getSharedNoteFolder(id);
+      if (notes[id] && !isOwnedNote(notes[id])) {
+        notes[id].folderId = _getSharedNoteFolder(id);
+        notes[id].pinnedAt = _getSharedNotePinnedAt(id);
+        notes[id].pinScope = _getSharedNotePinScope(id);
+      }
     });
     _writeSharedLibraryToLocal();
   }
@@ -4482,11 +5084,20 @@
     const ids = Object.keys(meta);
     if (!ids.length) return true;
     const sharedNoteFolders = {};
-    ids.forEach(id => { sharedNoteFolders[id] = _normalizeSharedFolderId(meta[id]?.folderId); });
+    const sharedNotePins = {};
+    const sharedNotePinScopes = {};
+    ids.forEach(id => {
+      sharedNoteFolders[id] = _normalizeSharedFolderId(meta[id]?.folderId);
+      const pinnedAt = normalizePinnedAt(meta[id]?.pinnedAt);
+      sharedNotePins[id] = pinnedAt || null;
+      sharedNotePinScopes[id] = pinnedAt ? (meta[id]?.pinScope === 'minor' ? 'minor' : 'major') : null;
+    });
     try {
       await setDoc(_getUserDocRef(), {
         sharedNoteIds: arrayUnion(...ids),
-        sharedNoteFolders
+        sharedNoteFolders,
+        sharedNotePins,
+        sharedNotePinScopes
       }, { merge: true });
       return true;
     } catch (err) {
@@ -4500,7 +5111,10 @@
     _writeSharedLibraryToLocal();
     const payload = { sharedNoteIds: arrayUnion(noteId) };
     const folderId = _getSharedNoteFolder(noteId);
+    const pinnedAt = _getSharedNotePinnedAt(noteId);
     if (folderId) payload.sharedNoteFolders = { [noteId]: folderId };
+    if (pinnedAt) payload.sharedNotePins = { [noteId]: pinnedAt };
+    if (pinnedAt) payload.sharedNotePinScopes = { [noteId]: _getSharedNotePinScope(noteId) };
     try {
       await setDoc(_getUserDocRef(), payload, { merge: true });
       return true;
@@ -4516,7 +5130,9 @@
     try {
       await setDoc(_getUserDocRef(), {
         sharedNoteIds: arrayRemove(noteId),
-        sharedNoteFolders: { [noteId]: null }
+        sharedNoteFolders: { [noteId]: null },
+        sharedNotePins: { [noteId]: null },
+        sharedNotePinScopes: { [noteId]: null }
       }, { merge: true });
       return true;
     } catch (err) {
@@ -4531,13 +5147,41 @@
     if (notes[noteId] && !isOwnedNote(notes[noteId])) notes[noteId].folderId = sharedLibraryMeta[noteId].folderId;
     _writeSharedLibraryToLocal();
     try {
-      await setDoc(_getUserDocRef(), {
+      const payload = {
         sharedNoteIds: arrayUnion(noteId),
         sharedNoteFolders: { [noteId]: sharedLibraryMeta[noteId].folderId }
-      }, { merge: true });
+      };
+      const pinnedAt = _getSharedNotePinnedAt(noteId);
+      if (pinnedAt) payload.sharedNotePins = { [noteId]: pinnedAt };
+      if (pinnedAt) payload.sharedNotePinScopes = { [noteId]: _getSharedNotePinScope(noteId) };
+      await setDoc(_getUserDocRef(), payload, { merge: true });
       return true;
     } catch (err) {
       console.error('_setSharedNoteFolder:', err);
+      return false;
+    }
+  }
+
+  async function _setSharedNotePinned(noteId, pinnedAt, pinScope = 'major') {
+    if (!sharedLibraryMeta[noteId]) sharedLibraryMeta[noteId] = { folderId: null };
+    const normalized = normalizePinnedAt(pinnedAt);
+    const normalizedScope = normalized ? (pinScope === 'minor' ? 'minor' : 'major') : '';
+    sharedLibraryMeta[noteId].pinnedAt = normalized;
+    sharedLibraryMeta[noteId].pinScope = normalizedScope;
+    if (notes[noteId] && !isOwnedNote(notes[noteId])) {
+      notes[noteId].pinnedAt = normalized;
+      notes[noteId].pinScope = normalizedScope;
+    }
+    _writeSharedLibraryToLocal();
+    try {
+      await setDoc(_getUserDocRef(), {
+        sharedNoteIds: arrayUnion(noteId),
+        sharedNotePins: { [noteId]: normalized || null },
+        sharedNotePinScopes: { [noteId]: normalizedScope || null }
+      }, { merge: true });
+      return true;
+    } catch (err) {
+      console.error('_setSharedNotePinned:', err);
       return false;
     }
   }
@@ -4621,6 +5265,8 @@
       title:    d.title    || 'Untitled Note',
       content:  d.content  || '',
       folderId: folderId || _getSharedNoteFolder(noteId),
+      pinnedAt: _getSharedNotePinnedAt(noteId),
+      pinScope: _getSharedNotePinScope(noteId),
       created:  d.created?.toDate?.()?.toISOString()  || new Date().toISOString(),
       modified: d.modified?.toDate?.()?.toISOString() || new Date().toISOString()
     });
@@ -4821,6 +5467,434 @@
   function openNotificationsModal() {
     renderNotificationsList();
     document.getElementById('notifications-modal')?.classList.add('open');
+  }
+
+  function makeAlarmId() {
+    return 'alarm_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7);
+  }
+
+  function formatAlarmDateTime(iso) {
+    const date = new Date(iso);
+    if (!Number.isFinite(date.getTime())) return 'Invalid alarm';
+    return date.toLocaleString([], {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  }
+
+  function alarmTextFromMark(mark) {
+    return (mark?.textContent || '').replace(/\u200b/g, ' ').replace(/\s+/g, ' ').trim() || 'Alarm';
+  }
+
+  function createAlarmMark(alarmAt, alarmId = makeAlarmId()) {
+    const mark = document.createElement('span');
+    mark.className = 'note-alarm';
+    mark.dataset.alarmId = alarmId;
+    mark.dataset.alarmAt = alarmAt;
+    updateAlarmMarkDisplay(mark);
+    return mark;
+  }
+
+  function unwrapAlarmMark(mark) {
+    const parent = mark?.parentNode;
+    if (!parent) return;
+    while (mark.firstChild) parent.insertBefore(mark.firstChild, mark);
+    mark.remove();
+    parent.normalize?.();
+  }
+
+  function updateAlarmMarkDisplay(mark) {
+    if (!mark) return false;
+    const alarmAt = normalizeAlarmAt(mark.dataset.alarmAt);
+    if (!alarmAt) return false;
+    if (!mark.dataset.alarmId) mark.dataset.alarmId = makeAlarmId();
+    mark.dataset.alarmAt = alarmAt;
+    mark.classList.add('note-alarm');
+    mark.classList.toggle('alarm-due', new Date(alarmAt).getTime() <= Date.now());
+    mark.title = 'Alarm: ' + formatAlarmDateTime(alarmAt);
+    return true;
+  }
+
+  function restoreAlarmMarks(root) {
+    root.querySelectorAll('.note-alarm').forEach(mark => {
+      if (!updateAlarmMarkDisplay(mark)) unwrapAlarmMark(mark);
+    });
+  }
+
+  function findAlarmMark(root, alarmId) {
+    if (!root || !alarmId) return null;
+    return [...root.querySelectorAll('.note-alarm')].find(mark => mark.dataset.alarmId === alarmId) || null;
+  }
+
+  function closestAlarmMark(node) {
+    const ed = getEd();
+    if (!node || !ed) return null;
+    const el = node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
+    const mark = el?.closest?.('.note-alarm');
+    return mark && ed.contains(mark) ? mark : null;
+  }
+
+  function alarmMarkForRange(range) {
+    if (!range) return null;
+    const startMark = closestAlarmMark(range.startContainer);
+    const endMark = closestAlarmMark(range.endContainer);
+    if (range.collapsed) return startMark;
+    return startMark && startMark === endMark ? startMark : null;
+  }
+
+  function selectAlarmMarkText(mark) {
+    if (!mark) return;
+    const range = document.createRange();
+    range.selectNodeContents(mark);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    getEd().focus();
+  }
+
+  function placeCursorAfterNode(node) {
+    if (!node) return;
+    const range = document.createRange();
+    range.setStartAfter(node);
+    range.collapse(true);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    getEd().focus();
+  }
+
+  function alarmItemsFromNote(note) {
+    if (!note) return [];
+    const root = document.createElement('div');
+    root.innerHTML = note.content || '';
+    return [...root.querySelectorAll('.note-alarm')]
+      .map((mark, index) => {
+        const alarmAt = normalizeAlarmAt(mark.dataset.alarmAt);
+        if (!alarmAt) return null;
+        return {
+          kind: 'inline',
+          noteId: note.id,
+          alarmId: mark.dataset.alarmId || note.id + '_alarm_' + index,
+          alarmAt,
+          title: note.title || 'Untitled Note',
+          text: alarmTextFromMark(mark),
+          due: new Date(alarmAt).getTime() <= Date.now()
+        };
+      })
+      .filter(Boolean);
+  }
+
+  function getAlarmItems() {
+    const items = [];
+    Object.values(notes).forEach(note => items.push(...alarmItemsFromNote(note)));
+    Object.keys(noteAlarms).forEach(noteId => {
+      const alarmAt = normalizeAlarmAt(noteAlarms[noteId]);
+      const note = notes[noteId];
+      if (!alarmAt || !note) return;
+      items.push({
+        kind: 'legacy',
+        noteId,
+        alarmId: '',
+        alarmAt,
+        title: note.title || 'Untitled Note',
+        text: note.title || 'Untitled Note',
+        due: new Date(alarmAt).getTime() <= Date.now()
+      });
+    });
+    return items.sort((a, b) => new Date(a.alarmAt) - new Date(b.alarmAt));
+  }
+
+  function renderAlarmButton() {
+    const badge = document.getElementById('alarm-badge');
+    if (!badge) return;
+    const count = getAlarmItems().length;
+    badge.textContent = count > 99 ? '99+' : String(count);
+    badge.hidden = count === 0;
+  }
+
+  function renderAlarmsList() {
+    const list = document.getElementById('alarms-list');
+    if (!list) return;
+    const items = getAlarmItems();
+    if (!items.length) {
+      list.innerHTML = '<div class="profile-empty">No alarms set.</div>';
+      return;
+    }
+
+    list.innerHTML = items.map(item =>
+      '<div class="profile-row alarm-row' + (item.due ? ' due' : '') + '" data-alarm-note-id="' + esc(item.noteId) + '" data-alarm-id="' + esc(item.alarmId) + '" data-alarm-kind="' + esc(item.kind) + '">' +
+        '<span class="alarm-icon"><i class="fa-solid fa-clock"></i></span>' +
+        '<div class="profile-main">' +
+          '<div class="alarm-text">' + esc(item.text) + '</div>' +
+          '<div class="alarm-note-title">' + esc(item.title) + '</div>' +
+          '<div class="notification-time">' + esc(formatAlarmDateTime(item.alarmAt)) + (item.due ? ' · Due' : '') + '</div>' +
+        '</div>' +
+        '<button class="modal-btn" data-clear-alarm-note="' + esc(item.noteId) + '" data-clear-alarm-id="' + esc(item.alarmId) + '" data-clear-alarm-kind="' + esc(item.kind) + '" type="button" title="Clear"><i class="fa-solid fa-xmark"></i></button>' +
+      '</div>'
+    ).join('');
+
+    list.querySelectorAll('[data-alarm-note-id]').forEach(row => {
+      row.addEventListener('click', e => {
+        if (e.target.closest('[data-clear-alarm-note]')) return;
+        openAlarmFromList(row.dataset.alarmNoteId, row.dataset.alarmId, row.dataset.alarmKind);
+      });
+    });
+    list.querySelectorAll('[data-clear-alarm-note]').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        clearNoteAlarm(btn.dataset.clearAlarmNote, btn.dataset.clearAlarmId, btn.dataset.clearAlarmKind);
+      });
+    });
+  }
+
+  function openAlarmFromList(noteId, alarmId, kind) {
+    document.getElementById('alarms-modal')?.classList.remove('open');
+    if (!notes[noteId]) {
+      showToast('That Note Is Not Available', 'error');
+      return;
+    }
+    openNote(noteId);
+    if (kind === 'inline' && alarmId) {
+      setTimeout(() => {
+        const mark = findAlarmMark(getEd(), alarmId);
+        if (mark) selectAlarmMarkText(mark);
+      }, 90);
+    }
+  }
+
+  function openAlarmsModal() {
+    renderAlarmsList();
+    document.getElementById('alarms-modal')?.classList.add('open');
+  }
+
+  function localDateParts(date) {
+    const pad = n => String(n).padStart(2, '0');
+    return {
+      date: date.getFullYear() + '-' + pad(date.getMonth() + 1) + '-' + pad(date.getDate()),
+      time: pad(date.getHours()) + ':' + pad(date.getMinutes())
+    };
+  }
+
+  function defaultAlarmParts() {
+    const date = new Date();
+    date.setHours(date.getHours() + 1, 0, 0, 0);
+    return localDateParts(date);
+  }
+
+  function parseAlarmInput(dateValue, timeValue) {
+    const dateText = String(dateValue || '').trim();
+    const timeText = String(timeValue || '').trim();
+    if (!dateText && !timeText) return '';
+
+    const now = new Date();
+    let year = now.getFullYear();
+    let month = now.getMonth();
+    let day = now.getDate();
+    let hour = dateText && !timeText ? 9 : now.getHours();
+    let minute = dateText && !timeText ? 0 : now.getMinutes();
+
+    if (dateText) {
+      const dateMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateText);
+      if (!dateMatch) return '';
+      year = Number(dateMatch[1]);
+      month = Number(dateMatch[2]) - 1;
+      day = Number(dateMatch[3]);
+    }
+
+    if (timeText) {
+      const timeMatch = /^(\d{2}):(\d{2})$/.exec(timeText);
+      if (!timeMatch) return '';
+      hour = Number(timeMatch[1]);
+      minute = Number(timeMatch[2]);
+    }
+
+    const date = new Date(year, month, day, hour, minute, 0, 0);
+    if (!Number.isFinite(date.getTime())) return '';
+    if (!dateText && timeText && date <= now) date.setDate(date.getDate() + 1);
+    return date.toISOString();
+  }
+
+  function updateAlarmSummary() {
+    const summary = document.getElementById('alarm-summary');
+    const alarmAt = parseAlarmInput(
+      document.getElementById('alarm-date-input')?.value,
+      document.getElementById('alarm-time-input')?.value
+    );
+    if (summary) summary.textContent = alarmAt ? formatAlarmDateTime(alarmAt) : '';
+  }
+
+  function getEditorRangeOrEnd() {
+    const ed = getEd();
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount) {
+      const range = sel.getRangeAt(0);
+      const container = range.commonAncestorContainer.nodeType === Node.ELEMENT_NODE
+        ? range.commonAncestorContainer
+        : range.commonAncestorContainer.parentElement;
+      if (container && ed.contains(container)) return range.cloneRange();
+    }
+    const range = document.createRange();
+    range.selectNodeContents(ed);
+    range.collapse(false);
+    return range;
+  }
+
+  function openNoteAlarmModal(noteId = activeId) {
+    if (!noteId || !notes[noteId]) {
+      showToast('Select A Note First', 'error');
+      return;
+    }
+    const range = getEditorRangeOrEnd();
+    const existingMark = alarmMarkForRange(range);
+    if (existingMark && !existingMark.dataset.alarmId) existingMark.dataset.alarmId = makeAlarmId();
+    const existingAt = normalizeAlarmAt(existingMark?.dataset.alarmAt);
+    const parts = existingAt ? localDateParts(new Date(existingAt)) : defaultAlarmParts();
+    const dateInput = document.getElementById('alarm-date-input');
+    const timeInput = document.getElementById('alarm-time-input');
+    const targetText = document.getElementById('alarm-target-text');
+    const clearBtn = document.getElementById('alarm-clear');
+
+    _alarmNoteId = noteId;
+    _alarmContext = {
+      noteId,
+      range,
+      alarmId: existingMark?.dataset.alarmId || '',
+      mode: existingMark ? 'update' : (range.collapsed ? 'insert' : 'wrap')
+    };
+
+    dateInput.value = parts.date;
+    timeInput.value = parts.time;
+    targetText.textContent = existingMark ? alarmTextFromMark(existingMark) : (range.collapsed ? 'New alarm text' : (range.toString().replace(/\s+/g, ' ').trim() || 'Selected text'));
+    clearBtn.style.display = existingMark ? '' : 'none';
+    updateAlarmSummary();
+    document.getElementById('note-alarm-modal')?.classList.add('open');
+    setTimeout(() => timeInput.focus(), 120);
+  }
+
+  function closeNoteAlarmModal() {
+    document.getElementById('note-alarm-modal')?.classList.remove('open');
+    _alarmNoteId = null;
+    _alarmContext = null;
+  }
+
+  function restoreAlarmContextRange() {
+    if (!_alarmContext?.range) return null;
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(_alarmContext.range);
+    return _alarmContext.range;
+  }
+
+  function applyAlarmToRange(range, alarmAt) {
+    const mark = createAlarmMark(alarmAt, _alarmContext?.alarmId || makeAlarmId());
+    if (range.collapsed) {
+      mark.textContent = 'Alarm';
+      range.insertNode(mark);
+      selectAlarmMarkText(mark);
+      return mark;
+    }
+    mark.appendChild(range.extractContents());
+    mark.querySelectorAll('.note-alarm').forEach(nested => unwrapAlarmMark(nested));
+    range.insertNode(mark);
+    placeCursorAfterNode(mark);
+    return mark;
+  }
+
+  async function saveNoteAlarm() {
+    if (!_alarmContext || !_alarmContext.noteId || !notes[_alarmContext.noteId]) return;
+    const alarmAt = parseAlarmInput(
+      document.getElementById('alarm-date-input')?.value,
+      document.getElementById('alarm-time-input')?.value
+    );
+    if (!alarmAt) {
+      showToast('Enter A Time Or Date', 'error');
+      return;
+    }
+    if (activeId !== _alarmContext.noteId) openNote(_alarmContext.noteId);
+    const ed = getEd();
+    getEd().focus();
+    const mark = _alarmContext.alarmId ? findAlarmMark(ed, _alarmContext.alarmId) : null;
+    if (mark) {
+      mark.dataset.alarmAt = alarmAt;
+      updateAlarmMarkDisplay(mark);
+      placeCursorAfterNode(mark);
+    } else {
+      const range = restoreAlarmContextRange();
+      if (!range) return;
+      applyAlarmToRange(range, alarmAt);
+    }
+    restoreAlarmMarks(ed);
+    refreshEmpty(ed);
+    if (syncActiveNoteFromEditor()) {
+      renderAlarmButton();
+      if (document.getElementById('alarms-modal')?.classList.contains('open')) renderAlarmsList();
+      scheduleSave();
+    }
+    closeNoteAlarmModal();
+    showToast('Alarm Set', 'success');
+  }
+
+  async function removeInlineAlarm(noteId, alarmId) {
+    if (!noteId || !alarmId || !notes[noteId]) return;
+    if (activeId === noteId) {
+      const mark = findAlarmMark(getEd(), alarmId);
+      if (mark) {
+        unwrapAlarmMark(mark);
+        refreshEmpty(getEd());
+        if (syncActiveNoteFromEditor()) scheduleSave();
+      }
+    } else {
+      const root = document.createElement('div');
+      root.innerHTML = notes[noteId].content || '';
+      const mark = findAlarmMark(root, alarmId);
+      if (mark) {
+        unwrapAlarmMark(mark);
+        notes[noteId].content = root.innerHTML;
+        notes[noteId].modified = new Date().toISOString();
+        await saveDoc(notes[noteId]);
+      }
+    }
+    renderAlarmButton();
+    if (document.getElementById('alarms-modal')?.classList.contains('open')) renderAlarmsList();
+  }
+
+  async function clearLegacyNoteAlarm(noteId) {
+    if (!noteId) return;
+    delete noteAlarms[noteId];
+    _writeNoteAlarmsToLocal();
+    renderAlarmButton();
+    if (document.getElementById('alarms-modal')?.classList.contains('open')) renderAlarmsList();
+    try {
+      await setDoc(_getUserDocRef(), { noteAlarms: { [noteId]: null } }, { merge: true });
+      showToast('Alarm Cleared', 'success');
+    } catch (err) {
+      console.error('clear note alarm:', err);
+      showToast('Alarm cleared locally; cloud sync failed', 'error');
+    }
+  }
+
+  async function clearNoteAlarm(noteId = _alarmContext?.noteId || _alarmNoteId, alarmId = _alarmContext?.alarmId || '', kind = '') {
+    if (alarmId || kind === 'inline') {
+      await removeInlineAlarm(noteId, alarmId);
+      if (_alarmContext?.noteId === noteId) closeNoteAlarmModal();
+      showToast('Alarm Cleared', 'success');
+      return;
+    }
+    if (_alarmContext?.mode && _alarmContext.mode !== 'update') {
+      closeNoteAlarmModal();
+      return;
+    }
+    if (_alarmContext?.alarmId) {
+      await removeInlineAlarm(_alarmContext.noteId, _alarmContext.alarmId);
+      closeNoteAlarmModal();
+      showToast('Alarm Cleared', 'success');
+      return;
+    }
+    await clearLegacyNoteAlarm(noteId);
+    if (_alarmNoteId === noteId) closeNoteAlarmModal();
   }
 
   function closeMentionShareModal(result) {
@@ -5076,6 +6150,8 @@
         title:    d.title    || 'Untitled Note',
         content:  d.content  || '',
         folderId: folderId || _getSharedNoteFolder(noteId),
+        pinnedAt: _getSharedNotePinnedAt(noteId),
+        pinScope: _getSharedNotePinScope(noteId),
         created:  d.created?.toDate?.()?.toISOString()  || new Date().toISOString(),
         modified: d.modified?.toDate?.()?.toISOString() || new Date().toISOString()
       });
@@ -5090,7 +6166,7 @@
           titleEl.value = d.title || 'Untitled Note';
           ed.innerHTML  = renderMarkdownContent(d.content || '');
           linkifyTextNodes(ed); ensureLinkAttrs(ed);
-          restoreChecklistState(ed); refreshEmpty(ed); updateCounts();
+          restoreChecklistState(ed); restoreAlarmMarks(ed); refreshEmpty(ed); updateCounts();
         }
       }
     }, err => {
@@ -5159,7 +6235,7 @@
       const sharedWith = d.sharedWith && typeof d.sharedWith === 'object' ? d.sharedWith : {};
       const sharedAccessKeys = Array.isArray(d.sharedAccessKeys) ? d.sharedAccessKeys : [];
       const sharedAccess = getSharedAccessEntry(sharedWith) || {};
-      if (!d.public && !hasSharedAccess(sharedWith, sharedAccessKeys)) {
+      if (!noteLinkPublicFromData(d) && !hasSharedAccess(sharedWith, sharedAccessKeys)) {
         showToast('This shared note is no longer available', 'error');
         window.history.replaceState({}, '', location.pathname);
         return;
@@ -5176,6 +6252,8 @@
         title:    d.title    || 'Untitled Note',
         content:  d.content  || '',
         folderId: _applySharedFolderFromData(noteId, sharedAccess) || _getSharedNoteFolder(noteId),
+        pinnedAt: _getSharedNotePinnedAt(noteId),
+        pinScope: _getSharedNotePinScope(noteId),
         created:  d.created?.toDate?.()?.toISOString()  || new Date().toISOString(),
         modified: d.modified?.toDate?.()?.toISOString() || new Date().toISOString()
       });
@@ -5209,7 +6287,7 @@
       const sharedWith = d.sharedWith && typeof d.sharedWith === 'object' ? d.sharedWith : {};
       const sharedAccessKeys = Array.isArray(d.sharedAccessKeys) ? d.sharedAccessKeys : [];
       const sharedAccess = getSharedAccessEntry(sharedWith) || {};
-      if (!d.public && !hasSharedAccess(sharedWith, sharedAccessKeys)) {
+      if (!noteLinkPublicFromData(d) && !hasSharedAccess(sharedWith, sharedAccessKeys)) {
         showToast('This shared note is no longer available', 'error');
         return false;
       }
@@ -5219,6 +6297,8 @@
         title:    d.title    || 'Untitled Note',
         content:  d.content  || '',
         folderId: _applySharedFolderFromData(noteId, sharedAccess) || _getSharedNoteFolder(noteId),
+        pinnedAt: _getSharedNotePinnedAt(noteId),
+        pinScope: _getSharedNotePinScope(noteId),
         created:  d.created?.toDate?.()?.toISOString()  || new Date().toISOString(),
         modified: d.modified?.toDate?.()?.toISOString() || new Date().toISOString()
       });
@@ -5286,8 +6366,9 @@
   }
 
   /* Event Wiring */
-  document.getElementById('drawer-btn').addEventListener('click',     openDrawer);
-  document.getElementById('sidebar-minimize-btn').addEventListener('click', e => { e.stopPropagation(); setSidebarMinimized(!sidebarMinimized); });
+  document.getElementById('drawer-btn').addEventListener('click',     toggleDrawer);
+  document.getElementById('mob-logo-btn').addEventListener('click',   toggleDrawer);
+  document.getElementById('sidebar-logo-btn').addEventListener('click', toggleSidebarFromLogo);
   document.getElementById('sidebar').addEventListener('click', () => { if (sidebarMinimized && !isMobile()) setSidebarMinimized(false); });
   document.getElementById('mob-new-btn').addEventListener('click',    openModal);
   document.getElementById('google-signin-btn').addEventListener('click', signInWithGoogle);
@@ -5299,6 +6380,35 @@
   document.getElementById('notifications-close').addEventListener('click', () => document.getElementById('notifications-modal').classList.remove('open'));
   document.getElementById('notifications-mark-read').addEventListener('click', markAllNotificationsRead);
   document.getElementById('notifications-modal').addEventListener('click', e => { if (e.target === e.currentTarget) document.getElementById('notifications-modal').classList.remove('open'); });
+  document.getElementById('alarm-btn').addEventListener('click', openAlarmsModal);
+  document.getElementById('alarms-close').addEventListener('click', () => document.getElementById('alarms-modal').classList.remove('open'));
+  document.getElementById('alarms-modal').addEventListener('click', e => { if (e.target === e.currentTarget) document.getElementById('alarms-modal').classList.remove('open'); });
+  document.getElementById('alarm-save').addEventListener('click', saveNoteAlarm);
+  document.getElementById('alarm-clear').addEventListener('click', () => clearNoteAlarm());
+  document.getElementById('alarm-cancel').addEventListener('click', closeNoteAlarmModal);
+  document.getElementById('note-alarm-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeNoteAlarmModal(); });
+  ['alarm-date-input', 'alarm-time-input'].forEach(id => {
+    document.getElementById(id).addEventListener('keydown', e => {
+      if (e.key === 'Enter') saveNoteAlarm();
+      if (e.key === 'Escape') closeNoteAlarmModal();
+    });
+    document.getElementById(id).addEventListener('input', updateAlarmSummary);
+  });
+  document.querySelectorAll('[data-alarm-date-preset]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const date = new Date();
+      if (btn.dataset.alarmDatePreset === 'tomorrow') date.setDate(date.getDate() + 1);
+      if (btn.dataset.alarmDatePreset === 'next-week') date.setDate(date.getDate() + 7);
+      document.getElementById('alarm-date-input').value = localDateParts(date).date;
+      updateAlarmSummary();
+    });
+  });
+  document.querySelectorAll('[data-alarm-time-preset]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.getElementById('alarm-time-input').value = btn.dataset.alarmTimePreset;
+      updateAlarmSummary();
+    });
+  });
   document.getElementById('mention-share-confirm').addEventListener('click', () => closeMentionShareModal(true));
   document.getElementById('mention-share-cancel').addEventListener('click', () => closeMentionShareModal(false));
   document.getElementById('mention-share-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeMentionShareModal(false); });
@@ -5306,7 +6416,11 @@
   document.getElementById('connect-profile-email-input').addEventListener('keydown', e => {
     if (e.key === 'Enter') connectProfileByEmail();
   });
+  document.getElementById('profile-link-approve').addEventListener('click', approvePendingProfileLink);
+  document.getElementById('profile-link-deny').addEventListener('click', closeProfileLinkApproval);
+  document.getElementById('profile-link-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeProfileLinkApproval(); });
   document.getElementById('share-btn').addEventListener('click',       () => openShareModal('note', activeId));
+  document.getElementById('share-link-toggle').addEventListener('change', e => setShareLinkEnabled(e.target.checked));
   document.getElementById('copy-link-btn').addEventListener('click',   copyShareLink);
   document.getElementById('native-share-btn').addEventListener('click', nativeShare);
   document.getElementById('share-stop-btn').addEventListener('click',  stopSharing);
@@ -5332,6 +6446,11 @@
   });
   document.getElementById('move-modal-cancel').addEventListener('click', closeMoveModal);
   document.getElementById('move-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeMoveModal(); });
+  document.getElementById('folder-color-input').addEventListener('change', e => {
+    const folderId = e.target.dataset.folderId;
+    delete e.target.dataset.folderId;
+    if (folderId) setFolderIconColor(folderId, e.target.value);
+  });
   document.getElementById('drawer-overlay').addEventListener('click', closeDrawer);
   document.getElementById('new-note-btn').addEventListener('click',   openModal);
   document.getElementById('empty-cta-btn').addEventListener('click',  openModal);
@@ -5360,6 +6479,8 @@
     }
     refreshEmpty(editorEl);
     if (!syncActiveNoteFromEditor()) return;
+    renderAlarmButton();
+    if (document.getElementById('alarms-modal')?.classList.contains('open')) renderAlarmsList();
     renderMentionPopover();
     scheduleUndoSnapshot();
     scheduleMentionSync();
@@ -5728,6 +6849,7 @@
   renderSidebar();
   initSettings();
   renderNotificationButton();
+  renderAlarmButton();
   renderProfileConnectionUI();
   // Apply persisted sidebar collapsed state (desktop only)
   sidebarMinimized = localStorage.getItem('notas_sidebar_minimized') === '1';
