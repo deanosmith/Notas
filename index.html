@@ -310,9 +310,12 @@
     .folder-notes { display: grid; grid-template-rows: 0fr; opacity: 0; transform: translateY(-4px); padding-left: 14px; margin-top: 2px; overflow: hidden; transition: grid-template-rows .22s cubic-bezier(.4,0,.2,1), opacity .16s ease, transform .22s cubic-bezier(.4,0,.2,1); }
     .folder-notes.expanded { grid-template-rows: 1fr; opacity: 1; transform: translateY(0); }
     .folder-notes-inner { min-height: 0; overflow: hidden; }
-    .folder-note-item { border-left: 2px solid var(--border); border-radius: var(--radius-sm) !important; margin-left: 2px; }
-    .folder-note-item:hover { border-left-color: var(--accent); }
-    .folder-note-item.active { border-left-color: var(--accent) !important; }
+    .sidebar-item.note-folder-border { border-left-width: 2px; border-left-color: var(--note-folder-color, var(--border)); }
+    .sidebar-item.note-folder-border:hover,
+    .sidebar-item.note-folder-border.active { border-left-color: var(--note-folder-color, var(--border)); }
+    .folder-note-item { border-left: 2px solid var(--note-folder-color, var(--border)); border-radius: var(--radius-sm) !important; margin-left: 2px; }
+    .folder-note-item:hover,
+    .folder-note-item.active { border-left-color: var(--note-folder-color, var(--border)) !important; }
     .pinned-notes-section { margin-bottom: 8px; }
 
     .sidebar-bottom { padding: 12px; border-top: 1px solid var(--border); display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
@@ -2069,7 +2072,7 @@
   });
 
   /* CRUD */
-  function createNote(title, folderId) {
+  async function createNote(title, folderId) {
     if (folderId && !isOwnedFolder(folders[folderId])) folderId = null;
     const id  = 'note_' + Date.now();
     const now = new Date().toISOString();
@@ -2096,8 +2099,16 @@
     if (folderId) expandedFolders.add(folderId);
     renderSidebar();
     openNote(id);
-    saveDoc(note);
-    if (folderId) inheritFolderSharingForNote(note, folderId);
+    try {
+      await saveDoc(note);
+      if (folderId) {
+        await inheritFolderSharingForNote(note, folderId);
+        renderSidebar();
+      }
+    } catch (err) {
+      console.error('inherit folder sharing for new note:', err);
+      showToast('Note created, but folder sharing could not be applied', 'error');
+    }
   }
 
   function createFolder(title) {
@@ -3054,10 +3065,16 @@
         };
     const snippet  = note.content.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 65) || 'Empty Note';
     const accessAvatars = renderAccessAvatars(accessProfilesForNote(note), isOwned ? 'Shared with' : 'Shared by');
+    const noteFolder = note.folderId ? folders[note.folderId] : null;
+    const noteFolderColor = noteFolder ? resolveFolderIconColor(noteFolder.iconColor, noteFolder.iconColorMode) : '';
     const el       = document.createElement('div');
     el.className   = 'sidebar-item' + (active ? ' active' : '');
     el.dataset.id  = note.id;
     el.draggable   = true;
+    if (noteFolderColor) {
+      el.classList.add('note-folder-border');
+      el.style.setProperty('--note-folder-color', noteFolderColor);
+    }
     el.innerHTML   =
       '<div class="item-info"><div class="item-name">' + esc(note.title) + '</div><div class="item-preview">' + esc(snippet) + '</div></div>' +
       accessAvatars +
@@ -4253,7 +4270,7 @@
     document.getElementById('share-modal-title').textContent = type === 'note' ? 'Share Note' : 'Share Folder';
     document.getElementById('share-modal-desc').textContent  = type === 'note'
       ? 'Linked profiles receive this note directly.'
-      : 'Linked profiles receive this folder directly.';
+      : 'Linked profiles receive this folder and its notes directly.';
     document.getElementById('share-link-input').value = url;
 
     const nativeBtn = document.getElementById('native-share-btn');
@@ -4614,7 +4631,7 @@
     return (kind + '_' + noteId + '_' + targetUid).replace(/[^A-Za-z0-9_-]/g, '_');
   }
 
-  async function writeProfileShare(note, targetUid, kind = 'share', context = {}) {
+  async function writeProfileShare(note, targetUid, kind = 'share', context = {}, options = {}) {
     const target = linkedProfileForUid(targetUid);
     const shareId = profileShareDocId(kind, note.id, targetUid);
     const now = new Date().toISOString();
@@ -4663,6 +4680,8 @@
       payload.sourceFolderTitle = sourceFolderTitle || 'Shared Folder';
     }
 
+    if (options.notify === false) return { notified: false, skipped: true };
+
     const inboxWrites = [];
     if (!target.emailOnly && target.uid) inboxWrites.push(setDoc(doc(fsDb, 'profileShares', target.uid, 'items', shareId), payload, { merge: true }));
     if (target.email) inboxWrites.push(setDoc(doc(fsDb, 'profileEmailShares', emailProfileDocId(target.email), 'items', shareId), payload, { merge: true }));
@@ -4675,9 +4694,44 @@
     const note = notes[noteId];
     if (!note || !targetUid || targetUid === userId) return false;
     if (!isOwnedNote(note)) return false;
-    await writeProfileShare(note, targetUid, kind, context);
+    await writeProfileShare(note, targetUid, kind, context, options);
     if (!options.silent) renderSidebar();
     return true;
+  }
+
+  async function writeFolderShareNotification(folderId, targetUid, noteIds = []) {
+    const folder = folders[folderId];
+    if (!folder || !targetUid || targetUid === userId) return { notified: false };
+    const target = linkedProfileForUid(targetUid);
+    const shareId = profileShareDocId('folder_share', folderId, targetUid);
+    const now = new Date().toISOString();
+    const targetEmail = normalizeEmail(target.email || '');
+    const sourceFolderTitle = folder.title || 'Shared Folder';
+    const payload = {
+      id: shareId,
+      type: 'folder_share',
+      sourceFolderId: folderId,
+      sourceFolderTitle,
+      folderId,
+      folderTitle: sourceFolderTitle,
+      noteIds: [...new Set(noteIds.filter(Boolean))],
+      recipientUid: target.emailOnly ? '' : targetUid,
+      recipientProfileKey: targetUid,
+      recipientName: target.displayName || '',
+      recipientEmail: targetEmail,
+      fromUid: userId,
+      fromName: currentProfile?.displayName || auth.currentUser?.displayName || 'Someone',
+      fromPhotoURL: currentProfile?.photoURL || auth.currentUser?.photoURL || '',
+      fromEmail: normalizeEmail(currentProfile?.email || auth.currentUser?.email || ''),
+      createdIso: now,
+      created: serverTimestamp()
+    };
+    const inboxWrites = [];
+    if (!target.emailOnly && target.uid) inboxWrites.push(setDoc(doc(fsDb, 'profileShares', target.uid, 'items', shareId), payload, { merge: true }));
+    if (target.email) inboxWrites.push(setDoc(doc(fsDb, 'profileEmailShares', emailProfileDocId(target.email), 'items', shareId), payload, { merge: true }));
+    const results = await Promise.allSettled(inboxWrites);
+    if (results.some(r => r.status === 'rejected')) console.warn('folder share notification delivery:', results);
+    return { notified: results.some(r => r.status === 'fulfilled') };
   }
 
   async function writeFolderProfileShare(folderId, targetUid) {
@@ -4702,7 +4756,14 @@
     const folderShared = await writeFolderProfileShare(folderId, targetUid);
     if (!folderShared) return false;
     const context = { sourceFolderId: folderId, sourceFolderTitle: folder.title || 'Shared Folder' };
-    await Promise.all(folderNotes.map(n => shareNoteWithProfile(n.id, targetUid, 'share', context)));
+    const grants = await Promise.all(folderNotes.map(n => shareNoteWithProfile(n.id, targetUid, 'share', context, { silent: true, notify: false })));
+    if (grants.some(ok => !ok)) return false;
+    const folderNotice = await writeFolderShareNotification(folderId, targetUid, folderNotes.map(n => n.id));
+    if (!folderNotice.notified && !folderNotes.length) return false;
+    if (!folderNotice.notified && folderNotes.length) {
+      await Promise.all(folderNotes.map(n => shareNoteWithProfile(n.id, targetUid, 'share', context, { silent: true })));
+    }
+    renderSidebar();
     return true;
   }
 
@@ -5036,6 +5097,12 @@
     return keys.some(key => !!sharedWith[key]);
   }
 
+  function hasImportedFolderPublicAccess(noteId, data) {
+    const localFolderId = _getSharedNoteFolder(noteId);
+    const sourceFolderId = localFolderId ? folders[localFolderId]?.sourceFolderId : '';
+    return !!(sourceFolderId && normalizePublicFolderIds(data?.publicFolderIds).includes(sourceFolderId));
+  }
+
   function getSharedAccessEntry(sharedWith) {
     if (!sharedWith || typeof sharedWith !== 'object') return null;
     const email = normalizeEmail(currentProfile?.email || auth.currentUser?.email || '');
@@ -5195,12 +5262,22 @@
     ].join('_');
   }
 
+  function notificationTargetId(notification) {
+    return notification?.noteId || notification?.sourceFolderId || notification?.folderId || notification?.id || '';
+  }
+
+  function notificationNoteIds(data) {
+    const ids = Array.isArray(data?.noteIds) ? data.noteIds : (data?.noteId ? [data.noteId] : []);
+    return [...new Set(ids.filter(id => typeof id === 'string' && id))];
+  }
+
   function notificationReadKeys(notification) {
     if (!notification) return [];
+    const targetId = notificationTargetId(notification);
     return [...new Set([
       notification.id,
       notification.readKey,
-      notificationReadKeyForParts(notification.type, notification.noteId, notification.fromUid)
+      notificationReadKeyForParts(notification.type, targetId, notification.fromUid)
     ].filter(Boolean))];
   }
 
@@ -5228,19 +5305,24 @@
   function normalizeProfileShareNotification(id, data) {
     const createdDate = data.created?.toDate?.();
     const created = createdDate ? createdDate.toISOString() : (data.createdIso || new Date().toISOString());
-    const type = data.type === 'mention' ? 'mention' : 'share';
+    const type = data.type === 'mention' ? 'mention' : (data.type === 'folder_share' ? 'folder_share' : 'share');
+    const sourceFolderId = data.sourceFolderId || data.folderId || '';
+    const sourceFolderTitle = data.sourceFolderTitle || data.folderTitle || 'Shared Folder';
+    const targetId = data.noteId || sourceFolderId || id;
     return {
       id,
       type,
       noteId: data.noteId || '',
+      noteIds: notificationNoteIds(data),
       noteTitle: data.noteTitle || 'Untitled Note',
       fromUid: data.fromUid || '',
       fromName: data.fromName || 'Someone',
       fromPhotoURL: data.fromPhotoURL || '',
-      sourceFolderId: data.sourceFolderId || '',
-      sourceFolderTitle: data.sourceFolderTitle || '',
+      fromEmail: normalizeEmail(data.fromEmail || ''),
+      sourceFolderId,
+      sourceFolderTitle,
       created,
-      readKey: notificationReadKeyForParts(type, data.noteId || '', data.fromUid || ''),
+      readKey: notificationReadKeyForParts(type, targetId, data.fromUid || ''),
       read: false,
       source: 'inbox'
     };
@@ -5274,16 +5356,46 @@
     _addSharedId(noteId);
     _subscribeSharedNote(noteId);
 
+    if (!accessEntryHasNoteScope(access)) {
+      const folderInfo = _sharedFolderInfoFromData(access);
+      if (folderInfo?.sourceFolderId) {
+        const notificationId = 'direct_folder_share_' + _safeDocFragment(folderInfo.sourceFolderId) + '_' + _safeDocFragment(access.fromUid || d.owner || '');
+        const existing = profileShareNotifications[notificationId] || {};
+        const noteIds = [...new Set([...(existing.noteIds || []), noteId])];
+        profileShareNotifications[notificationId] = {
+          ...existing,
+          id: notificationId,
+          type: 'folder_share',
+          noteId: '',
+          noteIds,
+          noteTitle: '',
+          fromUid: access.fromUid || d.owner || '',
+          fromName: access.fromName || 'Someone',
+          fromPhotoURL: access.fromPhotoURL || '',
+          fromEmail: normalizeEmail(access.fromEmail || ''),
+          sourceFolderId: folderInfo.sourceFolderId,
+          sourceFolderTitle: folderInfo.title || 'Shared Folder',
+          created: existing.created || created,
+          readKey: notificationReadKeyForParts('folder_share', folderInfo.sourceFolderId, access.fromUid || d.owner || ''),
+          read: false,
+          source: 'direct'
+        };
+      }
+      return;
+    }
+
     const notificationId = 'direct_' + type + '_' + noteId;
     profileShareNotifications[notificationId] = {
       ...(profileShareNotifications[notificationId] || {}),
       id: notificationId,
       type,
       noteId,
+      noteIds: [noteId],
       noteTitle: notes[noteId].title,
       fromUid: access.fromUid || d.owner || '',
       fromName: access.fromName || 'Someone',
       fromPhotoURL: access.fromPhotoURL || '',
+      fromEmail: normalizeEmail(access.fromEmail || ''),
       created,
       readKey: notificationReadKeyForParts(type, noteId, access.fromUid || d.owner || ''),
       read: false,
@@ -5331,13 +5443,26 @@
           return;
         }
         const data = ch.doc.data() || {};
-        if (!data.noteId || data.fromUid === userId) return;
+        if (data.fromUid === userId) return;
+        if (data.type === 'folder_share' || (!data.noteId && data.sourceFolderId)) {
+          const item = normalizeProfileShareNotification(id, data);
+          profileShareNotifications[id] = item;
+          const localFolderId = _ensureSharedFolderShell(_sharedFolderInfoFromData(data));
+          item.noteIds.forEach(noteId => {
+            if (localFolderId) _placeSharedNoteInFolder(noteId, localFolderId);
+            _addSharedId(noteId);
+            _subscribeSharedNote(noteId);
+          });
+          return;
+        }
+        if (!data.noteId) return;
         profileShareNotifications[id] = normalizeProfileShareNotification(id, data);
         const prevFolderId = _getSharedNoteFolder(data.noteId);
         const folderId = _applySharedFolderFromData(data.noteId, data);
         if (!sharedLibraryMeta[data.noteId] || (folderId && prevFolderId !== folderId)) _addSharedId(data.noteId);
         _subscribeSharedNote(data.noteId);
       });
+      renderSidebar();
       renderNotificationButton();
       if (document.getElementById('notifications-modal')?.classList.contains('open')) renderNotificationsList();
     };
@@ -5350,6 +5475,17 @@
       markSourceReady();
       snap.docChanges().forEach(ch => {
         if (ch.type === 'removed') {
+          const data = ch.doc.data() || {};
+          const access = getSharedAccessEntry(normalizeSharedWith(data.sharedWith)) || {};
+          const folderInfo = _sharedFolderInfoFromData(access);
+          if (folderInfo?.sourceFolderId) {
+            const folderNotificationId = 'direct_folder_share_' + _safeDocFragment(folderInfo.sourceFolderId) + '_' + _safeDocFragment(access.fromUid || data.owner || '');
+            const existing = profileShareNotifications[folderNotificationId];
+            if (existing?.noteIds?.length) {
+              existing.noteIds = existing.noteIds.filter(noteId => noteId !== ch.doc.id);
+              if (!existing.noteIds.length) delete profileShareNotifications[folderNotificationId];
+            }
+          }
           delete profileShareNotifications['direct_share_' + ch.doc.id];
           delete profileShareNotifications['direct_mention_' + ch.doc.id];
           return;
@@ -5375,7 +5511,7 @@
   function getNotificationItems() {
     const byReadKey = {};
     Object.values(profileShareNotifications).forEach(notification => {
-      const readKey = notification.readKey || notificationReadKeyForParts(notification.type, notification.noteId, notification.fromUid);
+      const readKey = notification.readKey || notificationReadKeyForParts(notification.type, notificationTargetId(notification), notification.fromUid);
       const item = { ...notification, readKey, read: isNotificationRead({ ...notification, readKey }) };
       const existing = byReadKey[readKey];
       if (!existing || (existing.source === 'direct' && item.source === 'inbox') || new Date(item.created) > new Date(existing.created)) {
@@ -5395,6 +5531,7 @@
   }
 
   function notificationText(n) {
+    if (n.type === 'folder_share') return n.fromName + ' shared folder "' + (n.sourceFolderTitle || 'Shared Folder') + '" with you';
     if (n.type === 'mention') return n.fromName + ' mentioned you in "' + n.noteTitle + '"';
     return n.fromName + ' shared "' + n.noteTitle + '" with you';
   }
@@ -5453,7 +5590,9 @@
     if (!item) return;
     document.getElementById('notifications-modal')?.classList.remove('open');
     let opened = false;
-    if (item.noteId) {
+    if (item.type === 'folder_share') {
+      opened = await openSharedFolderNotification(item);
+    } else if (item.noteId) {
       if (notes[item.noteId]) {
         openNote(item.noteId);
         opened = true;
@@ -5462,6 +5601,38 @@
       }
     }
     if (opened) await markNotificationRead(id);
+  }
+
+  async function openSharedFolderNotification(item) {
+    const sourceFolderId = item?.sourceFolderId || item?.folderId || '';
+    if (!sourceFolderId) return false;
+    const localFolderId = _ensureSharedFolderShell({
+      sourceFolderId,
+      title: item.sourceFolderTitle || 'Shared Folder',
+      sourceOwnerUid: item.fromUid || '',
+      sourceOwnerName: item.fromName || '',
+      sourceOwnerPhotoURL: item.fromPhotoURL || ''
+    });
+    const noteIds = notificationNoteIds(item);
+    noteIds.forEach(noteId => {
+      if (localFolderId) _placeSharedNoteInFolder(noteId, localFolderId);
+      _addSharedId(noteId);
+      _subscribeSharedNote(noteId);
+    });
+    if (localFolderId) {
+      expandedFolders.add(localFolderId);
+      activeFolderId = localFolderId;
+    }
+    renderSidebar();
+    const existingNoteId = noteIds.find(noteId => notes[noteId]);
+    if (existingNoteId) {
+      openNote(existingNoteId);
+      return true;
+    }
+    for (const noteId of noteIds) {
+      if (await openDirectSharedNote(noteId)) return true;
+    }
+    return !!localFolderId;
   }
 
   function openNotificationsModal() {
@@ -6129,11 +6300,12 @@
       const sharedWith = d.sharedWith && typeof d.sharedWith === 'object' ? d.sharedWith : {};
       const sharedAccessKeys = Array.isArray(d.sharedAccessKeys) ? d.sharedAccessKeys : [];
       const hasDirectAccess = hasSharedAccess(sharedWith, sharedAccessKeys);
+      const hasFolderPublicAccess = hasImportedFolderPublicAccess(noteId, d);
       const access = getSharedAccessEntry(sharedWith) || {};
       const folderId = _applySharedFolderFromData(noteId, access);
 
       // If the owner stopped sharing, remove the note from this user's library
-      if (!d.public && !hasDirectAccess) {
+      if (!d.public && !hasDirectAccess && !hasFolderPublicAccess) {
         delete notes[noteId];
         _removeSharedId(noteId);
         if (sharedNoteUnsubs[noteId]) { sharedNoteUnsubs[noteId](); delete sharedNoteUnsubs[noteId]; }
@@ -6327,6 +6499,28 @@
     if (notify) showToast('Removed From Library', 'success');
   }
 
+  async function getImportableSharedFolderNotes(folderId) {
+    const byId = {};
+    const queries = [
+      query(collection(fsDb, 'notes'), where('folderId', '==', folderId), where('public', '==', true)),
+      query(collection(fsDb, 'notes'), where('publicFolderIds', 'array-contains', folderId))
+    ];
+    let succeeded = false;
+    let lastErr = null;
+    for (const qRef of queries) {
+      try {
+        const snap = await getDocs(qRef);
+        succeeded = true;
+        snap.forEach(noteSnap => { byId[noteSnap.id] = noteSnap; });
+      } catch (err) {
+        lastErr = err;
+        console.warn('shared folder notes query:', err);
+      }
+    }
+    if (!succeeded && lastErr) throw lastErr;
+    return Object.values(byId);
+  }
+
   // Folder sharing: create a recipient-local folder shell, then subscribe to each note.
   async function importSharedFolder(folderId) {
     try {
@@ -6343,21 +6537,38 @@
         title: folderData.title || 'Shared Folder',
         sourceOwnerUid: folderData.owner || ''
       });
-      const q = query(collection(fsDb, 'notes'), where('folderId', '==', folderId));
-      const notesSnap = await getDocs(q);
+      const noteDocs = await getImportableSharedFolderNotes(folderId);
       let added = 0;
+      let firstAddedId = '';
       const persistJobs = [];
-      notesSnap.forEach(d => {
-        if (d.data().owner !== userId) {
-          if (localFolderId) _placeSharedNoteInFolder(d.id, localFolderId);
-          persistJobs.push(_addSharedId(d.id));
-          _subscribeSharedNote(d.id);
+      noteDocs.forEach(noteSnap => {
+        const data = noteSnap.data() || {};
+        const folderPublic = !!data.public || normalizePublicFolderIds(data.publicFolderIds).includes(folderId);
+        if (data.owner !== userId && folderPublic) {
+          if (localFolderId) _placeSharedNoteInFolder(noteSnap.id, localFolderId);
+          notes[noteSnap.id] = hydrateNoteShareState(data, {
+            id: noteSnap.id,
+            owner: data.owner,
+            title:    data.title    || 'Untitled Note',
+            content:  data.content  || '',
+            folderId: localFolderId || _getSharedNoteFolder(noteSnap.id),
+            pinnedAt: _getSharedNotePinnedAt(noteSnap.id),
+            pinScope: _getSharedNotePinScope(noteSnap.id),
+            created:  data.created?.toDate?.()?.toISOString()  || new Date().toISOString(),
+            modified: data.modified?.toDate?.()?.toISOString() || new Date().toISOString()
+          });
+          persistJobs.push(_addSharedId(noteSnap.id));
+          _subscribeSharedNote(noteSnap.id);
+          if (!firstAddedId) firstAddedId = noteSnap.id;
           added++;
         }
       });
       await Promise.all(persistJobs);
       window.history.replaceState({}, '', location.pathname);
+      renderSidebar();
+      if (firstAddedId) openNote(firstAddedId);
       if (added) showToast('Folder notes added to your library!', 'success');
+      else showToast('Folder added to your library!', 'success');
     } catch (err) {
       console.error('importSharedFolder:', err);
       showToast('Could not access shared folder', 'error');
