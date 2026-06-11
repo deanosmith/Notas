@@ -273,6 +273,11 @@
     .item-preview { font-size: 11.5px; color: var(--note-subtext); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
     .modal-btn.danger { background: linear-gradient(135deg, rgba(255,69,58,.45), rgba(180,30,24,.35)); color: #fff; border-color: rgba(255,69,58,.4); }
     .modal-btn.danger:hover { background: linear-gradient(135deg, rgba(255,69,58,.65), rgba(180,30,24,.55)); border-color: rgba(255,69,58,.55); }
+    .access-avatars { display: flex; align-items: center; flex-shrink: 0; margin-left: 2px; }
+    .access-avatar { width: 18px; height: 18px; margin-left: -5px; border-radius: 50%; border: 1px solid var(--surface); background: var(--surface3); color: var(--accent); display: inline-flex; align-items: center; justify-content: center; font-size: 8.5px; font-weight: 750; line-height: 1; overflow: hidden; position: relative; box-shadow: 0 0 0 1px var(--glass-border); }
+    .access-avatar:first-child { margin-left: 0; }
+    .access-avatar img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+    .access-more { background: var(--surface2); color: var(--text2); font-size: 8px; }
     .sidebar-item[draggable="true"] { cursor: grab; }
     .sidebar-item.dragging { opacity: .35; pointer-events: none; }
     .folder-row.drag-over { background: linear-gradient(180deg, rgba(var(--orb-r),var(--orb-g),var(--orb-b),.22), rgba(var(--orb-r),var(--orb-g),var(--orb-b),.08)) !important; border-color: rgba(var(--orb-r),var(--orb-g),var(--orb-b),.45) !important; box-shadow: inset 0 0 0 2px rgba(var(--orb-r),var(--orb-g),var(--orb-b),.16); }
@@ -282,7 +287,7 @@
     .move-folder-item:hover { background: rgba(var(--orb-r),var(--orb-g),var(--orb-b),.12); color: var(--text); }
     .move-folder-item.is-current { color: var(--muted); pointer-events: none; font-style: italic; }
     .move-folder-item .mfi { color: var(--accent); opacity: .8; font-size: 12px; width: 14px; flex-shrink: 0; }
-    .modal-note-info { font-size: 12.5px; color: var(--muted); margin-bottom: 16px; padding: 8px 12px; background: rgba(255,255,255,.04); border-radius: var(--radius-xs); border: 1px solid var(--glass-border); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .modal-note-info { font-size: 12.5px; color: var(--muted); margin-bottom: 16px; padding: 8px 12px; background: rgba(255,255,255,.04); border-radius: var(--radius-xs); border: 1px solid var(--glass-border); white-space: normal; overflow: hidden; text-overflow: ellipsis; }
 
     /* Folder items */
     .folder-item { margin-bottom: 2px; }
@@ -432,6 +437,8 @@
     .modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
     .modal-btn { padding: 9px 18px; border-radius: var(--radius-xs); border: 1px solid var(--glass-border); background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02)); color: var(--text); font-size: 13px; font-family: var(--font); font-weight: 500; cursor: pointer; transition: background .12s, transform .12s; }
     .modal-btn:hover { background: linear-gradient(180deg, rgba(255,255,255,.09), rgba(255,255,255,.04)); transform: translateY(-1px); }
+    .modal-btn:disabled { opacity: .58; cursor: default; transform: none; }
+    .modal-btn:disabled:hover { background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02)); transform: none; }
     .modal-btn.primary { background: linear-gradient(135deg, var(--accent-h), var(--accent)); color: var(--accent-text); border-color: rgba(var(--orb-r), var(--orb-g), var(--orb-b), .24); font-weight: 600; }
     .modal-btn.primary:hover { background: linear-gradient(135deg, var(--accent-h), var(--accent)); filter: brightness(1.12); border-color: rgba(var(--orb-r), var(--orb-g), var(--orb-b), .34); }
     body.light-mode .modal-btn.primary, body.light-mode .empty-cta, body.light-mode .fs-btn:hover { color: var(--accent-text); }
@@ -443,7 +450,8 @@
     .profile-connect-row .modal-btn { flex-shrink: 0; padding-left: 12px; padding-right: 12px; }
     .profile-list { display: flex; flex-direction: column; gap: 6px; max-height: 180px; overflow-y: auto; }
     .profile-row { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 8px 10px; border: 1px solid var(--glass-border); border-radius: var(--radius-xs); background: linear-gradient(180deg, rgba(255,255,255,.045), rgba(255,255,255,.015)); }
-    .profile-avatar { width: 26px; height: 26px; border-radius: 50%; object-fit: cover; flex-shrink: 0; background: var(--surface3); color: var(--accent); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; }
+    .profile-avatar { width: 26px; height: 26px; border-radius: 50%; object-fit: cover; flex-shrink: 0; background: var(--surface3); color: var(--accent); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; overflow: hidden; position: relative; }
+    .profile-avatar img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
     .profile-main { min-width: 0; flex: 1; }
     .profile-name { font-size: 12.5px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .profile-sub { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -968,6 +976,8 @@
   let _mentionActiveIndex = 0;
   let _mentionSaveTimer = null;
   let _mentionShareResolver = null;
+  let _linkedProfileRefreshTimer = null;
+  let _refreshingLinkedProfiles = false;
   let declinedMentionShares = new Set();
 
   /* ── Custom Undo/Redo System ─────────────────────────── */
@@ -1246,11 +1256,16 @@
     return name.trim().split(/\s+/).slice(0, 2).map(p => p[0]).join('').toUpperCase() || 'U';
   }
 
-  function renderProfileAvatar(profile) {
+  function renderAvatar(profile, className) {
+    const initials = esc(profileInitials(profile));
     if (profile?.photoURL) {
-      return '<img class="profile-avatar" src="' + esc(profile.photoURL) + '" alt="" referrerpolicy="no-referrer" onerror="this.style.display=&quot;none&quot;" />';
+      return '<span class="' + className + '">' + initials + '<img src="' + esc(profile.photoURL) + '" alt="" referrerpolicy="no-referrer" onerror="this.remove()" /></span>';
     }
-    return '<span class="profile-avatar">' + esc(profileInitials(profile)) + '</span>';
+    return '<span class="' + className + '">' + initials + '</span>';
+  }
+
+  function renderProfileAvatar(profile) {
+    return renderAvatar(profile, 'profile-avatar');
   }
 
   function updateUserAvatar(user) {
@@ -1331,6 +1346,7 @@
     if (data?.profile) currentProfile = { ...(currentProfile || {}), ...data.profile };
     linkedProfiles = { ..._readLinkedProfilesFromLocal(), ..._readLinkedProfiles(data) };
     _writeLinkedProfilesToLocal();
+    scheduleLinkedProfileRefresh();
     const remoteReadNotifications = _readNotificationState(data);
     const localReadNotifications = _readNotificationStateFromLocal();
     readNotifications = _mergeNotificationState(remoteReadNotifications, localReadNotifications);
@@ -1347,6 +1363,63 @@
     renderShareProfileList();
     renderNotificationButton();
     if (document.getElementById('notifications-modal')?.classList.contains('open')) renderNotificationsList();
+  }
+
+  function scheduleLinkedProfileRefresh() {
+    clearTimeout(_linkedProfileRefreshTimer);
+    _linkedProfileRefreshTimer = setTimeout(refreshLinkedProfileDetails, 300);
+  }
+
+  async function refreshLinkedProfileDetails() {
+    if (_refreshingLinkedProfiles || !userId) return;
+    const candidates = Object.values(linkedProfiles)
+      .filter(profile => profile?.email && (profile.emailOnly || !profile.photoURL));
+    if (!candidates.length) return;
+
+    _refreshingLinkedProfiles = true;
+    const updates = {};
+    let changed = false;
+    try {
+      for (const profile of candidates) {
+        const email = normalizeEmail(profile.email);
+        if (!email) continue;
+        const snap = await getDoc(doc(fsDb, 'profileEmails', emailProfileDocId(email)));
+        if (!snap.exists()) continue;
+        const data = snap.data() || {};
+        if (!data.uid || data.uid === userId) continue;
+        const next = {
+          ...profile,
+          uid: data.uid,
+          email: normalizeEmail(data.email || email),
+          displayName: data.displayName || profile.displayName || email.split('@')[0],
+          photoURL: data.photoURL || profile.photoURL || '',
+          emailOnly: false
+        };
+        const oldUid = profile.uid;
+        if (oldUid !== next.uid) {
+          delete linkedProfiles[oldUid];
+          updates[oldUid] = deleteField();
+          changed = true;
+        }
+        if (JSON.stringify(linkedProfiles[next.uid] || {}) !== JSON.stringify(next)) {
+          linkedProfiles[next.uid] = next;
+          updates[next.uid] = next;
+          changed = true;
+        }
+      }
+      if (!changed) return;
+      _writeLinkedProfilesToLocal();
+      renderProfileConnectionUI();
+      renderShareProfileList();
+      renderSidebar();
+      if (Object.keys(updates).length) {
+        await setDoc(_getUserDocRef(), { linkedProfiles: updates }, { merge: true });
+      }
+    } catch (err) {
+      console.warn('refresh linked profiles:', err);
+    } finally {
+      _refreshingLinkedProfiles = false;
+    }
   }
 
   function hasProfileShareMetadata(note) {
@@ -1471,6 +1544,7 @@
     if (input) input.value = '';
     renderProfileConnectionUI();
     renderShareProfileList();
+    scheduleLinkedProfileRefresh();
 
     try {
       await setDoc(_getUserDocRef(), { linkedProfiles: { [profile.uid]: profile } }, { merge: true });
@@ -1567,6 +1641,8 @@
           sharedAccessKeys: normalizeSharedAccessKeys(d.sharedAccessKeys),
           sourceFolderId: d.sourceFolderId || '',
           sourceOwnerUid: d.sourceOwnerUid || '',
+          sourceOwnerName: d.sourceOwnerName || '',
+          sourceOwnerPhotoURL: d.sourceOwnerPhotoURL || '',
           created:  d.created?.toDate?.()?.toISOString()  || new Date().toISOString(),
           modified: d.modified?.toDate?.()?.toISOString() || new Date().toISOString()
         };
@@ -1725,6 +1801,7 @@
 
   /* CRUD */
   function createNote(title, folderId) {
+    if (folderId && !isOwnedFolder(folders[folderId])) folderId = null;
     const id  = 'note_' + Date.now();
     const now = new Date().toISOString();
     const folder = folderId ? folders[folderId] : null;
@@ -1768,15 +1845,73 @@
     openDeleteModal('folder', id);
   }
 
+  async function removeSharedFolderFromLibrary(id) {
+    const folder = folders[id];
+    if (!folder) return;
+    const batch = writeBatch(fsDb);
+    const removedSharedIds = [];
+    let activeWasRemoved = false;
+
+    Object.values(notes).filter(n => n.folderId === id).forEach(n => {
+      if (isOwnedNote(n)) {
+        n.folderId = null;
+        batch.update(doc(fsDb, 'notes', n.id), { folderId: null });
+      } else {
+        if (sharedNoteUnsubs[n.id]) { sharedNoteUnsubs[n.id](); delete sharedNoteUnsubs[n.id]; }
+        delete notes[n.id];
+        removedSharedIds.push(n.id);
+        if (activeId === n.id) activeWasRemoved = true;
+      }
+    });
+
+    batch.delete(doc(fsDb, 'folders', id));
+    delete folders[id];
+    expandedFolders.delete(id);
+    if (activeFolderId === id) activeFolderId = null;
+    if (activeWasRemoved) activeId = null;
+
+    try {
+      await batch.commit();
+      await Promise.all(removedSharedIds.map(noteId => _removeSharedId(noteId)));
+      showToast('Removed From Library', 'success');
+    } catch (err) {
+      console.error('removeSharedFolderFromLibrary:', err);
+      showToast('Failed To Remove From Library', 'error');
+    }
+    renderSidebar();
+    if (!activeId) { const ids = sortedIds(); ids.length ? openNote(ids[0]) : showEditorView(false); }
+  }
+
   async function _execDeleteFolder(id) {
     const folder = folders[id];
     if (!folder) return;
+    if (!isOwnedFolder(folder)) { await removeSharedFolderFromLibrary(id); return; }
     const batch = writeBatch(fsDb);
     const sharedToMove = [];
     Object.values(notes).filter(n => n.folderId === id).forEach(n => {
       n.folderId = null;
-      if (isOwnedNote(n)) batch.update(doc(fsDb, 'notes', n.id), { folderId: null });
-      else                sharedToMove.push(n.id);
+      if (isOwnedNote(n)) {
+        const publicFolderIds = new Set(normalizePublicFolderIds(n.publicFolderIds));
+        publicFolderIds.delete(id);
+        n.publicFolderIds = [...publicFolderIds];
+        const nextSharedWith = {};
+        Object.keys(normalizeSharedWith(n.sharedWith)).forEach(key => {
+          const nextEntry = removeFolderScopeFromEntry(n.sharedWith[key], id);
+          if (nextEntry) nextSharedWith[key] = nextEntry;
+        });
+        n.sharedWith = nextSharedWith;
+        n.sharedAccessKeys = rebuildSharedAccessKeys(n.sharedWith);
+        n.public = computeEffectiveNotePublic(n);
+        batch.update(doc(fsDb, 'notes', n.id), {
+          folderId: null,
+          public: n.public,
+          publicFolderIds: n.publicFolderIds,
+          sharedWith: Object.keys(n.sharedWith).length ? n.sharedWith : deleteField(),
+          sharedAccessKeys: n.sharedAccessKeys.length ? n.sharedAccessKeys : deleteField()
+        });
+      } else {
+        sharedToMove.push(n.id);
+      }
     });
     batch.delete(doc(fsDb, 'folders', id));
     delete folders[id];
@@ -2181,15 +2316,29 @@
 
   /* Delete Modal */
   function openDeleteModal(type, id) {
-    const name = type === 'note' ? notes[id]?.title : folders[id]?.title;
+    const item = type === 'note' ? notes[id] : folders[id];
+    const name = item?.title;
     if (!name) return;
-    _deletePending = { type, id };
-    document.getElementById('delete-modal-title').textContent =
-      type === 'note' ? 'Delete Note?' : 'Delete Folder?';
-    document.getElementById('delete-modal-body').textContent =
-      type === 'note'
-        ? '"' + name + '" will be permanently deleted and cannot be recovered.'
-        : '"' + name + '" will be deleted. Notes inside will be moved to uncategorised.';
+    const isOwned = type === 'note' ? isOwnedNote(item) : isOwnedFolder(item);
+    _deletePending = { type, id, mode: isOwned ? 'delete' : 'remove' };
+
+    const titleEl = document.getElementById('delete-modal-title');
+    const bodyEl = document.getElementById('delete-modal-body');
+    const confirmBtn = document.getElementById('delete-modal-confirm');
+
+    titleEl.textContent = isOwned
+      ? (type === 'note' ? 'Delete Note?' : 'Delete Folder?')
+      : (type === 'note' ? 'Remove Shared Note?' : 'Remove Shared Folder?');
+    bodyEl.textContent = isOwned
+      ? (type === 'note'
+        ? '"' + name + '" will be permanently deleted for everyone with access. This cannot be recovered.'
+        : '"' + name + '" will be deleted from your workspace. Notes inside will be moved to uncategorised, not deleted.')
+      : (type === 'note'
+        ? '"' + name + '" will be removed from your library only. The owner\'s original note will not be deleted.'
+        : '"' + name + '" and its shared notes will be removed from your library only. The owner\'s original folder and notes will not be deleted.');
+    confirmBtn.innerHTML = isOwned
+      ? '<i class="fa-solid fa-trash" style="margin-right:6px;"></i>Delete'
+      : '<i class="fa-solid fa-xmark" style="margin-right:6px;"></i>Remove';
     document.getElementById('delete-modal').classList.add('open');
   }
   function closeDeleteModal() {
@@ -2222,7 +2371,10 @@
     if (!isNoFolder) noFolderItem.addEventListener('click', () => { closeMoveModal(); moveNoteToFolder(noteId, null); });
     list.appendChild(noFolderItem);
 
-    Object.values(folders)
+    const moveFolders = Object.values(folders)
+      .filter(folder => !isOwnedNote(note) || isOwnedFolder(folder));
+
+    moveFolders
       .sort((a, b) => new Date(a.created) - new Date(b.created))
       .forEach(folder => {
         const isCurrent = note.folderId === folder.id;
@@ -2234,7 +2386,7 @@
         list.appendChild(item);
       });
 
-    if (!Object.keys(folders).length) {
+    if (!moveFolders.length) {
       const empty = document.createElement('div');
       empty.style.cssText = 'padding:12px;color:var(--muted);font-size:12.5px;text-align:center;font-style:italic;';
       empty.textContent = 'No folders yet — create one first';
@@ -2252,6 +2404,7 @@
     const note = notes[noteId];
     if (!note) return;
     folderId = folderId && folders[folderId] ? folderId : null;
+    if (folderId && isOwnedNote(note) && !isOwnedFolder(folders[folderId])) folderId = null;
     const prev = note.folderId;
     if ((folderId || null) === (prev || null)) return;
     note.folderId = folderId || null;
@@ -2366,6 +2519,14 @@
     return !note?.owner || note.owner === userId;
   }
 
+  function isSharedFolder(folder) {
+    return !!(folder?.shared || folder?.sourceFolderId);
+  }
+
+  function isOwnedFolder(folder) {
+    return !!folder && !isSharedFolder(folder);
+  }
+
   function hasVisibleFolder(note) {
     return !!(note?.folderId && folders[note.folderId]);
   }
@@ -2373,6 +2534,72 @@
   const noteMatchesFilter = (n, f) =>
     n.title.toLowerCase().includes(f) ||
     n.content.replace(/<[^>]+>/g, ' ').toLowerCase().includes(f);
+
+  function profileIdentityKey(profile) {
+    return profile?.uid || normalizeEmail(profile?.email || '') || profile?.displayName || '';
+  }
+
+  function uniqueProfiles(profiles) {
+    const out = [];
+    const seen = new Set();
+    profiles.filter(Boolean).forEach(profile => {
+      const key = profileIdentityKey(profile);
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      out.push(profile);
+    });
+    return out;
+  }
+
+  function accessProfilesFromSharedWith(sharedWith) {
+    return uniqueProfiles(Object.values(normalizeSharedWith(sharedWith))
+      .map(entry => normalizeAccessEntry(entry))
+      .filter(accessEntryHasAnyScope)
+      .map(entry => ({
+        uid: entry.uid || emailProfileKey(entry.email || ''),
+        displayName: entry.displayName || entry.email || 'Linked Profile',
+        email: normalizeEmail(entry.email || ''),
+        photoURL: entry.photoURL || ''
+      })));
+  }
+
+  function sourceProfileFromAccess(access, fallbackName = 'Shared Owner') {
+    if (!access) return null;
+    return {
+      uid: access.fromUid || '',
+      displayName: access.fromName || fallbackName,
+      email: normalizeEmail(access.fromEmail || ''),
+      photoURL: access.fromPhotoURL || ''
+    };
+  }
+
+  function accessProfilesForNote(note) {
+    if (!note) return [];
+    if (isOwnedNote(note)) return accessProfilesFromSharedWith(note.sharedWith);
+    return uniqueProfiles([sourceProfileFromAccess(getSharedAccessEntry(note.sharedWith), 'Shared Owner')]);
+  }
+
+  function accessProfilesForFolder(folder) {
+    if (!folder) return [];
+    if (isOwnedFolder(folder)) return accessProfilesFromSharedWith(folder.sharedWith);
+    return uniqueProfiles([{
+      uid: folder.sourceOwnerUid || '',
+      displayName: folder.sourceOwnerName || 'Shared Owner',
+      email: '',
+      photoURL: folder.sourceOwnerPhotoURL || ''
+    }]);
+  }
+
+  function renderAccessAvatars(profiles, label) {
+    const visible = uniqueProfiles(profiles).filter(p => p.displayName || p.photoURL || p.email);
+    if (!visible.length) return '';
+    const shown = visible.slice(0, 3);
+    const title = (label ? label + ': ' : '') + visible.map(p => p.displayName || p.email || 'Linked Profile').join(', ');
+    return '<span class="access-avatars" title="' + esc(title) + '">' +
+      shown.map(p => renderAvatar(p, 'access-avatar')).join('') +
+      (visible.length > shown.length ? '<span class="access-avatar access-more">+' + (visible.length - shown.length) + '</span>' : '') +
+    '</span>';
+  }
 
   /* ── Context Menu ────────────────────────────────── */
   function openCtxMenu(anchorEl, items) {
@@ -2420,12 +2647,14 @@
     const active   = note.id === activeId;
     const isOwned  = isOwnedNote(note);
     const snippet  = note.content.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 65) || 'Empty Note';
+    const accessAvatars = renderAccessAvatars(accessProfilesForNote(note), isOwned ? 'Shared with' : 'Shared by');
     const el       = document.createElement('div');
     el.className   = 'sidebar-item' + (active ? ' active' : '');
     el.dataset.id  = note.id;
     el.draggable   = true;
     el.innerHTML   =
       '<div class="item-info"><div class="item-name">' + esc(note.title) + '</div><div class="item-preview">' + esc(snippet) + '</div></div>' +
+      accessAvatars +
       (isOwned ? '' : '<span class="note-shared-badge" title="Shared with you"><i class="fa-solid fa-link"></i></span>') +
       '<button class="item-menu-btn" title="More Options"><i class="fa-solid fa-ellipsis"></i></button>';
     el.addEventListener('click', e => {
@@ -2445,7 +2674,7 @@
             ...(inFolder ? [{ icon: 'fa-solid fa-folder-minus', label: 'Remove from Folder', action: () => moveNoteToFolder(note.id, null) }] : []),
             { icon: 'fa-solid fa-folder-open', label: 'Move to Folder', action: () => openMoveModal(note.id) },
             'sep',
-            { icon: 'fa-solid fa-xmark', label: 'Remove from Library', danger: true, action: () => removeFromLibrary(note.id) }
+            { icon: 'fa-solid fa-xmark', label: 'Remove from Library', danger: true, action: () => deleteNote(note.id) }
           ];
       openCtxMenu(e.currentTarget, items);
     });
@@ -2490,14 +2719,17 @@
       const folderEl   = document.createElement('div');
       folderEl.className = 'folder-item';
 
-      const sharedBadge = folder.public || folder.shared
+      const folderAccessProfiles = accessProfilesForFolder(folder);
+      const sharedBadge = folder.public || folder.shared || folderAccessProfiles.length
         ? '<span class="folder-shared-badge" title="Shared"><i class="fa-solid fa-link"></i></span>'
         : '';
+      const folderAccessAvatars = renderAccessAvatars(folderAccessProfiles, isOwnedFolder(folder) ? 'Folder shared with' : 'Shared by');
       folderEl.innerHTML =
         '<div class="folder-row" data-fid="' + folder.id + '">' +
           '<span class="folder-chevron' + (isExpanded ? ' expanded' : '') + '"><i class="fa-solid fa-chevron-right"></i></span>' +
           '<span class="item-icon folder-icon" style="color:var(--accent);opacity:.8"><i class="fa-solid fa-folder' + (isExpanded ? '-open' : '') + '"></i></span>' +
           '<div class="item-info"><div class="item-name">' + esc(folder.title) + '</div></div>' +
+          folderAccessAvatars +
           sharedBadge +
           '<button class="item-menu-btn" title="More Options"><i class="fa-solid fa-ellipsis"></i></button>' +
         '</div>';
@@ -2549,12 +2781,17 @@
       });
       row.querySelector('.item-menu-btn').addEventListener('click', e => {
         e.stopPropagation();
-        openCtxMenu(e.currentTarget, [
-          { icon: 'fa-solid fa-plus',                  label: 'New Note in Folder', action: () => { activeFolderId = folder.id; expandedFolders.add(folder.id); openModal(); } },
-          { icon: 'fa-solid fa-arrow-up-from-bracket', label: 'Share Folder',       action: () => openShareModal('folder', folder.id) },
-          'sep',
-          { icon: 'fa-solid fa-xmark', label: 'Delete Folder', danger: true,        action: () => deleteFolder(folder.id) }
-        ]);
+        const folderItems = isOwnedFolder(folder)
+          ? [
+              { icon: 'fa-solid fa-plus',                  label: 'New Note in Folder', action: () => { activeFolderId = folder.id; expandedFolders.add(folder.id); openModal(); } },
+              { icon: 'fa-solid fa-arrow-up-from-bracket', label: 'Share Folder',       action: () => openShareModal('folder', folder.id) },
+              'sep',
+              { icon: 'fa-solid fa-trash', label: 'Delete Folder', danger: true,        action: () => deleteFolder(folder.id) }
+            ]
+          : [
+              { icon: 'fa-solid fa-xmark', label: 'Remove from Library', danger: true,  action: () => deleteFolder(folder.id) }
+            ];
+        openCtxMenu(e.currentTarget, folderItems);
       });
       list.appendChild(folderEl);
     });
@@ -4061,7 +4298,9 @@
     return {
       sourceFolderId,
       title: String(data?.sourceFolderTitle || data?.folderTitle || 'Shared Folder').trim() || 'Shared Folder',
-      sourceOwnerUid: data?.fromUid || data?.sourceOwnerUid || ''
+      sourceOwnerUid: data?.fromUid || data?.sourceOwnerUid || '',
+      sourceOwnerName: data?.fromName || data?.sourceOwnerName || '',
+      sourceOwnerPhotoURL: data?.fromPhotoURL || data?.sourceOwnerPhotoURL || ''
     };
   }
 
@@ -4078,6 +4317,8 @@
       shared: true,
       sourceFolderId: info.sourceFolderId,
       sourceOwnerUid: info.sourceOwnerUid || existing?.sourceOwnerUid || '',
+      sourceOwnerName: info.sourceOwnerName || existing?.sourceOwnerName || '',
+      sourceOwnerPhotoURL: info.sourceOwnerPhotoURL || existing?.sourceOwnerPhotoURL || '',
       created: existing?.created || now,
       modified: now
     };
@@ -4089,6 +4330,8 @@
       shared: true,
       sourceFolderId: info.sourceFolderId,
       sourceOwnerUid: info.sourceOwnerUid || existing?.sourceOwnerUid || '',
+      sourceOwnerName: info.sourceOwnerName || existing?.sourceOwnerName || '',
+      sourceOwnerPhotoURL: info.sourceOwnerPhotoURL || existing?.sourceOwnerPhotoURL || '',
       title,
       modified: serverTimestamp()
     };
@@ -4992,14 +5235,16 @@
   }
 
   // Remove a shared note from the user's library without deleting it from Firestore.
-  function removeFromLibrary(noteId) {
+  function removeFromLibrary(noteId, options = {}) {
+    const { render = true, selectNext = true, notify = true } = options;
     if (notes[noteId]?.owner === userId) return; // can't remove owned notes this way
     if (sharedNoteUnsubs[noteId]) { sharedNoteUnsubs[noteId](); delete sharedNoteUnsubs[noteId]; }
     delete notes[noteId];
     _removeSharedId(noteId);
     if (activeId === noteId) activeId = null;
-    renderSidebar();
-    if (!activeId) { const ids = sortedIds(); ids.length ? openNote(ids[0]) : showEditorView(false); }
+    if (render) renderSidebar();
+    if (selectNext && !activeId) { const ids = sortedIds(); ids.length ? openNote(ids[0]) : showEditorView(false); }
+    if (notify) showToast('Removed From Library', 'success');
   }
 
   // Folder sharing: create a recipient-local folder shell, then subscribe to each note.
