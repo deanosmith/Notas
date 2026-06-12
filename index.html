@@ -396,11 +396,17 @@
     .delete-message.remove { border-color: var(--glass-border); background: linear-gradient(180deg, rgba(255,255,255,.07), rgba(255,255,255,.025)); }
     .delete-target { display: block; margin-bottom: 6px; color: var(--text); font-size: 14px; font-weight: 800; line-height: 1.3; word-break: break-word; }
     .delete-copy { color: var(--text); font-size: 13px; font-weight: 650; line-height: 1.45; }
+    .delete-loss-list { display: flex; flex-direction: column; gap: 5px; margin-top: 10px; color: var(--text2); font-size: 12px; line-height: 1.35; }
+    .delete-loss-list div { display: flex; align-items: flex-start; gap: 7px; min-width: 0; }
+    .delete-loss-list i { width: 13px; margin-top: 2px; color: var(--accent); flex-shrink: 0; text-align: center; }
+    .delete-loss-list span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 
     /* Folder items */
     .folder-item { margin-bottom: 2px; }
     .folder-row { display: flex; align-items: center; gap: 8px; padding: 9px 10px; border-radius: var(--radius-sm); cursor: pointer; transition: background .12s, border-color .12s; background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.025)); border: 1px solid transparent; }
     .folder-row:hover { background: linear-gradient(180deg, rgba(255,255,255,.1), rgba(255,255,255,.04)); border-color: rgba(255,255,255,.08); }
+    .folder-toggle-btn { flex-shrink: 0; min-width: 40px; height: 28px; border: 0; border-radius: var(--radius-xs); background: none; color: inherit; display: inline-flex; align-items: center; justify-content: flex-start; gap: 6px; padding: 0 3px; cursor: pointer; transition: background .12s, color .12s; }
+    .folder-toggle-btn:hover { background: rgba(var(--orb-r),var(--orb-g),var(--orb-b),.12); }
     .folder-chevron { color: var(--muted); font-size: 11px; width: 12px; flex-shrink: 0; transition: transform .16s; }
     .folder-chevron.expanded { transform: rotate(90deg); }
     .folder-icon { color: var(--folder-color, var(--accent)); opacity: .9; }
@@ -594,8 +600,9 @@
     .share-link-title { display: flex; align-items: center; gap: 8px; color: var(--text); font-size: 13px; font-weight: 700; }
     .share-link-sub { color: var(--muted); font-size: 11px; margin-top: 1px; }
     .share-link-actions { display: flex; gap: 8px; }
-    .share-link-panel.link-off #share-link-input { opacity: .56; }
-    .share-link-panel.link-off .share-link-actions .modal-btn { opacity: .55; }
+    .share-link-panel.link-off .share-link-header { margin-bottom: 0; }
+    .share-link-panel.link-off #share-link-input,
+    .share-link-panel.link-off .share-link-actions { display: none; }
     .share-link-panel .modal-input { margin-bottom: 8px; font-size: 12px; cursor: text; }
     .notifications-list { display: flex; flex-direction: column; gap: 7px; max-height: min(420px, 54vh); overflow-y: auto; margin-bottom: 16px; }
     .notification-row { align-items: flex-start; cursor: pointer; }
@@ -1032,7 +1039,6 @@
         <div class="profile-list" id="share-profiles-list"></div>
       </div>
       <div class="modal-actions">
-        <button class="modal-btn" id="share-stop-btn" style="color:var(--danger);border-color:rgba(255,69,58,.3);background:rgba(255,69,58,.06);"><i class="fa-solid fa-link-slash"></i> Stop Sharing</button>
         <button class="modal-btn primary" id="share-close">Done</button>
       </div>
     </div>
@@ -1205,6 +1211,7 @@
   let directShareUnsubs = [];
   let sharedNoteUnsubs = {};   // noteId → unsubscribe fn, for real-time shared-note updates
   let sharedLibraryMeta = {};  // noteId → recipient-owned metadata, e.g. local folder placement
+  let removedSharedNoteIds = {}; // noteId → local removal timestamp, prevents auto re-import
   let _deletePending  = null;
   let _moveNoteId     = null;
   let _alarmNoteId    = null;
@@ -1355,6 +1362,7 @@
       migrateFromLocalStorage();
       await ensureProfileDocument(user);
       linkedProfiles = _readLinkedProfilesFromLocal();
+      removedSharedNoteIds = _readRemovedSharedIdsFromLocal();
       renderProfileConnectionUI();
       renderShareProfileList();
       listenToNotes();
@@ -1385,6 +1393,7 @@
       Object.values(sharedNoteUnsubs).forEach(fn => fn());
       sharedNoteUnsubs = {};
       sharedLibraryMeta = {};
+      removedSharedNoteIds = {};
       currentProfile = null;
       linkedProfiles = {};
       profileLinkRequests = {};
@@ -1764,6 +1773,46 @@
     return out;
   }
 
+  function mergeLinkedProfileRecords(...records) {
+    const normalized = records.map(record => normalizeLinkedProfile(record?.uid, record)).filter(Boolean);
+    if (!normalized.length) return null;
+    const merged = normalized.reduce((acc, profile) => {
+      const photos = profilePhotoFields(profile.photoURL, profile.photoURLCandidates, acc.photoURL, acc.photoURLCandidates);
+      const email = normalizeEmail(profile.email || acc.email || '');
+      const profileEmailOnly = !!profile.emailOnly || profile.uid === emailProfileKey(profile.email);
+      const accEmailOnly = !!acc.emailOnly || acc.uid === emailProfileKey(acc.email);
+      const uid = (!profileEmailOnly && profile.uid) || (!accEmailOnly && acc.uid) || profile.uid || acc.uid;
+      return {
+        ...acc,
+        ...profile,
+        uid,
+        displayName: (!profileEmailOnly && profile.displayName) || acc.displayName || profile.displayName,
+        email,
+        photoURL: photos.photoURL,
+        photoURLCandidates: photos.photoURLCandidates,
+        linkedAt: profile.linkedAt || acc.linkedAt || '',
+        emailOnly: !!(uid && email && uid === emailProfileKey(email))
+      };
+    }, {});
+    return normalizeLinkedProfile(merged.uid, merged);
+  }
+
+  function mergeLinkedProfileMaps(...maps) {
+    const out = {};
+    maps.forEach(map => {
+      Object.values(map || {}).forEach(profile => {
+        const normalized = normalizeLinkedProfile(profile?.uid, profile);
+        if (!normalized || normalized.uid === userId) return;
+        const existingKey = Object.keys(out).find(key => profileMatchesLink(out[key], normalized));
+        const key = existingKey || normalized.uid;
+        const merged = mergeLinkedProfileRecords(out[key], normalized);
+        if (existingKey && existingKey !== merged.uid) delete out[existingKey];
+        out[merged.uid] = merged;
+      });
+    });
+    return out;
+  }
+
   function _readNotificationState(data) {
     const raw = data?.readNotifications && typeof data.readNotifications === 'object' ? data.readNotifications : {};
     const out = {};
@@ -1786,7 +1835,7 @@
         photoURLCandidates: photos.photoURLCandidates
       };
     }
-    linkedProfiles = { ..._readLinkedProfilesFromLocal(), ..._readLinkedProfiles(data) };
+    linkedProfiles = mergeLinkedProfileMaps(_readLinkedProfilesFromLocal(), _readLinkedProfiles(data));
     _writeLinkedProfilesToLocal();
     scheduleLinkedProfileRefresh();
     const remoteReadNotifications = _readNotificationState(data);
@@ -1971,7 +2020,7 @@
     ).join('');
 
     list.querySelectorAll('[data-remove-profile]').forEach(btn => {
-      btn.addEventListener('click', () => removeLinkedProfile(btn.dataset.removeProfile));
+      btn.addEventListener('click', () => openRemoveLinkedProfileModal(btn.dataset.removeProfile));
     });
   }
 
@@ -2221,23 +2270,155 @@
     }
   }
 
+  function removeProfileFromSharedWith(sharedWith, profile) {
+    const keys = new Set(profileMatchKeys(profile));
+    const profileEmail = normalizeEmail(profile?.email || '');
+    const next = {};
+    Object.keys(normalizeSharedWith(sharedWith)).forEach(key => {
+      const entry = sharedWith[key];
+      const entryEmail = normalizeEmail(entry?.email || '');
+      const matches = keys.has(key) ||
+        (entry?.uid && keys.has(entry.uid)) ||
+        (entryEmail && (keys.has(entryEmail) || entryEmail === profileEmail || keys.has(emailProfileKey(entryEmail))));
+      if (!matches) next[key] = entry;
+    });
+    return next;
+  }
+
+  function getProfileAccessLossSummary(profile) {
+    const sharedFolders = Object.values(folders)
+      .filter(folder => isOwnedFolder(folder) && isFolderSharedWithProfile(folder, profile))
+      .sort((a, b) => (a.title || '').localeCompare(b.title || ''));
+    const folderIds = new Set(sharedFolders.map(folder => folder.id));
+    const directNotes = Object.values(notes)
+      .filter(note => isOwnedNote(note) && isNoteDirectlySharedWithProfile(note, profile))
+      .sort((a, b) => (a.title || '').localeCompare(b.title || ''));
+    return {
+      folders: sharedFolders.map(folder => ({
+        id: folder.id,
+        title: folder.title || 'Untitled Folder',
+        noteCount: Object.values(notes).filter(note => note.folderId === folder.id && isOwnedNote(note)).length
+      })),
+      notes: directNotes.map(note => ({
+        id: note.id,
+        title: note.title || 'Untitled Note',
+        viaSharedFolder: !!(note.folderId && folderIds.has(note.folderId))
+      }))
+    };
+  }
+
+  function profileAccessLossListHtml(summary) {
+    const items = [];
+    summary.folders.forEach(folder => {
+      const count = folder.noteCount ? ' (' + folder.noteCount + ' note' + (folder.noteCount === 1 ? '' : 's') + ')' : '';
+      items.push('<div><i class="fa-solid fa-folder"></i><span>Folder: ' + esc(folder.title + count) + '</span></div>');
+    });
+    summary.notes.forEach(note => {
+      const suffix = note.viaSharedFolder ? ' (also in shared folder)' : '';
+      items.push('<div><i class="fa-regular fa-note-sticky"></i><span>Note: ' + esc(note.title + suffix) + '</span></div>');
+    });
+    if (!items.length) return '<div class="delete-loss-list"><div><i class="fa-solid fa-circle-info"></i><span>No notes or folders are currently shared with this profile.</span></div></div>';
+    return '<div class="delete-loss-list">' + items.join('') + '</div>';
+  }
+
+  function openRemoveLinkedProfileModal(uid) {
+    const profile = linkedProfiles[uid];
+    if (!uid || !profile) return;
+    const summary = getProfileAccessLossSummary(profile);
+    _deletePending = { type: 'profile', id: uid, mode: 'remove-profile' };
+
+    const titleEl = document.getElementById('delete-modal-title');
+    const bodyEl = document.getElementById('delete-modal-body');
+    const confirmBtn = document.getElementById('delete-modal-confirm');
+    titleEl.textContent = 'Remove Linked Profile?';
+    bodyEl.className = 'delete-message remove';
+    bodyEl.innerHTML =
+      '<strong class="delete-target">' + esc(profile.displayName || profile.email || 'Linked Profile') + '</strong>' +
+      '<div class="delete-copy">Removing this profile link will revoke their access to these shared items and remove them from direct sharing and @mentions.</div>' +
+      profileAccessLossListHtml(summary);
+    confirmBtn.innerHTML = '<i class="fa-solid fa-user-minus" style="margin-right:6px;"></i>Remove Profile';
+    document.getElementById('delete-modal').classList.add('open');
+  }
+
+  async function commitBatchedWrites(writeFns) {
+    for (let i = 0; i < writeFns.length; i += 450) {
+      const batch = writeBatch(fsDb);
+      writeFns.slice(i, i + 450).forEach(fn => fn(batch));
+      await batch.commit();
+    }
+  }
+
   async function removeLinkedProfile(uid) {
     if (!uid || !linkedProfiles[uid]) return;
     const profile = linkedProfiles[uid];
     const removeKeys = linkedProfileAliasKeys(profile);
-    removeKeys.forEach(key => { delete linkedProfiles[key]; });
-    _writeLinkedProfilesToLocal();
-    renderProfileConnectionUI();
-    renderShareProfileList();
-    refreshOpenSidebarPage('friends');
+    const userUpdates = {};
+    removeKeys.forEach(key => { userUpdates[key] = deleteField(); });
+
+    const writes = [];
+    const noteUpdates = {};
+    const folderUpdates = {};
+
+    Object.values(folders).filter(isOwnedFolder).forEach(folder => {
+      const nextSharedWith = removeProfileFromSharedWith(folder.sharedWith, profile);
+      const currentKeys = Object.keys(normalizeSharedWith(folder.sharedWith));
+      const nextKeys = Object.keys(nextSharedWith);
+      if (currentKeys.length === nextKeys.length) return;
+      const sharedAccessKeys = rebuildSharedAccessKeys(nextSharedWith);
+      folderUpdates[folder.id] = { sharedWith: nextSharedWith, sharedAccessKeys };
+      writes.push(batch => batch.update(doc(fsDb, 'folders', folder.id), {
+        sharedWith: nextKeys.length ? nextSharedWith : deleteField(),
+        sharedAccessKeys: sharedAccessKeys.length ? sharedAccessKeys : deleteField(),
+        modified: serverTimestamp()
+      }));
+    });
+
+    Object.values(notes).filter(isOwnedNote).forEach(note => {
+      const nextSharedWith = removeProfileFromSharedWith(note.sharedWith, profile);
+      const currentKeys = Object.keys(normalizeSharedWith(note.sharedWith));
+      const nextKeys = Object.keys(nextSharedWith);
+      if (currentKeys.length === nextKeys.length) return;
+      const sharedAccessKeys = rebuildSharedAccessKeys(nextSharedWith);
+      const publicFolderIds = normalizePublicFolderIds(note.publicFolderIds);
+      const nextPublic = computeEffectiveNotePublic({
+        ...note,
+        sharedWith: nextSharedWith,
+        sharedAccessKeys,
+        publicFolderIds
+      });
+      noteUpdates[note.id] = { sharedWith: nextSharedWith, sharedAccessKeys, public: nextPublic, publicFolderIds };
+      writes.push(batch => batch.update(doc(fsDb, 'notes', note.id), {
+        public: nextPublic,
+        sharedWith: nextKeys.length ? nextSharedWith : deleteField(),
+        sharedAccessKeys: sharedAccessKeys.length ? sharedAccessKeys : deleteField()
+      }));
+    });
+    writes.push(batch => batch.set(_getUserDocRef(), { linkedProfiles: userUpdates }, { merge: true }));
+
     try {
-      const updates = {};
-      removeKeys.forEach(key => { updates[key] = deleteField(); });
-      await setDoc(_getUserDocRef(), { linkedProfiles: updates }, { merge: true });
-      showToast('Profile Removed', 'success');
+      await commitBatchedWrites(writes);
+      removeKeys.forEach(key => { delete linkedProfiles[key]; });
+      Object.keys(folderUpdates).forEach(id => {
+        if (!folders[id]) return;
+        folders[id].sharedWith = folderUpdates[id].sharedWith;
+        folders[id].sharedAccessKeys = folderUpdates[id].sharedAccessKeys;
+      });
+      Object.keys(noteUpdates).forEach(id => {
+        if (!notes[id]) return;
+        notes[id].sharedWith = noteUpdates[id].sharedWith;
+        notes[id].sharedAccessKeys = noteUpdates[id].sharedAccessKeys;
+        notes[id].public = noteUpdates[id].public;
+        notes[id].publicFolderIds = noteUpdates[id].publicFolderIds;
+      });
+      _writeLinkedProfilesToLocal();
+      renderProfileConnectionUI();
+      renderShareProfileList();
+      renderSidebar();
+      refreshOpenSidebarPage('friends');
+      showToast('Profile Link Removed', 'success');
     } catch (err) {
       console.error('remove profile:', err);
-      showToast('Could Not Remove Profile', 'error');
+      showToast('Could Not Remove Profile Link', 'error');
     }
   }
 
@@ -2753,7 +2934,7 @@
 
     try {
       await batch.commit();
-      await Promise.all(removedSharedIds.map(noteId => _removeSharedId(noteId)));
+      await Promise.all(removedSharedIds.map(noteId => _removeSharedId(noteId, { removedByUser: true })));
       showToast('Removed From Library', 'success');
     } catch (err) {
       console.error('removeSharedFolderFromLibrary:', err);
@@ -2860,10 +3041,10 @@
     openDeleteModal('note', id);
   }
 
-  function _execDeleteNote(id) {
+  async function _execDeleteNote(id) {
     const note = notes[id];
     if (!note) return;
-    if (!isOwnedNote(note)) { removeFromLibrary(id); return; }
+    if (!isOwnedNote(note)) { await removeFromLibrary(id); return; }
     delete notes[id];
     if (activeId === id) {
       const ids = sortedIds();
@@ -3281,7 +3462,8 @@
     if (!_deletePending) return;
     const { type, id } = _deletePending;
     closeDeleteModal();
-    if (type === 'note') _execDeleteNote(id);
+    if (type === 'note') await _execDeleteNote(id);
+    else if (type === 'profile') await removeLinkedProfile(id);
     else await _execDeleteFolder(id);
   }
 
@@ -3528,11 +3710,18 @@
     return out;
   }
 
+  function enrichProfileFromLinkedCache(profile) {
+    const normalized = normalizeLinkedProfile(profile?.uid, profile);
+    if (!normalized) return profile;
+    const cached = Object.values(linkedProfiles).find(p => profileMatchesLink(p, normalized));
+    return mergeLinkedProfileRecords(cached, normalized) || normalized;
+  }
+
   function accessProfilesFromSharedWith(sharedWith) {
     return uniqueProfiles(Object.values(normalizeSharedWith(sharedWith))
       .map(entry => normalizeAccessEntry(entry))
       .filter(accessEntryHasAnyScope)
-      .map(entry => ({
+      .map(entry => enrichProfileFromLinkedCache({
         uid: entry.uid || emailProfileKey(entry.email || ''),
         displayName: entry.displayName || entry.email || 'Linked Profile',
         email: normalizeEmail(entry.email || ''),
@@ -3879,10 +4068,13 @@
         : '';
       const folderAccessAvatars = renderAccessAvatars(folderAccessProfiles, isOwnedFolder(folder) ? 'Folder shared with' : 'Shared by');
       const folderColor = resolveFolderIconColor(folder.iconColor, folder.iconColorMode);
+      const toggleLabel = isExpanded ? 'Collapse Folder' : 'Expand Folder';
       folderEl.innerHTML =
         '<div class="folder-row" data-fid="' + folder.id + '" style="--folder-color:' + esc(folderColor) + ';">' +
-          '<span class="folder-chevron' + (isExpanded ? ' expanded' : '') + '"><i class="fa-solid fa-chevron-right"></i></span>' +
-          '<span class="item-icon folder-icon"><i class="fa-solid fa-folder' + (isExpanded ? '-open' : '') + '"></i></span>' +
+          '<button class="folder-toggle-btn" type="button" title="' + toggleLabel + '" aria-label="' + toggleLabel + '">' +
+            '<span class="folder-chevron' + (isExpanded ? ' expanded' : '') + '"><i class="fa-solid fa-chevron-right"></i></span>' +
+            '<span class="item-icon folder-icon"><i class="fa-solid fa-folder' + (isExpanded ? '-open' : '') + '"></i></span>' +
+          '</button>' +
           '<div class="item-info"><div class="item-name">' + esc(folder.title) + '</div></div>' +
           folderAccessAvatars +
           sharedBadge +
@@ -3917,6 +4109,12 @@
         row.querySelector('.folder-chevron')?.classList.toggle('expanded', nextExpanded);
         const folderIcon = row.querySelector('.folder-icon i');
         if (folderIcon) folderIcon.className = 'fa-solid fa-folder' + (nextExpanded ? '-open' : '');
+        const toggleBtn = row.querySelector('.folder-toggle-btn');
+        if (toggleBtn) {
+          const label = nextExpanded ? 'Collapse Folder' : 'Expand Folder';
+          toggleBtn.title = label;
+          toggleBtn.setAttribute('aria-label', label);
+        }
         notesWrap.classList.toggle('expanded', nextExpanded);
       });
       row.addEventListener('dragover', e => {
@@ -5594,26 +5792,6 @@
     navigator.share({ title, url }).catch(() => {});
   }
 
-  async function stopSharing() {
-    if (!_shareCtx) return;
-    if (_shareCtx.type === 'note') {
-      await setNotePublic(_shareCtx.id, false);
-      await removeNoteDirectShares(_shareCtx.id);
-    } else {
-      await setFolderPublic(_shareCtx.id, false);
-      if (folders[_shareCtx.id]) {
-        folders[_shareCtx.id].sharedWith = {};
-        folders[_shareCtx.id].sharedAccessKeys = [];
-        await persistFolderShareState(_shareCtx.id);
-      }
-      const folderNotes = Object.values(notes).filter(n => n.folderId === _shareCtx.id && isOwnedNote(n));
-      await Promise.all(folderNotes.map(n => removeFolderScopeFromNote(n.id, _shareCtx.id)));
-    }
-    document.getElementById('share-modal').classList.remove('open');
-    renderSidebar();
-    showToast('Sharing Stopped', 'success');
-  }
-
   /* ── Shared Notes: Firestore-backed + per-document real-time listeners ── */
   // Shared note IDs are stored in Firestore at users/{userId} so they sync
   // across all devices. Each shared note gets its own onSnapshot listener.
@@ -5623,6 +5801,7 @@
 
   function _sharedLibraryStorageKey() { return 'notas_shared_library_' + userId; }
   function _legacySharedStorageKey() { return 'notas_shared_' + userId; }
+  function _removedSharedStorageKey() { return 'notas_shared_removed_' + userId; }
   function _hasOwn(obj, key) { return Object.prototype.hasOwnProperty.call(obj || {}, key); }
 
   function _normalizeSharedFolderId(folderId) {
@@ -5635,6 +5814,71 @@
 
   function _sharedFolderLocalId(sourceFolderId) {
     return 'shared_folder_' + _safeDocFragment(sourceFolderId) + '_' + _safeDocFragment(userId);
+  }
+
+  function _readRemovedSharedIdsFromLocal() {
+    if (!userId) return {};
+    try {
+      const raw = localStorage.getItem(_removedSharedStorageKey());
+      const parsed = raw ? JSON.parse(raw) : {};
+      if (Array.isArray(parsed)) {
+        return parsed.reduce((acc, id) => {
+          if (typeof id === 'string' && id) acc[id] = new Date().toISOString();
+          return acc;
+        }, {});
+      }
+      const out = {};
+      Object.keys(parsed || {}).forEach(id => {
+        const removedAt = normalizePinnedAt(parsed[id]) || new Date().toISOString();
+        if (typeof id === 'string' && id) out[id] = removedAt;
+      });
+      return out;
+    } catch (err) {
+      console.error('read removed shared notes local:', err);
+      return {};
+    }
+  }
+
+  function _writeRemovedSharedIdsToLocal() {
+    if (!userId) return;
+    try {
+      const entries = Object.entries(removedSharedNoteIds || {})
+        .filter(([id]) => typeof id === 'string' && id)
+        .sort((a, b) => noteTime(b[1]) - noteTime(a[1]))
+        .slice(0, 500);
+      if (entries.length) localStorage.setItem(_removedSharedStorageKey(), JSON.stringify(Object.fromEntries(entries)));
+      else localStorage.removeItem(_removedSharedStorageKey());
+      removedSharedNoteIds = Object.fromEntries(entries);
+    } catch (err) {
+      console.error('write removed shared notes local:', err);
+    }
+  }
+
+  function _markSharedIdRemoved(noteId) {
+    if (!noteId) return;
+    removedSharedNoteIds[noteId] = new Date().toISOString();
+    _writeRemovedSharedIdsToLocal();
+  }
+
+  function _clearSharedIdRemoved(noteId) {
+    if (!noteId || !removedSharedNoteIds[noteId]) return;
+    delete removedSharedNoteIds[noteId];
+    _writeRemovedSharedIdsToLocal();
+  }
+
+  function _isSharedIdRemoved(noteId, sharedAt = '') {
+    const removedAt = normalizePinnedAt(removedSharedNoteIds[noteId]);
+    if (!removedAt) return false;
+    const sharedTime = noteTime(sharedAt);
+    return !(sharedTime && sharedTime > noteTime(removedAt));
+  }
+
+  function _filterRemovedSharedLibraryMeta(meta) {
+    const out = {};
+    Object.keys(meta || {}).forEach(id => {
+      if (!_isSharedIdRemoved(id)) out[id] = meta[id];
+    });
+    return out;
   }
 
   function _sharedFolderInfoFromData(data) {
@@ -5750,7 +5994,7 @@
         }
       }
     } catch (err) { console.error('read shared library local:', err); }
-    return meta;
+    return _filterRemovedSharedLibraryMeta(meta);
   }
 
   function _writeSharedLibraryToLocal(meta = sharedLibraryMeta) {
@@ -5905,6 +6149,7 @@
   }
 
   async function _addSharedId(noteId) {
+    _clearSharedIdRemoved(noteId);
     if (!sharedLibraryMeta[noteId]) sharedLibraryMeta[noteId] = { folderId: null };
     _writeSharedLibraryToLocal();
     const payload = { sharedNoteIds: arrayUnion(noteId) };
@@ -5922,7 +6167,8 @@
     }
   }
 
-  async function _removeSharedId(noteId) {
+  async function _removeSharedId(noteId, options = {}) {
+    if (options.removedByUser) _markSharedIdRemoved(noteId);
     delete sharedLibraryMeta[noteId];
     _writeSharedLibraryToLocal();
     try {
@@ -6069,11 +6315,18 @@
 
     const sharedWith = d.sharedWith && typeof d.sharedWith === 'object' ? d.sharedWith : {};
     const sharedAccessKeys = Array.isArray(d.sharedAccessKeys) ? d.sharedAccessKeys : [];
-    if (!d.public && !hasSharedAccess(sharedWith, sharedAccessKeys)) return;
-
+    const hasDirectAccess = hasSharedAccess(sharedWith, sharedAccessKeys);
+    const hasFolderPublicAccess = hasImportedFolderPublicAccess(noteId, d);
     const access = getSharedAccessEntry(sharedWith) || {};
+    const shareTimestamp = access.lastSharedAt || access.sharedAt || '';
+    const created = shareTimestamp || d.modified?.toDate?.()?.toISOString() || new Date().toISOString();
+    if (!noteLinkPublicFromData(d) && !hasDirectAccess && !hasFolderPublicAccess) return;
+    if (!sharedLibraryMeta[noteId] && _isSharedIdRemoved(noteId, shareTimestamp)) {
+      delete notes[noteId];
+      return;
+    }
+
     const type = access.type === 'mention' ? 'mention' : 'share';
-    const created = access.sharedAt || d.modified?.toDate?.()?.toISOString() || new Date().toISOString();
     const folderId = _applySharedFolderFromData(noteId, access);
 
     notes[noteId] = hydrateNoteShareState(d, {
@@ -6184,8 +6437,9 @@
         if (data.type === 'folder_share' || (!data.noteId && data.sourceFolderId)) {
           const item = normalizeProfileShareNotification(id, data);
           profileShareNotifications[id] = item;
-          const localFolderId = _ensureSharedFolderShell(_sharedFolderInfoFromData(data));
-          item.noteIds.forEach(noteId => {
+          const noteIdsToAdd = item.noteIds.filter(noteId => sharedLibraryMeta[noteId] || !_isSharedIdRemoved(noteId, item.created));
+          const localFolderId = noteIdsToAdd.length ? _ensureSharedFolderShell(_sharedFolderInfoFromData(data)) : null;
+          noteIdsToAdd.forEach(noteId => {
             if (localFolderId) _placeSharedNoteInFolder(noteId, localFolderId);
             _addSharedId(noteId);
             _subscribeSharedNote(noteId);
@@ -6193,7 +6447,9 @@
           return;
         }
         if (!data.noteId) return;
-        profileShareNotifications[id] = normalizeProfileShareNotification(id, data);
+        const item = normalizeProfileShareNotification(id, data);
+        profileShareNotifications[id] = item;
+        if (!sharedLibraryMeta[data.noteId] && _isSharedIdRemoved(data.noteId, item.created)) return;
         const prevFolderId = _getSharedNoteFolder(data.noteId);
         const folderId = _applySharedFolderFromData(data.noteId, data);
         if (!sharedLibraryMeta[data.noteId] || (folderId && prevFolderId !== folderId)) _addSharedId(data.noteId);
@@ -7054,7 +7310,7 @@
       const folderId = _applySharedFolderFromData(noteId, access);
 
       // If the owner stopped sharing, remove the note from this user's library
-      if (!d.public && !hasDirectAccess && !hasFolderPublicAccess) {
+      if (!noteLinkPublicFromData(d) && !hasDirectAccess && !hasFolderPublicAccess) {
         delete notes[noteId];
         _removeSharedId(noteId);
         if (sharedNoteUnsubs[noteId]) { sharedNoteUnsubs[noteId](); delete sharedNoteUnsubs[noteId]; }
@@ -7115,7 +7371,8 @@
     unsubUserDoc = onSnapshot(_getUserDocRef(), snap => {
       const data = snap.data() || {};
       applyUserProfileData(data);
-      const remoteMeta = _readSharedLibraryFromRemote(data);
+      const rawRemoteMeta = _readSharedLibraryFromRemote(data);
+      const remoteMeta = _filterRemovedSharedLibraryMeta(rawRemoteMeta);
       const latestLocalMeta = _readSharedLibraryFromLocal();
       const nextMeta = _mergeSharedLibraries(latestLocalMeta, remoteMeta);
       const ids = Object.keys(nextMeta);
@@ -7127,6 +7384,9 @@
         Object.keys(latestLocalMeta).forEach(id => { if (!remoteMeta[id]) localOnlyMeta[id] = latestLocalMeta[id]; });
         _syncSharedLibraryToCloud(localOnlyMeta);
       }
+      Object.keys(rawRemoteMeta).forEach(id => {
+        if (_isSharedIdRemoved(id)) _removeSharedId(id).catch(err => console.error('retry removed shared note cleanup:', err));
+      });
       renderSidebar();
       if (!activeId) { const sorted = sortedIds(); sorted.length ? openNote(sorted[0]) : showEditorView(false); }
     }, err => {
@@ -7236,16 +7496,17 @@
   }
 
   // Remove a shared note from the user's library without deleting it from Firestore.
-  function removeFromLibrary(noteId, options = {}) {
+  async function removeFromLibrary(noteId, options = {}) {
     const { render = true, selectNext = true, notify = true } = options;
     if (notes[noteId]?.owner === userId) return; // can't remove owned notes this way
     if (sharedNoteUnsubs[noteId]) { sharedNoteUnsubs[noteId](); delete sharedNoteUnsubs[noteId]; }
     delete notes[noteId];
-    _removeSharedId(noteId);
+    const cloudSynced = await _removeSharedId(noteId, { removedByUser: true });
     if (activeId === noteId) activeId = null;
     if (render) renderSidebar();
     if (selectNext && !activeId) { const ids = sortedIds(); ids.length ? openNote(ids[0]) : showEditorView(false); }
-    if (notify) showToast('Removed From Library', 'success');
+    if (notify) showToast(cloudSynced ? 'Removed From Library' : 'Removed locally; cloud sync failed', cloudSynced ? 'success' : 'error');
+    return cloudSynced;
   }
 
   async function getImportableSharedFolderNotes(folderId) {
@@ -7292,7 +7553,8 @@
       const persistJobs = [];
       noteDocs.forEach(noteSnap => {
         const data = noteSnap.data() || {};
-        const folderPublic = !!data.public || normalizePublicFolderIds(data.publicFolderIds).includes(folderId);
+        const folderPublic = normalizePublicFolderIds(data.publicFolderIds).includes(folderId) ||
+          (data.folderId === folderId && noteLinkPublicFromData(data));
         if (data.owner !== userId && folderPublic) {
           if (localFolderId) _placeSharedNoteInFolder(noteSnap.id, localFolderId);
           notes[noteSnap.id] = hydrateNoteShareState(data, {
@@ -7384,7 +7646,6 @@
   document.getElementById('share-link-toggle').addEventListener('change', e => setShareLinkEnabled(e.target.checked));
   document.getElementById('copy-link-btn').addEventListener('click',   copyShareLink);
   document.getElementById('native-share-btn').addEventListener('click', nativeShare);
-  document.getElementById('share-stop-btn').addEventListener('click',  stopSharing);
   document.getElementById('share-close').addEventListener('click',     () => document.getElementById('share-modal').classList.remove('open'));
   document.getElementById('share-modal').addEventListener('click',     e => { if (e.target === e.currentTarget) document.getElementById('share-modal').classList.remove('open'); });
   document.getElementById('new-folder-btn')?.addEventListener('click', openFolderModal);
