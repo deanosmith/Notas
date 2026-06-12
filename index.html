@@ -48,6 +48,7 @@
       --orb2-g: 80;
       --orb2-b: 180;
       --mob-h: 52px;
+      --rail-w: 64px;
     }
 
     body.light-mode {
@@ -81,6 +82,7 @@
         radial-gradient(circle at 70% 74%, var(--ambient-b), transparent 26%),
         var(--bg);
     }
+    body.light-mode #app-rail,
     body.light-mode #sidebar {
       background: var(--surface);
       box-shadow: inset -1px 0 0 rgba(0,0,0,.06);
@@ -123,6 +125,18 @@
     body.light-mode .new-note-btn {
       background: rgba(0,0,0,.06);
       border-color: rgba(0,0,0,.1);
+    }
+    body.light-mode .rail-btn,
+    body.light-mode .rail-logo {
+      background: rgba(0,0,0,.03);
+      border-color: rgba(0,0,0,.07);
+    }
+    body.light-mode .rail-logo:hover,
+    body.light-mode .rail-logo.active,
+    body.light-mode .rail-btn:hover,
+    body.light-mode .rail-btn.active {
+      background: linear-gradient(135deg, rgba(var(--orb-r),var(--orb-g),var(--orb-b),.16), rgba(var(--orb-r),var(--orb-g),var(--orb-b),.06));
+      border-color: rgba(var(--orb-r),var(--orb-g),var(--orb-b),.28);
     }
     body.light-mode .sidebar-search input {
       background: rgba(0,0,0,.05);
@@ -232,6 +246,76 @@
     }
     #drawer-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.55); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); z-index: 85; }
 
+    /* App rail */
+    #app-rail {
+      width: var(--rail-w);
+      min-width: var(--rail-w);
+      height: 100%;
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 8px;
+      background: linear-gradient(180deg, rgba(5, 9, 15, .98), rgba(2, 5, 10, .97));
+      border-right: 1px solid var(--glass-border);
+      box-shadow: inset -1px 0 0 rgba(255,255,255,.035);
+      -webkit-backdrop-filter: blur(24px) saturate(160%);
+      backdrop-filter: blur(24px) saturate(160%);
+      z-index: 12;
+    }
+    .rail-stack { display: flex; flex-direction: column; align-items: center; gap: 10px; width: 100%; }
+    .rail-logo,
+    .rail-btn {
+      position: relative;
+      width: 48px;
+      height: 48px;
+      border-radius: 13px;
+      border: 1px solid transparent;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: color .14s, border-color .14s, background .14s, transform .14s, box-shadow .14s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .rail-logo { margin-bottom: 8px; background: linear-gradient(180deg, rgba(255,255,255,.045), rgba(255,255,255,.015)); border-color: var(--glass-border); }
+    .rail-logo img { width: 29px; height: 29px; object-fit: contain; }
+    .rail-btn i { font-size: 19px; }
+    .rail-logo:hover,
+    .rail-logo.active,
+    .rail-btn:hover,
+    .rail-btn.active {
+      color: var(--text);
+      border-color: rgba(var(--orb-r), var(--orb-g), var(--orb-b), .32);
+      background: linear-gradient(135deg, rgba(var(--orb-r), var(--orb-g), var(--orb-b), .18), rgba(255,255,255,.035));
+      transform: translateY(-1px);
+    }
+    .rail-logo.active,
+    .rail-btn.active {
+      color: var(--accent);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.06);
+    }
+    .rail-btn.rail-primary {
+      color: var(--accent-text);
+      border-color: rgba(255,255,255,.16);
+      background: linear-gradient(135deg, var(--accent-h), var(--accent));
+      box-shadow: 0 10px 24px rgba(var(--orb-r),var(--orb-g),var(--orb-b),.18);
+    }
+    .rail-btn.rail-primary:hover,
+    .rail-btn.rail-primary.active {
+      color: var(--accent-text);
+      filter: brightness(1.08);
+    }
+    .rail-btn .notification-badge {
+      top: 3px;
+      right: 3px;
+      box-shadow: 0 0 0 2px rgba(4, 8, 16, .92);
+    }
+    .rail-divider { width: 24px; height: 1px; background: var(--glass-border); margin: 1px 0; }
+
     /* Sidebar */
     #sidebar {
       width: 256px;
@@ -251,7 +335,7 @@
     .app-logo { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; height: 36px; border: 0; background: none; color: inherit; cursor: pointer; padding: 0; text-align: left; border-radius: var(--radius-xs); }
     .app-logo:focus-visible, .mob-logo:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
     .app-logo .brand-icon { width: 30px; height: 30px; flex-shrink: 0; }
-    .app-logo .brand-wordmark { width: clamp(72px, calc(100% - 38px), 104px); height: 30px; }
+    .app-logo .brand-wordmark { width: clamp(92px, 70%, 118px); height: 32px; }
     #sidebar.logo-compact .app-logo { flex: 0 0 30px; }
     #sidebar.logo-compact .app-logo .brand-wordmark { display: none; }
     .new-note-btn { width: 30px; height: 30px; border-radius: 9px; border: 1px solid rgba(255,255,255,.08); background: linear-gradient(135deg, rgba(var(--orb-r), var(--orb-g), var(--orb-b), .18), rgba(12, 20, 36, .72)); color: var(--text2); font-size: 14px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background .14s, color .14s, transform .14s, border-color .14s; box-shadow: inset 0 1px 0 rgba(255,255,255,.08); }
@@ -264,10 +348,29 @@
     .sidebar-list { flex: 1; overflow-y: auto; padding: 2px 8px 8px; }
     .sidebar-list::-webkit-scrollbar { width: 3px; }
     .sidebar-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    #sidebar.sidebar-page-mode .sidebar-search { display: none; }
+    #sidebar.sidebar-page-mode .sidebar-list { padding-top: 4px; }
+    .sidebar-page { min-height: 100%; display: flex; flex-direction: column; gap: 12px; padding: 2px 4px 8px; }
+    .sidebar-page-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 0 4px 2px; }
+    .sidebar-page-title { display: flex; align-items: center; gap: 8px; min-width: 0; color: var(--text); font-size: 13px; font-weight: 750; }
+    .sidebar-page-title i { width: 16px; color: var(--accent); text-align: center; font-size: 13px; }
+    .sidebar-page-content { min-height: 0; display: flex; flex-direction: column; gap: 10px; }
+    .sidebar-page-content .notifications-list,
+    .sidebar-page-content .profile-list { max-height: none; margin-bottom: 0; overflow: visible; }
+    .sidebar-page .profile-connect-row { align-items: stretch; flex-direction: column; }
+    .sidebar-page .profile-connect-row .modal-btn { justify-content: center; }
+    .sidebar-page .share-section-title { margin: 2px 0 4px; }
+    .sidebar-page-actions { display: grid; gap: 8px; }
+    .sidebar-page-action { width: 100%; min-height: 46px; border: 1px solid var(--glass-border); border-radius: var(--radius-sm); background: linear-gradient(180deg, rgba(255,255,255,.055), rgba(255,255,255,.018)); color: var(--text2); font: 650 13px var(--font); cursor: pointer; display: flex; align-items: center; gap: 11px; padding: 11px 13px; text-align: left; transition: color .12s, border-color .12s, background .12s, transform .12s; }
+    .sidebar-page-action i { width: 18px; color: var(--accent); text-align: center; font-size: 15px; }
+    .sidebar-page-action:hover { color: var(--text); border-color: rgba(var(--orb-r),var(--orb-g),var(--orb-b),.34); background: linear-gradient(135deg, rgba(var(--orb-r),var(--orb-g),var(--orb-b),.14), rgba(255,255,255,.025)); transform: translateX(2px); }
+    .sidebar-page-action.primary { color: var(--accent-text); border-color: rgba(255,255,255,.18); background: linear-gradient(135deg, var(--accent-h), var(--accent)); }
+    .sidebar-page-action.primary i { color: var(--accent-text); }
+    .sidebar-page-empty { padding: 14px 4px; color: var(--muted); font-size: 12px; line-height: 1.45; }
     .sidebar-item { display: flex; align-items: center; gap: 10px; padding: 10px 10px 10px 14px; border-radius: var(--radius-sm); cursor: pointer; transition: background .12s, transform .12s, border-color .12s; margin-bottom: 4px; -webkit-tap-highlight-color: transparent; background: linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.015)); border: 1px solid transparent; }
     .sidebar-item:hover  { background: linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.03)); border-color: rgba(255,255,255,.06); transform: translateX(2px); }
     .sidebar-item.active { background: linear-gradient(135deg, rgba(var(--orb-r), var(--orb-g), var(--orb-b), .26), rgba(0,0,0,.35)); border-color: rgba(var(--orb-r), var(--orb-g), var(--orb-b), .14); box-shadow: inset 0 1px 0 rgba(255,255,255,.06); }
-    .item-icon { color: var(--muted); font-size: 13px; flex-shrink: 0; }
+    .item-icon { color: var(--muted); font-size: 15px; flex-shrink: 0; }
     .sidebar-item.active .item-icon { color: var(--accent); }
     .item-info { flex: 1; min-width: 0; }
     .item-name { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -293,18 +396,24 @@
     .delete-message.remove { border-color: var(--glass-border); background: linear-gradient(180deg, rgba(255,255,255,.07), rgba(255,255,255,.025)); }
     .delete-target { display: block; margin-bottom: 6px; color: var(--text); font-size: 14px; font-weight: 800; line-height: 1.3; word-break: break-word; }
     .delete-copy { color: var(--text); font-size: 13px; font-weight: 650; line-height: 1.45; }
+    .delete-loss-list { display: flex; flex-direction: column; gap: 5px; margin-top: 10px; color: var(--text2); font-size: 12px; line-height: 1.35; }
+    .delete-loss-list div { display: flex; align-items: flex-start; gap: 7px; min-width: 0; }
+    .delete-loss-list i { width: 13px; margin-top: 2px; color: var(--accent); flex-shrink: 0; text-align: center; }
+    .delete-loss-list span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 
     /* Folder items */
     .folder-item { margin-bottom: 2px; }
     .folder-row { display: flex; align-items: center; gap: 8px; padding: 9px 10px; border-radius: var(--radius-sm); cursor: pointer; transition: background .12s, border-color .12s; background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.025)); border: 1px solid transparent; }
     .folder-row:hover { background: linear-gradient(180deg, rgba(255,255,255,.1), rgba(255,255,255,.04)); border-color: rgba(255,255,255,.08); }
-    .folder-chevron { color: var(--muted); font-size: 9px; width: 10px; flex-shrink: 0; transition: transform .16s; }
+    .folder-toggle-btn { flex-shrink: 0; min-width: 40px; height: 28px; border: 0; border-radius: var(--radius-xs); background: none; color: inherit; display: inline-flex; align-items: center; justify-content: flex-start; gap: 6px; padding: 0 3px; cursor: pointer; transition: background .12s, color .12s; }
+    .folder-toggle-btn:hover { background: rgba(var(--orb-r),var(--orb-g),var(--orb-b),.12); }
+    .folder-chevron { color: var(--muted); font-size: 11px; width: 12px; flex-shrink: 0; transition: transform .16s; }
     .folder-chevron.expanded { transform: rotate(90deg); }
     .folder-icon { color: var(--folder-color, var(--accent)); opacity: .9; }
     .folder-shared-badge { color: var(--accent); font-size: 10px; flex-shrink: 0; opacity: .7; }
     .note-shared-badge { color: var(--accent); font-size: 10px; flex-shrink: 0; opacity: .65; margin-right: 2px; }
     .note-pin-badge { color: var(--accent); font-size: 10px; flex-shrink: 0; opacity: .92; margin-right: 2px; }
-    .item-action-btn { opacity: 0; border: none; background: none; color: var(--muted); font-size: 11px; cursor: pointer; padding: 4px 5px; border-radius: 6px; flex-shrink: 0; transition: opacity .12s, color .12s, background .12s; }
+    .item-action-btn { opacity: 0; border: none; background: none; color: var(--muted); font-size: 13px; cursor: pointer; padding: 5px 6px; border-radius: 7px; flex-shrink: 0; transition: opacity .12s, color .12s, background .12s; }
     .folder-row:hover .item-action-btn { opacity: 1; }
     .item-action-btn:hover { color: var(--text); background: rgba(var(--orb-r),var(--orb-g),var(--orb-b),.14); }
     .folder-notes { display: grid; grid-template-rows: 0fr; opacity: 0; transform: translateY(-4px); padding-left: 14px; margin-top: 2px; overflow: hidden; transition: grid-template-rows .22s cubic-bezier(.4,0,.2,1), opacity .16s ease, transform .22s cubic-bezier(.4,0,.2,1); }
@@ -325,11 +434,11 @@
     .bottom-btn.icon-only i { font-size: 13px; }
     .bottom-btn:hover { color: var(--text); border-color: rgba(var(--orb-r), var(--orb-g), var(--orb-b), .34); background: linear-gradient(135deg, rgba(var(--orb-r), var(--orb-g), var(--orb-b), .14), rgba(255,255,255,.02)); transform: translateY(-1px); }
     .notification-btn { position: relative; }
-    .notification-badge { position: absolute; top: -4px; right: -4px; min-width: 15px; height: 15px; padding: 0 4px; border-radius: 999px; background: var(--danger); color: #fff; font-size: 9px; font-weight: 700; line-height: 15px; text-align: center; box-shadow: 0 0 0 2px var(--surface); }
+    .notification-badge { position: absolute; top: -4px; right: -4px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; background: var(--danger); color: #fff; font-size: 10px; font-weight: 700; line-height: 18px; text-align: center; box-shadow: 0 0 0 2px var(--surface); }
     .notification-badge[hidden] { display: none; }
     .alarm-row { cursor: pointer; align-items: flex-start; }
     .alarm-row.due { border-color: rgba(255,159,10,.36); background: linear-gradient(180deg, rgba(255,159,10,.13), rgba(255,255,255,.02)); }
-    .alarm-icon { width: 26px; height: 26px; border-radius: 50%; flex-shrink: 0; background: rgba(var(--orb-r),var(--orb-g),var(--orb-b),.14); color: var(--accent); display: flex; align-items: center; justify-content: center; font-size: 11px; }
+    .alarm-icon { width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0; background: rgba(var(--orb-r),var(--orb-g),var(--orb-b),.14); color: var(--accent); display: flex; align-items: center; justify-content: center; font-size: 13px; }
     .alarm-text { font-size: 12.5px; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .alarm-note-title { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
@@ -491,8 +600,9 @@
     .share-link-title { display: flex; align-items: center; gap: 8px; color: var(--text); font-size: 13px; font-weight: 700; }
     .share-link-sub { color: var(--muted); font-size: 11px; margin-top: 1px; }
     .share-link-actions { display: flex; gap: 8px; }
-    .share-link-panel.link-off #share-link-input { opacity: .56; }
-    .share-link-panel.link-off .share-link-actions .modal-btn { opacity: .55; }
+    .share-link-panel.link-off .share-link-header { margin-bottom: 0; }
+    .share-link-panel.link-off #share-link-input,
+    .share-link-panel.link-off .share-link-actions { display: none; }
     .share-link-panel .modal-input { margin-bottom: 8px; font-size: 12px; cursor: text; }
     .notifications-list { display: flex; flex-direction: column; gap: 7px; max-height: min(420px, 54vh); overflow-y: auto; margin-bottom: 16px; }
     .notification-row { align-items: flex-start; cursor: pointer; }
@@ -632,26 +742,25 @@
     @media (max-width: 767px) { #sidebar-resize { display: none; } }
 
     /* Sidebar collapsed/sliver state */
-    #sidebar.minimized { width: 44px !important; min-width: 44px !important; cursor: pointer; }
-    #sidebar.minimized #new-folder-btn,
-    #sidebar.minimized #new-note-btn,
-    #sidebar.minimized #notifications-btn,
-    #sidebar.minimized .sidebar-search,
-    #sidebar.minimized .sidebar-list,
-    #sidebar.minimized .sidebar-bottom { display: none !important; }
-    #sidebar.minimized .sidebar-header { padding: 14px 4px 0; justify-content: center; }
-    #sidebar.minimized .app-logo { display: flex !important; align-items: center; justify-content: center; }
-    #sidebar.minimized .brand-wordmark { display: none; }
-    #sidebar.minimized .brand-icon { display: block; }
+    #sidebar.minimized { width: 0 !important; min-width: 0 !important; border-right: 0; pointer-events: none; cursor: default; }
+    #sidebar.minimized > * { display: none !important; }
     @media (max-width: 767px) { #sidebar.minimized { width: 0 !important; min-width: 0 !important; cursor: default; } }
 
     /* Mobile */
     @media (max-width: 767px) {
+      :root { --rail-w: 58px; }
       #mob-header { display: flex; height: calc(var(--mob-h) + env(safe-area-inset-top, 0px)); }
       #app { height: calc(100vh - var(--mob-h) - env(safe-area-inset-top, 0px)); margin-top: calc(var(--mob-h) + env(safe-area-inset-top, 0px)); }
-      #sidebar { position: fixed; top: calc(var(--mob-h) + env(safe-area-inset-top, 0px)); left: 0; bottom: 0; width: min(300px, 85vw); min-width: unset; z-index: 90; transform: translateX(-110%); transition: transform .28s cubic-bezier(.4,0,.2,1); box-shadow: var(--shadow-lg); }
+      #app-rail { position: fixed; top: calc(var(--mob-h) + env(safe-area-inset-top, 0px)); left: 0; bottom: 0; height: auto; padding: 10px 6px; z-index: 91; transform: translateX(calc(-100% - 8px)); transition: transform .28s cubic-bezier(.4,0,.2,1); box-shadow: var(--shadow-lg); }
+      #app-rail.open { transform: translateX(0); }
+      .rail-stack { gap: 8px; }
+      .rail-logo,
+      .rail-btn { width: 46px; height: 46px; border-radius: 12px; }
+      .rail-logo img { width: 28px; height: 28px; }
+      .rail-btn i { font-size: 18px; }
+      #sidebar { position: fixed; top: calc(var(--mob-h) + env(safe-area-inset-top, 0px)); left: var(--rail-w); bottom: 0; width: min(320px, calc(100vw - var(--rail-w))); min-width: unset; z-index: 90; transform: translateX(calc(-100% - var(--rail-w) - 8px)); transition: transform .28s cubic-bezier(.4,0,.2,1); box-shadow: var(--shadow-lg); }
       #sidebar.open { transform: translateX(0); }
-      #drawer-overlay.open { display: block; top: calc(var(--mob-h) + env(safe-area-inset-top, 0px)); }
+      #drawer-overlay.open { display: block; top: calc(var(--mob-h) + env(safe-area-inset-top, 0px)); left: 0; }
       .main-header { padding: 12px 14px 0; }
       .doc-title-input { font-size: 19px; }
       .tb-btn { height: 32px; min-width: 32px; font-size: 13px; }
@@ -705,35 +814,44 @@
   <div id="drawer-overlay"></div>
 
   <div id="app">
+    <nav id="app-rail" aria-label="App navigation">
+      <div class="rail-stack">
+        <button class="rail-logo active" id="rail-notes-btn" data-sidebar-view="notes" type="button" title="Notes" aria-label="Notes">
+          <img src="notas-icon.png" alt="" />
+        </button>
+        <button class="rail-btn rail-primary" id="rail-create-btn" data-sidebar-view="create" type="button" title="Create" aria-label="Create">
+          <i class="fa-solid fa-plus"></i>
+        </button>
+        <div class="rail-divider" aria-hidden="true"></div>
+        <button class="rail-btn notification-btn" id="notifications-btn" data-sidebar-view="notifications" type="button" title="Notifications" aria-label="Notifications">
+          <i class="fa-solid fa-bell"></i>
+          <span class="notification-badge" id="notification-badge" hidden>0</span>
+        </button>
+        <button class="rail-btn" id="alarm-btn" data-sidebar-view="alarms" type="button" title="Alarms" aria-label="Alarms">
+          <i class="fa-solid fa-clock"></i>
+          <span class="notification-badge" id="alarm-badge" hidden>0</span>
+        </button>
+        <button class="rail-btn" id="rail-friends-btn" data-sidebar-view="friends" type="button" title="Friends" aria-label="Friends">
+          <i class="fa-solid fa-user-group"></i>
+        </button>
+      </div>
+      <div class="rail-stack">
+        <button class="rail-btn" id="profile-settings-btn" type="button" title="Settings" aria-label="Settings">
+          <i class="fa-solid fa-gear"></i>
+        </button>
+      </div>
+    </nav>
+
     <aside id="sidebar">
       <div class="sidebar-header">
         <button class="app-logo" id="sidebar-logo-btn" type="button" title="Collapse Sidebar" aria-label="Collapse Sidebar">
-          <img class="brand-icon" src="notas-icon.png" alt="" />
           <img class="brand-wordmark" src="notas.png" alt="Notas" />
         </button>
-        <div style="display:flex;gap:6px;align-items:center;">
-          <button class="new-note-btn" id="new-note-btn" title="New Note"><i class="fa-solid fa-plus"></i></button>
-          <button class="new-note-btn" id="new-folder-btn" title="New Folder"><i class="fa-solid fa-folder-plus"></i></button>
-        </div>
       </div>
       <div class="sidebar-search">
         <input type="text" id="search-input" placeholder="Search Notes" autocomplete="off" />
       </div>
       <div class="sidebar-list" id="sidebar-list"></div>
-      <div class="sidebar-bottom">
-        <button class="bottom-btn settings-main" id="profile-settings-btn" title="Settings" aria-label="Settings">
-          <img id="user-avatar" src="" alt="" referrerpolicy="no-referrer" style="display:none;width:22px;height:22px;border-radius:50%;object-fit:cover;flex-shrink:0;" />
-          <i class="fa-solid fa-gear"></i>
-        </button>
-        <button class="bottom-btn icon-only notification-btn" id="notifications-btn" title="Notifications" aria-label="Notifications">
-          <i class="fa-solid fa-bell"></i>
-          <span class="notification-badge" id="notification-badge" hidden>0</span>
-        </button>
-        <button class="bottom-btn icon-only" id="alarm-btn" title="Alarms" aria-label="Alarms">
-          <i class="fa-solid fa-clock"></i>
-          <span class="notification-badge" id="alarm-badge" hidden>0</span>
-        </button>
-      </div>
     </aside>
 
     <div id="sidebar-resize" aria-hidden="true"></div>
@@ -847,18 +965,6 @@
             <button class="fs-btn" id="fs-inc"><i class="fa-solid fa-plus"></i></button>
           </div>
         </div>
-        <div class="settings-row stack">
-          <span class="settings-label"><i class="fa-solid fa-user-group"></i>Linked Profiles</span>
-          <div class="profile-connect-row">
-            <input class="modal-input" id="connect-profile-email-input" type="email" placeholder="Enter Google Email" autocomplete="email" />
-            <button class="modal-btn primary" id="connect-profile-btn" type="button">Connect</button>
-          </div>
-          <div class="profile-link-requests" id="profile-link-requests-panel" hidden>
-            <div class="share-section-title"><i class="fa-solid fa-user-check"></i><span>Profile Requests</span></div>
-            <div class="profile-list" id="profile-link-requests-list"></div>
-          </div>
-          <div class="profile-list" id="linked-profiles-list"></div>
-        </div>
         <div class="settings-row">
           <span class="settings-label"><i class="fa-solid fa-tag"></i>Version</span>
           <span style="font-size:12px;color:var(--muted);">1.1</span>
@@ -933,7 +1039,6 @@
         <div class="profile-list" id="share-profiles-list"></div>
       </div>
       <div class="modal-actions">
-        <button class="modal-btn" id="share-stop-btn" style="color:var(--danger);border-color:rgba(255,69,58,.3);background:rgba(255,69,58,.06);"><i class="fa-solid fa-link-slash"></i> Stop Sharing</button>
         <button class="modal-btn primary" id="share-close">Done</button>
       </div>
     </div>
@@ -1084,6 +1189,8 @@
   let folders       = {};
   let activeId      = null;
   let activeFolderId = null;
+  let sidebarView   = 'notes';
+  let sidebarFilter = '';
   let expandedFolders = new Set();
   let sidebarMinimized = false; // initialised after DOM ready
   let userId        = null;
@@ -1104,6 +1211,7 @@
   let directShareUnsubs = [];
   let sharedNoteUnsubs = {};   // noteId → unsubscribe fn, for real-time shared-note updates
   let sharedLibraryMeta = {};  // noteId → recipient-owned metadata, e.g. local folder placement
+  let removedSharedNoteIds = {}; // noteId → local removal timestamp, prevents auto re-import
   let _deletePending  = null;
   let _moveNoteId     = null;
   let _alarmNoteId    = null;
@@ -1218,6 +1326,7 @@
     _pendingProfileLink = null;
     _alarmNoteId = null;
     _alarmContext = null;
+    document.getElementById('app-rail')?.classList.remove('open');
     document.getElementById('sidebar')?.classList.remove('open');
     document.getElementById('drawer-overlay')?.classList.remove('open');
     updateMobileSidebarToggleLabel(false);
@@ -1231,6 +1340,8 @@
   function prepareAuthenticatedHome() {
     closeTransientSurfaces();
     activeFolderId = null;
+    sidebarView = 'notes';
+    sidebarFilter = '';
     const searchInput = document.getElementById('search-input');
     if (searchInput) searchInput.value = '';
     renderSidebar();
@@ -1251,6 +1362,7 @@
       migrateFromLocalStorage();
       await ensureProfileDocument(user);
       linkedProfiles = _readLinkedProfilesFromLocal();
+      removedSharedNoteIds = _readRemovedSharedIdsFromLocal();
       renderProfileConnectionUI();
       renderShareProfileList();
       listenToNotes();
@@ -1267,8 +1379,8 @@
       const signInBtn = document.getElementById('google-signin-btn');
       if (signInBtn) signInBtn.disabled = false;
       const av = document.getElementById('user-avatar');
-      av.removeAttribute('src');
-      av.style.display = 'none';
+      av?.removeAttribute('src');
+      if (av) av.style.display = 'none';
       const signoutRow = document.getElementById('signout-row');
       if (signoutRow) signoutRow.style.display = 'none';
       if (unsubscribe) { unsubscribe(); unsubscribe = null; }
@@ -1281,6 +1393,7 @@
       Object.values(sharedNoteUnsubs).forEach(fn => fn());
       sharedNoteUnsubs = {};
       sharedLibraryMeta = {};
+      removedSharedNoteIds = {};
       currentProfile = null;
       linkedProfiles = {};
       profileLinkRequests = {};
@@ -1291,7 +1404,7 @@
       notificationsUnavailable = false;
       _processingProfileLinkResponses = new Set();
       declinedMentionShares = new Set();
-      notes = {}; folders = {}; activeId = null; activeFolderId = null;
+      notes = {}; folders = {}; activeId = null; activeFolderId = null; sidebarView = 'notes'; sidebarFilter = '';
       showEditorView(false);
       renderSidebar();
       renderNotificationButton();
@@ -1646,6 +1759,7 @@
     }
 
     renderProfileConnectionUI();
+    refreshOpenSidebarPage('friends');
   }
 
   function _readLinkedProfiles(data) {
@@ -1655,6 +1769,46 @@
       const profile = normalizeLinkedProfile(uid, raw[uid]);
       if (!profile || profile.uid === userId) return;
       out[profile.uid] = profile;
+    });
+    return out;
+  }
+
+  function mergeLinkedProfileRecords(...records) {
+    const normalized = records.map(record => normalizeLinkedProfile(record?.uid, record)).filter(Boolean);
+    if (!normalized.length) return null;
+    const merged = normalized.reduce((acc, profile) => {
+      const photos = profilePhotoFields(profile.photoURL, profile.photoURLCandidates, acc.photoURL, acc.photoURLCandidates);
+      const email = normalizeEmail(profile.email || acc.email || '');
+      const profileEmailOnly = !!profile.emailOnly || profile.uid === emailProfileKey(profile.email);
+      const accEmailOnly = !!acc.emailOnly || acc.uid === emailProfileKey(acc.email);
+      const uid = (!profileEmailOnly && profile.uid) || (!accEmailOnly && acc.uid) || profile.uid || acc.uid;
+      return {
+        ...acc,
+        ...profile,
+        uid,
+        displayName: (!profileEmailOnly && profile.displayName) || acc.displayName || profile.displayName,
+        email,
+        photoURL: photos.photoURL,
+        photoURLCandidates: photos.photoURLCandidates,
+        linkedAt: profile.linkedAt || acc.linkedAt || '',
+        emailOnly: !!(uid && email && uid === emailProfileKey(email))
+      };
+    }, {});
+    return normalizeLinkedProfile(merged.uid, merged);
+  }
+
+  function mergeLinkedProfileMaps(...maps) {
+    const out = {};
+    maps.forEach(map => {
+      Object.values(map || {}).forEach(profile => {
+        const normalized = normalizeLinkedProfile(profile?.uid, profile);
+        if (!normalized || normalized.uid === userId) return;
+        const existingKey = Object.keys(out).find(key => profileMatchesLink(out[key], normalized));
+        const key = existingKey || normalized.uid;
+        const merged = mergeLinkedProfileRecords(out[key], normalized);
+        if (existingKey && existingKey !== merged.uid) delete out[existingKey];
+        out[merged.uid] = merged;
+      });
     });
     return out;
   }
@@ -1681,7 +1835,7 @@
         photoURLCandidates: photos.photoURLCandidates
       };
     }
-    linkedProfiles = { ..._readLinkedProfilesFromLocal(), ..._readLinkedProfiles(data) };
+    linkedProfiles = mergeLinkedProfileMaps(_readLinkedProfilesFromLocal(), _readLinkedProfiles(data));
     _writeLinkedProfilesToLocal();
     scheduleLinkedProfileRefresh();
     const remoteReadNotifications = _readNotificationState(data);
@@ -1715,6 +1869,9 @@
     renderAlarmButton();
     if (document.getElementById('notifications-modal')?.classList.contains('open')) renderNotificationsList();
     if (document.getElementById('alarms-modal')?.classList.contains('open')) renderAlarmsList();
+    refreshOpenSidebarPage('friends');
+    refreshOpenSidebarPage('notifications');
+    refreshOpenSidebarPage('alarms');
   }
 
   function scheduleLinkedProfileRefresh() {
@@ -1840,10 +1997,13 @@
       .catch(err => console.error('repair direct share access:', err));
   }
 
-  function renderProfileConnectionUI() {
-    const list = document.getElementById('linked-profiles-list');
+  function renderProfileConnectionUI(options = {}) {
+    const list = document.getElementById(options.listId || 'linked-profiles-list');
     if (!list) return;
-    renderProfileLinkRequestsUI();
+    renderProfileLinkRequestsUI({
+      panelId: options.requestsPanelId || 'profile-link-requests-panel',
+      listId: options.requestsListId || 'profile-link-requests-list'
+    });
 
     const profiles = Object.values(linkedProfiles).sort((a, b) => (a.displayName || '').localeCompare(b.displayName || ''));
     if (!profiles.length) {
@@ -1860,13 +2020,13 @@
     ).join('');
 
     list.querySelectorAll('[data-remove-profile]').forEach(btn => {
-      btn.addEventListener('click', () => removeLinkedProfile(btn.dataset.removeProfile));
+      btn.addEventListener('click', () => openRemoveLinkedProfileModal(btn.dataset.removeProfile));
     });
   }
 
-  function renderProfileLinkRequestsUI() {
-    const panel = document.getElementById('profile-link-requests-panel');
-    const list = document.getElementById('profile-link-requests-list');
+  function renderProfileLinkRequestsUI(options = {}) {
+    const panel = document.getElementById(options.panelId || 'profile-link-requests-panel');
+    const list = document.getElementById(options.listId || 'profile-link-requests-list');
     if (!panel || !list) return;
     const requests = Object.values(profileLinkRequests)
       .filter(request => request.status === 'pending')
@@ -1995,6 +2155,7 @@
     if (input && options.clearInput !== false) input.value = '';
     renderProfileConnectionUI();
     renderShareProfileList();
+    refreshOpenSidebarPage('friends');
     scheduleLinkedProfileRefresh();
 
     try {
@@ -2042,8 +2203,8 @@
     return results.some(result => result.status === 'fulfilled');
   }
 
-  async function connectProfileByEmail() {
-    const input = document.getElementById('connect-profile-email-input');
+  async function connectProfileByEmail(inputId = 'connect-profile-email-input') {
+    const input = document.getElementById(inputId);
     const email = normalizeEmail(input?.value || '');
     if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       showToast('Enter A Valid Google Email', 'error');
@@ -2102,9 +2263,88 @@
       }
       if (input) input.value = '';
       showToast('Link Request Sent', 'success');
+      refreshOpenSidebarPage('friends');
     } catch (err) {
       console.warn('send profile link request:', err);
       showToast('Could Not Send Link Request', 'error');
+    }
+  }
+
+  function removeProfileFromSharedWith(sharedWith, profile) {
+    const keys = new Set(profileMatchKeys(profile));
+    const profileEmail = normalizeEmail(profile?.email || '');
+    const next = {};
+    Object.keys(normalizeSharedWith(sharedWith)).forEach(key => {
+      const entry = sharedWith[key];
+      const entryEmail = normalizeEmail(entry?.email || '');
+      const matches = keys.has(key) ||
+        (entry?.uid && keys.has(entry.uid)) ||
+        (entryEmail && (keys.has(entryEmail) || entryEmail === profileEmail || keys.has(emailProfileKey(entryEmail))));
+      if (!matches) next[key] = entry;
+    });
+    return next;
+  }
+
+  function getProfileAccessLossSummary(profile) {
+    const sharedFolders = Object.values(folders)
+      .filter(folder => isOwnedFolder(folder) && isFolderSharedWithProfile(folder, profile))
+      .sort((a, b) => (a.title || '').localeCompare(b.title || ''));
+    const folderIds = new Set(sharedFolders.map(folder => folder.id));
+    const directNotes = Object.values(notes)
+      .filter(note => isOwnedNote(note) && isNoteDirectlySharedWithProfile(note, profile))
+      .sort((a, b) => (a.title || '').localeCompare(b.title || ''));
+    return {
+      folders: sharedFolders.map(folder => ({
+        id: folder.id,
+        title: folder.title || 'Untitled Folder',
+        noteCount: Object.values(notes).filter(note => note.folderId === folder.id && isOwnedNote(note)).length
+      })),
+      notes: directNotes.map(note => ({
+        id: note.id,
+        title: note.title || 'Untitled Note',
+        viaSharedFolder: !!(note.folderId && folderIds.has(note.folderId))
+      }))
+    };
+  }
+
+  function profileAccessLossListHtml(summary) {
+    const items = [];
+    summary.folders.forEach(folder => {
+      const count = folder.noteCount ? ' (' + folder.noteCount + ' note' + (folder.noteCount === 1 ? '' : 's') + ')' : '';
+      items.push('<div><i class="fa-solid fa-folder"></i><span>Folder: ' + esc(folder.title + count) + '</span></div>');
+    });
+    summary.notes.forEach(note => {
+      const suffix = note.viaSharedFolder ? ' (also in shared folder)' : '';
+      items.push('<div><i class="fa-regular fa-note-sticky"></i><span>Note: ' + esc(note.title + suffix) + '</span></div>');
+    });
+    if (!items.length) return '<div class="delete-loss-list"><div><i class="fa-solid fa-circle-info"></i><span>No notes or folders are currently shared with this profile.</span></div></div>';
+    return '<div class="delete-loss-list">' + items.join('') + '</div>';
+  }
+
+  function openRemoveLinkedProfileModal(uid) {
+    const profile = linkedProfiles[uid];
+    if (!uid || !profile) return;
+    const summary = getProfileAccessLossSummary(profile);
+    _deletePending = { type: 'profile', id: uid, mode: 'remove-profile' };
+
+    const titleEl = document.getElementById('delete-modal-title');
+    const bodyEl = document.getElementById('delete-modal-body');
+    const confirmBtn = document.getElementById('delete-modal-confirm');
+    titleEl.textContent = 'Remove Linked Profile?';
+    bodyEl.className = 'delete-message remove';
+    bodyEl.innerHTML =
+      '<strong class="delete-target">' + esc(profile.displayName || profile.email || 'Linked Profile') + '</strong>' +
+      '<div class="delete-copy">Removing this profile link will revoke their access to these shared items and remove them from direct sharing and @mentions.</div>' +
+      profileAccessLossListHtml(summary);
+    confirmBtn.innerHTML = '<i class="fa-solid fa-user-minus" style="margin-right:6px;"></i>Remove Profile';
+    document.getElementById('delete-modal').classList.add('open');
+  }
+
+  async function commitBatchedWrites(writeFns) {
+    for (let i = 0; i < writeFns.length; i += 450) {
+      const batch = writeBatch(fsDb);
+      writeFns.slice(i, i + 450).forEach(fn => fn(batch));
+      await batch.commit();
     }
   }
 
@@ -2112,18 +2352,73 @@
     if (!uid || !linkedProfiles[uid]) return;
     const profile = linkedProfiles[uid];
     const removeKeys = linkedProfileAliasKeys(profile);
-    removeKeys.forEach(key => { delete linkedProfiles[key]; });
-    _writeLinkedProfilesToLocal();
-    renderProfileConnectionUI();
-    renderShareProfileList();
+    const userUpdates = {};
+    removeKeys.forEach(key => { userUpdates[key] = deleteField(); });
+
+    const writes = [];
+    const noteUpdates = {};
+    const folderUpdates = {};
+
+    Object.values(folders).filter(isOwnedFolder).forEach(folder => {
+      const nextSharedWith = removeProfileFromSharedWith(folder.sharedWith, profile);
+      const currentKeys = Object.keys(normalizeSharedWith(folder.sharedWith));
+      const nextKeys = Object.keys(nextSharedWith);
+      if (currentKeys.length === nextKeys.length) return;
+      const sharedAccessKeys = rebuildSharedAccessKeys(nextSharedWith);
+      folderUpdates[folder.id] = { sharedWith: nextSharedWith, sharedAccessKeys };
+      writes.push(batch => batch.update(doc(fsDb, 'folders', folder.id), {
+        sharedWith: nextKeys.length ? nextSharedWith : deleteField(),
+        sharedAccessKeys: sharedAccessKeys.length ? sharedAccessKeys : deleteField(),
+        modified: serverTimestamp()
+      }));
+    });
+
+    Object.values(notes).filter(isOwnedNote).forEach(note => {
+      const nextSharedWith = removeProfileFromSharedWith(note.sharedWith, profile);
+      const currentKeys = Object.keys(normalizeSharedWith(note.sharedWith));
+      const nextKeys = Object.keys(nextSharedWith);
+      if (currentKeys.length === nextKeys.length) return;
+      const sharedAccessKeys = rebuildSharedAccessKeys(nextSharedWith);
+      const publicFolderIds = normalizePublicFolderIds(note.publicFolderIds);
+      const nextPublic = computeEffectiveNotePublic({
+        ...note,
+        sharedWith: nextSharedWith,
+        sharedAccessKeys,
+        publicFolderIds
+      });
+      noteUpdates[note.id] = { sharedWith: nextSharedWith, sharedAccessKeys, public: nextPublic, publicFolderIds };
+      writes.push(batch => batch.update(doc(fsDb, 'notes', note.id), {
+        public: nextPublic,
+        sharedWith: nextKeys.length ? nextSharedWith : deleteField(),
+        sharedAccessKeys: sharedAccessKeys.length ? sharedAccessKeys : deleteField()
+      }));
+    });
+    writes.push(batch => batch.set(_getUserDocRef(), { linkedProfiles: userUpdates }, { merge: true }));
+
     try {
-      const updates = {};
-      removeKeys.forEach(key => { updates[key] = deleteField(); });
-      await setDoc(_getUserDocRef(), { linkedProfiles: updates }, { merge: true });
-      showToast('Profile Removed', 'success');
+      await commitBatchedWrites(writes);
+      removeKeys.forEach(key => { delete linkedProfiles[key]; });
+      Object.keys(folderUpdates).forEach(id => {
+        if (!folders[id]) return;
+        folders[id].sharedWith = folderUpdates[id].sharedWith;
+        folders[id].sharedAccessKeys = folderUpdates[id].sharedAccessKeys;
+      });
+      Object.keys(noteUpdates).forEach(id => {
+        if (!notes[id]) return;
+        notes[id].sharedWith = noteUpdates[id].sharedWith;
+        notes[id].sharedAccessKeys = noteUpdates[id].sharedAccessKeys;
+        notes[id].public = noteUpdates[id].public;
+        notes[id].publicFolderIds = noteUpdates[id].publicFolderIds;
+      });
+      _writeLinkedProfilesToLocal();
+      renderProfileConnectionUI();
+      renderShareProfileList();
+      renderSidebar();
+      refreshOpenSidebarPage('friends');
+      showToast('Profile Link Removed', 'success');
     } catch (err) {
       console.error('remove profile:', err);
-      showToast('Could Not Remove Profile', 'error');
+      showToast('Could Not Remove Profile Link', 'error');
     }
   }
 
@@ -2192,6 +2487,8 @@
     renderProfileLinkRequestsUI();
     renderNotificationButton();
     if (document.getElementById('notifications-modal')?.classList.contains('open')) renderNotificationsList();
+    refreshOpenSidebarPage('friends');
+    refreshOpenSidebarPage('notifications');
     return results.some(result => result.status === 'fulfilled');
   }
 
@@ -2264,6 +2561,8 @@
     profileLinkRequestSources = {};
     renderProfileLinkRequestsUI();
     renderNotificationButton();
+    refreshOpenSidebarPage('friends');
+    refreshOpenSidebarPage('notifications');
 
     const email = normalizeEmail(currentProfile?.email || auth.currentUser?.email || '');
     const sources = [
@@ -2297,6 +2596,8 @@
       renderProfileLinkRequestsUI();
       renderNotificationButton();
       if (document.getElementById('notifications-modal')?.classList.contains('open')) renderNotificationsList();
+      refreshOpenSidebarPage('friends');
+      refreshOpenSidebarPage('notifications');
     }, err => {
       console.warn('profile link requests listener:', err);
     }));
@@ -2633,7 +2934,7 @@
 
     try {
       await batch.commit();
-      await Promise.all(removedSharedIds.map(noteId => _removeSharedId(noteId)));
+      await Promise.all(removedSharedIds.map(noteId => _removeSharedId(noteId, { removedByUser: true })));
       showToast('Removed From Library', 'success');
     } catch (err) {
       console.error('removeSharedFolderFromLibrary:', err);
@@ -2740,10 +3041,10 @@
     openDeleteModal('note', id);
   }
 
-  function _execDeleteNote(id) {
+  async function _execDeleteNote(id) {
     const note = notes[id];
     if (!note) return;
-    if (!isOwnedNote(note)) { removeFromLibrary(id); return; }
+    if (!isOwnedNote(note)) { await removeFromLibrary(id); return; }
     delete notes[id];
     if (activeId === id) {
       const ids = sortedIds();
@@ -3161,7 +3462,8 @@
     if (!_deletePending) return;
     const { type, id } = _deletePending;
     closeDeleteModal();
-    if (type === 'note') _execDeleteNote(id);
+    if (type === 'note') await _execDeleteNote(id);
+    else if (type === 'profile') await removeLinkedProfile(id);
     else await _execDeleteFolder(id);
   }
 
@@ -3408,11 +3710,18 @@
     return out;
   }
 
+  function enrichProfileFromLinkedCache(profile) {
+    const normalized = normalizeLinkedProfile(profile?.uid, profile);
+    if (!normalized) return profile;
+    const cached = Object.values(linkedProfiles).find(p => profileMatchesLink(p, normalized));
+    return mergeLinkedProfileRecords(cached, normalized) || normalized;
+  }
+
   function accessProfilesFromSharedWith(sharedWith) {
     return uniqueProfiles(Object.values(normalizeSharedWith(sharedWith))
       .map(entry => normalizeAccessEntry(entry))
       .filter(accessEntryHasAnyScope)
-      .map(entry => ({
+      .map(entry => enrichProfileFromLinkedCache({
         uid: entry.uid || emailProfileKey(entry.email || ''),
         displayName: entry.displayName || entry.email || 'Linked Profile',
         email: normalizeEmail(entry.email || ''),
@@ -3600,9 +3909,121 @@
     return el;
   }
 
-  function renderSidebar(filter) {
-    filter = (filter || '').toLowerCase();
+  const SIDEBAR_VIEWS = new Set(['notes', 'create', 'notifications', 'alarms', 'friends']);
+
+  function updateRailActiveState() {
+    document.querySelectorAll('[data-sidebar-view]').forEach(btn => {
+      const active = btn.dataset.sidebarView === sidebarView;
+      btn.classList.toggle('active', active);
+      btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+  }
+
+  function setSidebarView(view) {
+    sidebarView = SIDEBAR_VIEWS.has(view) ? view : 'notes';
+    if (sidebarMinimized && !isMobile()) setSidebarMinimized(false);
+    if (isMobile()) openDrawer();
+    renderSidebar();
+  }
+
+  function refreshOpenSidebarPage(view) {
+    if (sidebarView === view) renderSidebarPage(view);
+  }
+
+  function renderSidebarPage(view) {
     const list = document.getElementById('sidebar-list');
+    const sidebar = document.getElementById('sidebar');
+    if (!list) return;
+    sidebar?.classList.add('sidebar-page-mode');
+    updateRailActiveState();
+
+    const meta = {
+      create:        { icon: 'fa-solid fa-plus',       label: 'Create' },
+      notifications: { icon: 'fa-solid fa-bell',       label: 'Notifications' },
+      alarms:        { icon: 'fa-solid fa-clock',      label: 'Alarms' },
+      friends:       { icon: 'fa-solid fa-user-group', label: 'Friends' }
+    }[view] || { icon: 'fa-solid fa-note-sticky', label: 'Notes' };
+
+    list.innerHTML =
+      '<div class="sidebar-page">' +
+        '<div class="sidebar-page-header">' +
+          '<div class="sidebar-page-title"><i class="' + meta.icon + '"></i><span>' + meta.label + '</span></div>' +
+        '</div>' +
+        '<div class="sidebar-page-content" id="sidebar-page-content"></div>' +
+      '</div>';
+
+    const content = document.getElementById('sidebar-page-content');
+    if (!content) return;
+
+    if (view === 'create') {
+      const target = activeFolderId && folders[activeFolderId] ? folders[activeFolderId].title : 'Notes';
+      content.innerHTML =
+        '<div class="sidebar-section-label" style="padding:0 4px 2px;">' + esc(target) + '</div>' +
+        '<div class="sidebar-page-actions">' +
+          '<button class="sidebar-page-action primary" id="sidebar-create-note-btn" type="button"><i class="fa-solid fa-note-sticky"></i><span>New Note</span></button>' +
+          '<button class="sidebar-page-action" id="sidebar-create-folder-btn" type="button"><i class="fa-solid fa-folder-plus"></i><span>New Folder</span></button>' +
+        '</div>';
+      document.getElementById('sidebar-create-note-btn')?.addEventListener('click', openModal);
+      document.getElementById('sidebar-create-folder-btn')?.addEventListener('click', openFolderModal);
+      return;
+    }
+
+    if (view === 'notifications') {
+      content.innerHTML =
+        '<div class="notifications-list" id="sidebar-notifications-list"></div>' +
+        '<button class="sidebar-page-action" id="sidebar-notifications-mark-read" type="button"><i class="fa-solid fa-check-double"></i><span>Mark All Read</span></button>';
+      renderNotificationsList(document.getElementById('sidebar-notifications-list'));
+      document.getElementById('sidebar-notifications-mark-read')?.addEventListener('click', markAllNotificationsRead);
+      return;
+    }
+
+    if (view === 'alarms') {
+      content.innerHTML = '<div class="notifications-list" id="sidebar-alarms-list"></div>';
+      renderAlarmsList(document.getElementById('sidebar-alarms-list'));
+      return;
+    }
+
+    if (view === 'friends') {
+      content.innerHTML =
+        '<div class="profile-connect-row">' +
+          '<input class="modal-input" id="sidebar-connect-profile-email-input" type="email" placeholder="Enter Google Email" autocomplete="email" />' +
+          '<button class="modal-btn primary" id="sidebar-connect-profile-btn" type="button">Connect</button>' +
+        '</div>' +
+        '<div class="profile-link-requests" id="sidebar-profile-link-requests-panel" hidden>' +
+          '<div class="share-section-title"><i class="fa-solid fa-user-check"></i><span>Profile Requests</span></div>' +
+          '<div class="profile-list" id="sidebar-profile-link-requests-list"></div>' +
+        '</div>' +
+        '<div class="profile-list" id="sidebar-linked-profiles-list"></div>';
+      renderProfileConnectionUI({
+        inputId: 'sidebar-connect-profile-email-input',
+        listId: 'sidebar-linked-profiles-list',
+        requestsPanelId: 'sidebar-profile-link-requests-panel',
+        requestsListId: 'sidebar-profile-link-requests-list'
+      });
+      document.getElementById('sidebar-connect-profile-btn')?.addEventListener('click', () => connectProfileByEmail('sidebar-connect-profile-email-input'));
+      document.getElementById('sidebar-connect-profile-email-input')?.addEventListener('keydown', e => {
+        if (e.key === 'Enter') connectProfileByEmail('sidebar-connect-profile-email-input');
+      });
+    }
+  }
+
+  function renderSidebar(filter) {
+    if (typeof filter === 'string') sidebarFilter = filter;
+    else {
+      const searchInput = document.getElementById('search-input');
+      sidebarFilter = searchInput ? searchInput.value : sidebarFilter;
+    }
+    filter = (sidebarFilter || '').toLowerCase();
+    const list = document.getElementById('sidebar-list');
+    const sidebar = document.getElementById('sidebar');
+    if (sidebarView !== 'notes') {
+      renderSidebarPage(sidebarView);
+      renderNotificationButton();
+      renderAlarmButton();
+      return;
+    }
+    sidebar?.classList.remove('sidebar-page-mode');
+    updateRailActiveState();
     list.innerHTML = '';
 
     const sortedFolderList = Object.values(folders)
@@ -3647,10 +4068,13 @@
         : '';
       const folderAccessAvatars = renderAccessAvatars(folderAccessProfiles, isOwnedFolder(folder) ? 'Folder shared with' : 'Shared by');
       const folderColor = resolveFolderIconColor(folder.iconColor, folder.iconColorMode);
+      const toggleLabel = isExpanded ? 'Collapse Folder' : 'Expand Folder';
       folderEl.innerHTML =
         '<div class="folder-row" data-fid="' + folder.id + '" style="--folder-color:' + esc(folderColor) + ';">' +
-          '<span class="folder-chevron' + (isExpanded ? ' expanded' : '') + '"><i class="fa-solid fa-chevron-right"></i></span>' +
-          '<span class="item-icon folder-icon"><i class="fa-solid fa-folder' + (isExpanded ? '-open' : '') + '"></i></span>' +
+          '<button class="folder-toggle-btn" type="button" title="' + toggleLabel + '" aria-label="' + toggleLabel + '">' +
+            '<span class="folder-chevron' + (isExpanded ? ' expanded' : '') + '"><i class="fa-solid fa-chevron-right"></i></span>' +
+            '<span class="item-icon folder-icon"><i class="fa-solid fa-folder' + (isExpanded ? '-open' : '') + '"></i></span>' +
+          '</button>' +
           '<div class="item-info"><div class="item-name">' + esc(folder.title) + '</div></div>' +
           folderAccessAvatars +
           sharedBadge +
@@ -3685,6 +4109,12 @@
         row.querySelector('.folder-chevron')?.classList.toggle('expanded', nextExpanded);
         const folderIcon = row.querySelector('.folder-icon i');
         if (folderIcon) folderIcon.className = 'fa-solid fa-folder' + (nextExpanded ? '-open' : '');
+        const toggleBtn = row.querySelector('.folder-toggle-btn');
+        if (toggleBtn) {
+          const label = nextExpanded ? 'Collapse Folder' : 'Expand Folder';
+          toggleBtn.title = label;
+          toggleBtn.setAttribute('aria-label', label);
+        }
         notesWrap.classList.toggle('expanded', nextExpanded);
       });
       row.addEventListener('dragover', e => {
@@ -4244,12 +4674,14 @@
   }
 
   function openDrawer() {
+    document.getElementById('app-rail').classList.add('open');
     document.getElementById('sidebar').classList.add('open');
     document.getElementById('drawer-overlay').classList.add('open');
     updateMobileSidebarToggleLabel(true);
   }
 
   function closeDrawer() {
+    document.getElementById('app-rail').classList.remove('open');
     document.getElementById('sidebar').classList.remove('open');
     document.getElementById('drawer-overlay').classList.remove('open');
     updateMobileSidebarToggleLabel(false);
@@ -4604,9 +5036,9 @@
     }
 
     document.getElementById('profile-settings-btn').addEventListener('click', () => {
+      if (isMobile()) closeDrawer();
       document.getElementById('theme-select').value = themeMode;
       updateColorPickerUI(accentColor);
-      renderProfileConnectionUI();
       settingsModal.classList.add('open');
     });
     settingsModal.addEventListener('click', e => {
@@ -4677,7 +5109,7 @@
     });
   }
 
-  const SIDEBAR_WORDMARK_HIDE_WIDTH = 280;
+  const SIDEBAR_WORDMARK_HIDE_WIDTH = 160;
   const SIDEBAR_ICON_SAFE_WIDTH = 224;
 
   function updateSidebarWidthState(width) {
@@ -5360,26 +5792,6 @@
     navigator.share({ title, url }).catch(() => {});
   }
 
-  async function stopSharing() {
-    if (!_shareCtx) return;
-    if (_shareCtx.type === 'note') {
-      await setNotePublic(_shareCtx.id, false);
-      await removeNoteDirectShares(_shareCtx.id);
-    } else {
-      await setFolderPublic(_shareCtx.id, false);
-      if (folders[_shareCtx.id]) {
-        folders[_shareCtx.id].sharedWith = {};
-        folders[_shareCtx.id].sharedAccessKeys = [];
-        await persistFolderShareState(_shareCtx.id);
-      }
-      const folderNotes = Object.values(notes).filter(n => n.folderId === _shareCtx.id && isOwnedNote(n));
-      await Promise.all(folderNotes.map(n => removeFolderScopeFromNote(n.id, _shareCtx.id)));
-    }
-    document.getElementById('share-modal').classList.remove('open');
-    renderSidebar();
-    showToast('Sharing Stopped', 'success');
-  }
-
   /* ── Shared Notes: Firestore-backed + per-document real-time listeners ── */
   // Shared note IDs are stored in Firestore at users/{userId} so they sync
   // across all devices. Each shared note gets its own onSnapshot listener.
@@ -5389,6 +5801,7 @@
 
   function _sharedLibraryStorageKey() { return 'notas_shared_library_' + userId; }
   function _legacySharedStorageKey() { return 'notas_shared_' + userId; }
+  function _removedSharedStorageKey() { return 'notas_shared_removed_' + userId; }
   function _hasOwn(obj, key) { return Object.prototype.hasOwnProperty.call(obj || {}, key); }
 
   function _normalizeSharedFolderId(folderId) {
@@ -5401,6 +5814,71 @@
 
   function _sharedFolderLocalId(sourceFolderId) {
     return 'shared_folder_' + _safeDocFragment(sourceFolderId) + '_' + _safeDocFragment(userId);
+  }
+
+  function _readRemovedSharedIdsFromLocal() {
+    if (!userId) return {};
+    try {
+      const raw = localStorage.getItem(_removedSharedStorageKey());
+      const parsed = raw ? JSON.parse(raw) : {};
+      if (Array.isArray(parsed)) {
+        return parsed.reduce((acc, id) => {
+          if (typeof id === 'string' && id) acc[id] = new Date().toISOString();
+          return acc;
+        }, {});
+      }
+      const out = {};
+      Object.keys(parsed || {}).forEach(id => {
+        const removedAt = normalizePinnedAt(parsed[id]) || new Date().toISOString();
+        if (typeof id === 'string' && id) out[id] = removedAt;
+      });
+      return out;
+    } catch (err) {
+      console.error('read removed shared notes local:', err);
+      return {};
+    }
+  }
+
+  function _writeRemovedSharedIdsToLocal() {
+    if (!userId) return;
+    try {
+      const entries = Object.entries(removedSharedNoteIds || {})
+        .filter(([id]) => typeof id === 'string' && id)
+        .sort((a, b) => noteTime(b[1]) - noteTime(a[1]))
+        .slice(0, 500);
+      if (entries.length) localStorage.setItem(_removedSharedStorageKey(), JSON.stringify(Object.fromEntries(entries)));
+      else localStorage.removeItem(_removedSharedStorageKey());
+      removedSharedNoteIds = Object.fromEntries(entries);
+    } catch (err) {
+      console.error('write removed shared notes local:', err);
+    }
+  }
+
+  function _markSharedIdRemoved(noteId) {
+    if (!noteId) return;
+    removedSharedNoteIds[noteId] = new Date().toISOString();
+    _writeRemovedSharedIdsToLocal();
+  }
+
+  function _clearSharedIdRemoved(noteId) {
+    if (!noteId || !removedSharedNoteIds[noteId]) return;
+    delete removedSharedNoteIds[noteId];
+    _writeRemovedSharedIdsToLocal();
+  }
+
+  function _isSharedIdRemoved(noteId, sharedAt = '') {
+    const removedAt = normalizePinnedAt(removedSharedNoteIds[noteId]);
+    if (!removedAt) return false;
+    const sharedTime = noteTime(sharedAt);
+    return !(sharedTime && sharedTime > noteTime(removedAt));
+  }
+
+  function _filterRemovedSharedLibraryMeta(meta) {
+    const out = {};
+    Object.keys(meta || {}).forEach(id => {
+      if (!_isSharedIdRemoved(id)) out[id] = meta[id];
+    });
+    return out;
   }
 
   function _sharedFolderInfoFromData(data) {
@@ -5516,7 +5994,7 @@
         }
       }
     } catch (err) { console.error('read shared library local:', err); }
-    return meta;
+    return _filterRemovedSharedLibraryMeta(meta);
   }
 
   function _writeSharedLibraryToLocal(meta = sharedLibraryMeta) {
@@ -5671,6 +6149,7 @@
   }
 
   async function _addSharedId(noteId) {
+    _clearSharedIdRemoved(noteId);
     if (!sharedLibraryMeta[noteId]) sharedLibraryMeta[noteId] = { folderId: null };
     _writeSharedLibraryToLocal();
     const payload = { sharedNoteIds: arrayUnion(noteId) };
@@ -5688,7 +6167,8 @@
     }
   }
 
-  async function _removeSharedId(noteId) {
+  async function _removeSharedId(noteId, options = {}) {
+    if (options.removedByUser) _markSharedIdRemoved(noteId);
     delete sharedLibraryMeta[noteId];
     _writeSharedLibraryToLocal();
     try {
@@ -5791,6 +6271,7 @@
     _writeNotificationStateToLocal();
     renderNotificationButton();
     if (document.getElementById('notifications-modal')?.classList.contains('open')) renderNotificationsList();
+    refreshOpenSidebarPage('notifications');
     if (!Object.keys(updates).length) return;
     try {
       await setDoc(_getUserDocRef(), { readNotifications: updates }, { merge: true });
@@ -5834,11 +6315,18 @@
 
     const sharedWith = d.sharedWith && typeof d.sharedWith === 'object' ? d.sharedWith : {};
     const sharedAccessKeys = Array.isArray(d.sharedAccessKeys) ? d.sharedAccessKeys : [];
-    if (!d.public && !hasSharedAccess(sharedWith, sharedAccessKeys)) return;
-
+    const hasDirectAccess = hasSharedAccess(sharedWith, sharedAccessKeys);
+    const hasFolderPublicAccess = hasImportedFolderPublicAccess(noteId, d);
     const access = getSharedAccessEntry(sharedWith) || {};
+    const shareTimestamp = access.lastSharedAt || access.sharedAt || '';
+    const created = shareTimestamp || d.modified?.toDate?.()?.toISOString() || new Date().toISOString();
+    if (!noteLinkPublicFromData(d) && !hasDirectAccess && !hasFolderPublicAccess) return;
+    if (!sharedLibraryMeta[noteId] && _isSharedIdRemoved(noteId, shareTimestamp)) {
+      delete notes[noteId];
+      return;
+    }
+
     const type = access.type === 'mention' ? 'mention' : 'share';
-    const created = access.sharedAt || d.modified?.toDate?.()?.toISOString() || new Date().toISOString();
     const folderId = _applySharedFolderFromData(noteId, access);
 
     notes[noteId] = hydrateNoteShareState(d, {
@@ -5932,6 +6420,7 @@
         profileShareNotifications = {};
         renderNotificationButton();
         if (document.getElementById('notifications-modal')?.classList.contains('open')) renderNotificationsList();
+        refreshOpenSidebarPage('notifications');
       }
     };
 
@@ -5948,8 +6437,9 @@
         if (data.type === 'folder_share' || (!data.noteId && data.sourceFolderId)) {
           const item = normalizeProfileShareNotification(id, data);
           profileShareNotifications[id] = item;
-          const localFolderId = _ensureSharedFolderShell(_sharedFolderInfoFromData(data));
-          item.noteIds.forEach(noteId => {
+          const noteIdsToAdd = item.noteIds.filter(noteId => sharedLibraryMeta[noteId] || !_isSharedIdRemoved(noteId, item.created));
+          const localFolderId = noteIdsToAdd.length ? _ensureSharedFolderShell(_sharedFolderInfoFromData(data)) : null;
+          noteIdsToAdd.forEach(noteId => {
             if (localFolderId) _placeSharedNoteInFolder(noteId, localFolderId);
             _addSharedId(noteId);
             _subscribeSharedNote(noteId);
@@ -5957,7 +6447,9 @@
           return;
         }
         if (!data.noteId) return;
-        profileShareNotifications[id] = normalizeProfileShareNotification(id, data);
+        const item = normalizeProfileShareNotification(id, data);
+        profileShareNotifications[id] = item;
+        if (!sharedLibraryMeta[data.noteId] && _isSharedIdRemoved(data.noteId, item.created)) return;
         const prevFolderId = _getSharedNoteFolder(data.noteId);
         const folderId = _applySharedFolderFromData(data.noteId, data);
         if (!sharedLibraryMeta[data.noteId] || (folderId && prevFolderId !== folderId)) _addSharedId(data.noteId);
@@ -6054,8 +6546,8 @@
     return days + 'd ago';
   }
 
-  function renderNotificationsList() {
-    const list = document.getElementById('notifications-list');
+  function renderNotificationsList(target = 'notifications-list') {
+    const list = typeof target === 'string' ? document.getElementById(target) : target;
     if (!list) return;
     const items = getNotificationItems();
     if (notificationsUnavailable) {
@@ -6148,8 +6640,7 @@
   }
 
   function openNotificationsModal() {
-    renderNotificationsList();
-    document.getElementById('notifications-modal')?.classList.add('open');
+    setSidebarView('notifications');
   }
 
   function makeAlarmId() {
@@ -6298,8 +6789,8 @@
     badge.hidden = count === 0;
   }
 
-  function renderAlarmsList() {
-    const list = document.getElementById('alarms-list');
+  function renderAlarmsList(target = 'alarms-list') {
+    const list = typeof target === 'string' ? document.getElementById(target) : target;
     if (!list) return;
     const items = getAlarmItems();
     if (!items.length) {
@@ -6349,8 +6840,7 @@
   }
 
   function openAlarmsModal() {
-    renderAlarmsList();
-    document.getElementById('alarms-modal')?.classList.add('open');
+    setSidebarView('alarms');
   }
 
   function localDateParts(date) {
@@ -6514,6 +7004,7 @@
     if (syncActiveNoteFromEditor()) {
       renderAlarmButton();
       if (document.getElementById('alarms-modal')?.classList.contains('open')) renderAlarmsList();
+      refreshOpenSidebarPage('alarms');
       scheduleSave();
     }
     closeNoteAlarmModal();
@@ -6542,6 +7033,7 @@
     }
     renderAlarmButton();
     if (document.getElementById('alarms-modal')?.classList.contains('open')) renderAlarmsList();
+    refreshOpenSidebarPage('alarms');
   }
 
   async function clearLegacyNoteAlarm(noteId) {
@@ -6550,6 +7042,7 @@
     _writeNoteAlarmsToLocal();
     renderAlarmButton();
     if (document.getElementById('alarms-modal')?.classList.contains('open')) renderAlarmsList();
+    refreshOpenSidebarPage('alarms');
     try {
       await setDoc(_getUserDocRef(), { noteAlarms: { [noteId]: null } }, { merge: true });
       showToast('Alarm Cleared', 'success');
@@ -6817,7 +7310,7 @@
       const folderId = _applySharedFolderFromData(noteId, access);
 
       // If the owner stopped sharing, remove the note from this user's library
-      if (!d.public && !hasDirectAccess && !hasFolderPublicAccess) {
+      if (!noteLinkPublicFromData(d) && !hasDirectAccess && !hasFolderPublicAccess) {
         delete notes[noteId];
         _removeSharedId(noteId);
         if (sharedNoteUnsubs[noteId]) { sharedNoteUnsubs[noteId](); delete sharedNoteUnsubs[noteId]; }
@@ -6878,7 +7371,8 @@
     unsubUserDoc = onSnapshot(_getUserDocRef(), snap => {
       const data = snap.data() || {};
       applyUserProfileData(data);
-      const remoteMeta = _readSharedLibraryFromRemote(data);
+      const rawRemoteMeta = _readSharedLibraryFromRemote(data);
+      const remoteMeta = _filterRemovedSharedLibraryMeta(rawRemoteMeta);
       const latestLocalMeta = _readSharedLibraryFromLocal();
       const nextMeta = _mergeSharedLibraries(latestLocalMeta, remoteMeta);
       const ids = Object.keys(nextMeta);
@@ -6890,6 +7384,9 @@
         Object.keys(latestLocalMeta).forEach(id => { if (!remoteMeta[id]) localOnlyMeta[id] = latestLocalMeta[id]; });
         _syncSharedLibraryToCloud(localOnlyMeta);
       }
+      Object.keys(rawRemoteMeta).forEach(id => {
+        if (_isSharedIdRemoved(id)) _removeSharedId(id).catch(err => console.error('retry removed shared note cleanup:', err));
+      });
       renderSidebar();
       if (!activeId) { const sorted = sortedIds(); sorted.length ? openNote(sorted[0]) : showEditorView(false); }
     }, err => {
@@ -6999,16 +7496,17 @@
   }
 
   // Remove a shared note from the user's library without deleting it from Firestore.
-  function removeFromLibrary(noteId, options = {}) {
+  async function removeFromLibrary(noteId, options = {}) {
     const { render = true, selectNext = true, notify = true } = options;
     if (notes[noteId]?.owner === userId) return; // can't remove owned notes this way
     if (sharedNoteUnsubs[noteId]) { sharedNoteUnsubs[noteId](); delete sharedNoteUnsubs[noteId]; }
     delete notes[noteId];
-    _removeSharedId(noteId);
+    const cloudSynced = await _removeSharedId(noteId, { removedByUser: true });
     if (activeId === noteId) activeId = null;
     if (render) renderSidebar();
     if (selectNext && !activeId) { const ids = sortedIds(); ids.length ? openNote(ids[0]) : showEditorView(false); }
-    if (notify) showToast('Removed From Library', 'success');
+    if (notify) showToast(cloudSynced ? 'Removed From Library' : 'Removed locally; cloud sync failed', cloudSynced ? 'success' : 'error');
+    return cloudSynced;
   }
 
   async function getImportableSharedFolderNotes(folderId) {
@@ -7055,7 +7553,8 @@
       const persistJobs = [];
       noteDocs.forEach(noteSnap => {
         const data = noteSnap.data() || {};
-        const folderPublic = !!data.public || normalizePublicFolderIds(data.publicFolderIds).includes(folderId);
+        const folderPublic = normalizePublicFolderIds(data.publicFolderIds).includes(folderId) ||
+          (data.folderId === folderId && noteLinkPublicFromData(data));
         if (data.owner !== userId && folderPublic) {
           if (localFolderId) _placeSharedNoteInFolder(noteSnap.id, localFolderId);
           notes[noteSnap.id] = hydrateNoteShareState(data, {
@@ -7093,17 +7592,18 @@
   document.getElementById('mob-logo-btn').addEventListener('click',   toggleDrawer);
   document.getElementById('sidebar-logo-btn').addEventListener('click', toggleSidebarFromLogo);
   document.getElementById('sidebar').addEventListener('click', () => { if (sidebarMinimized && !isMobile()) setSidebarMinimized(false); });
+  document.querySelectorAll('[data-sidebar-view]').forEach(btn => {
+    btn.addEventListener('click', () => setSidebarView(btn.dataset.sidebarView));
+  });
   document.getElementById('mob-new-btn').addEventListener('click',    openModal);
   document.getElementById('google-signin-btn').addEventListener('click', signInWithGoogle);
   document.getElementById('signout-btn').addEventListener('click', () => {
     closeTransientSurfaces();
     signOut(auth);
   });
-  document.getElementById('notifications-btn').addEventListener('click', openNotificationsModal);
   document.getElementById('notifications-close').addEventListener('click', () => document.getElementById('notifications-modal').classList.remove('open'));
   document.getElementById('notifications-mark-read').addEventListener('click', markAllNotificationsRead);
   document.getElementById('notifications-modal').addEventListener('click', e => { if (e.target === e.currentTarget) document.getElementById('notifications-modal').classList.remove('open'); });
-  document.getElementById('alarm-btn').addEventListener('click', openAlarmsModal);
   document.getElementById('alarms-close').addEventListener('click', () => document.getElementById('alarms-modal').classList.remove('open'));
   document.getElementById('alarms-modal').addEventListener('click', e => { if (e.target === e.currentTarget) document.getElementById('alarms-modal').classList.remove('open'); });
   document.getElementById('alarm-save').addEventListener('click', saveNoteAlarm);
@@ -7135,8 +7635,8 @@
   document.getElementById('mention-share-confirm').addEventListener('click', () => closeMentionShareModal(true));
   document.getElementById('mention-share-cancel').addEventListener('click', () => closeMentionShareModal(false));
   document.getElementById('mention-share-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeMentionShareModal(false); });
-  document.getElementById('connect-profile-btn').addEventListener('click', connectProfileByEmail);
-  document.getElementById('connect-profile-email-input').addEventListener('keydown', e => {
+  document.getElementById('connect-profile-btn')?.addEventListener('click', connectProfileByEmail);
+  document.getElementById('connect-profile-email-input')?.addEventListener('keydown', e => {
     if (e.key === 'Enter') connectProfileByEmail();
   });
   document.getElementById('profile-link-approve').addEventListener('click', approvePendingProfileLink);
@@ -7146,10 +7646,9 @@
   document.getElementById('share-link-toggle').addEventListener('change', e => setShareLinkEnabled(e.target.checked));
   document.getElementById('copy-link-btn').addEventListener('click',   copyShareLink);
   document.getElementById('native-share-btn').addEventListener('click', nativeShare);
-  document.getElementById('share-stop-btn').addEventListener('click',  stopSharing);
   document.getElementById('share-close').addEventListener('click',     () => document.getElementById('share-modal').classList.remove('open'));
   document.getElementById('share-modal').addEventListener('click',     e => { if (e.target === e.currentTarget) document.getElementById('share-modal').classList.remove('open'); });
-  document.getElementById('new-folder-btn').addEventListener('click', openFolderModal);
+  document.getElementById('new-folder-btn')?.addEventListener('click', openFolderModal);
   document.getElementById('folder-modal-create').addEventListener('click', confirmCreateFolder);
   document.getElementById('folder-modal-cancel').addEventListener('click', closeFolderModal);
   document.getElementById('folder-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeFolderModal(); });
@@ -7175,7 +7674,7 @@
     if (folderId) setFolderIconColor(folderId, e.target.value);
   });
   document.getElementById('drawer-overlay').addEventListener('click', closeDrawer);
-  document.getElementById('new-note-btn').addEventListener('click',   openModal);
+  document.getElementById('new-note-btn')?.addEventListener('click',   openModal);
   document.getElementById('empty-cta-btn').addEventListener('click',  openModal);
   document.getElementById('modal-create').addEventListener('click',   confirmCreate);
   document.getElementById('modal-cancel').addEventListener('click',   closeModal);
@@ -7204,6 +7703,7 @@
     if (!syncActiveNoteFromEditor()) return;
     renderAlarmButton();
     if (document.getElementById('alarms-modal')?.classList.contains('open')) renderAlarmsList();
+    refreshOpenSidebarPage('alarms');
     renderMentionPopover();
     scheduleUndoSnapshot();
     scheduleMentionSync();
