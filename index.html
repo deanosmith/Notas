@@ -478,6 +478,10 @@
     .profile-name { font-size: 12.5px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .profile-sub { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .profile-empty { padding: 10px 2px; color: var(--muted); font-size: 12px; line-height: 1.45; }
+    .profile-link-requests { margin-top: 4px; }
+    .profile-link-requests[hidden] { display: none; }
+    .profile-link-actions { display: flex; gap: 6px; flex-shrink: 0; }
+    .profile-link-actions .modal-btn { padding-left: 10px; padding-right: 10px; }
     .profile-approval-card { display: flex; align-items: center; gap: 10px; min-width: 0; margin-bottom: 12px; padding: 10px 12px; border: 1px solid var(--glass-border); border-radius: var(--radius-xs); background: linear-gradient(180deg, rgba(var(--orb-r),var(--orb-g),var(--orb-b),.12), rgba(255,255,255,.02)); }
     .profile-approval-note { margin-bottom: 18px; color: var(--text); font-size: 13px; font-weight: 650; line-height: 1.45; }
     .share-profile-panel { margin: 0 0 18px; padding-top: 2px; }
@@ -849,6 +853,10 @@
             <input class="modal-input" id="connect-profile-email-input" type="email" placeholder="Enter Google Email" autocomplete="email" />
             <button class="modal-btn primary" id="connect-profile-btn" type="button">Connect</button>
           </div>
+          <div class="profile-link-requests" id="profile-link-requests-panel" hidden>
+            <div class="share-section-title"><i class="fa-solid fa-user-check"></i><span>Profile Requests</span></div>
+            <div class="profile-list" id="profile-link-requests-list"></div>
+          </div>
           <div class="profile-list" id="linked-profiles-list"></div>
         </div>
         <div class="settings-row">
@@ -870,7 +878,7 @@
     <div class="modal">
       <div class="modal-title"><i class="fa-solid fa-user-check" style="margin-right:8px;opacity:.7;"></i>Link Profile?</div>
       <div class="profile-approval-card" id="profile-link-preview"></div>
-      <p class="profile-approval-note">Approve to add this profile for direct shares and @mentions. Deny cancels the link.</p>
+      <p class="profile-approval-note" id="profile-link-note">Approve to add this profile for direct shares and @mentions. Deny cancels the link.</p>
       <div class="modal-actions">
         <button class="modal-btn" id="profile-link-deny" type="button">Deny</button>
         <button class="modal-btn primary" id="profile-link-approve" type="button">Approve</button>
@@ -1081,6 +1089,8 @@
   let userId        = null;
   let currentProfile = null;
   let linkedProfiles = {};
+  let profileLinkRequests = {};
+  let profileLinkRequestSources = {};
   let readNotifications = {};
   let noteAlarms = {};
   let profileShareNotifications = {};
@@ -1090,6 +1100,7 @@
   let unsubFolders  = null;
   let unsubUserDoc  = null;
   let unsubProfileShares = null;
+  let unsubProfileLinkRequests = null;
   let directShareUnsubs = [];
   let sharedNoteUnsubs = {};   // noteId → unsubscribe fn, for real-time shared-note updates
   let sharedLibraryMeta = {};  // noteId → recipient-owned metadata, e.g. local folder placement
@@ -1110,6 +1121,7 @@
   let _pendingProfileLink = null;
   let _linkedProfileRefreshTimer = null;
   let _refreshingLinkedProfiles = false;
+  let _processingProfileLinkResponses = new Set();
   let declinedMentionShares = new Set();
 
   /* ── Custom Undo/Redo System ─────────────────────────── */
@@ -1245,6 +1257,7 @@
       listenToFolders();
       listenToSharedNotes();
       listenToProfileShares();
+      listenToProfileLinkRequests();
       _flushOfflineEdits();
       if (_sharedNoteId)   handleShareLink(_sharedNoteId);
       if (_sharedFolderId) importSharedFolder(_sharedFolderId);
@@ -1262,6 +1275,7 @@
       if (unsubFolders) { unsubFolders(); unsubFolders = null; }
       if (unsubUserDoc) { unsubUserDoc(); unsubUserDoc = null; }
       if (unsubProfileShares) { unsubProfileShares(); unsubProfileShares = null; }
+      if (unsubProfileLinkRequests) { unsubProfileLinkRequests(); unsubProfileLinkRequests = null; }
       directShareUnsubs.forEach(fn => fn());
       directShareUnsubs = [];
       Object.values(sharedNoteUnsubs).forEach(fn => fn());
@@ -1269,10 +1283,13 @@
       sharedLibraryMeta = {};
       currentProfile = null;
       linkedProfiles = {};
+      profileLinkRequests = {};
+      profileLinkRequestSources = {};
       readNotifications = {};
       noteAlarms = {};
       profileShareNotifications = {};
       notificationsUnavailable = false;
+      _processingProfileLinkResponses = new Set();
       declinedMentionShares = new Set();
       notes = {}; folders = {}; activeId = null; activeFolderId = null;
       showEditorView(false);
@@ -1280,6 +1297,7 @@
       renderNotificationButton();
       renderAlarmButton();
       renderProfileConnectionUI();
+      renderProfileLinkRequestsUI();
     }
   });
 
@@ -1438,16 +1456,78 @@
     return out;
   }
 
+  function normalizePhotoURL(value) {
+    const url = String(value || '').trim();
+    if (!url) return '';
+    if (/^(https?:|data:image\/)/i.test(url)) return url;
+    return '';
+  }
+
+  function normalizePhotoURLList(...values) {
+    const out = [];
+    const add = value => {
+      if (Array.isArray(value)) {
+        value.forEach(add);
+        return;
+      }
+      const url = normalizePhotoURL(value);
+      if (url && !out.includes(url)) out.push(url);
+    };
+    values.forEach(add);
+    return out;
+  }
+
+  function avatarURLVariants(url) {
+    const src = normalizePhotoURL(url);
+    if (!src) return [];
+    const out = [src];
+    if (/googleusercontent\.com/i.test(src)) {
+      const sized = src.replace(/=s\d+(-c)?(?=($|[&#?]))/i, '=s256-c');
+      if (sized !== src) out.push(sized);
+      if (!/[?&]sz=\d+/i.test(src)) out.push(src + (src.includes('?') ? '&' : '?') + 'sz=256');
+    }
+    return [...new Set(out)];
+  }
+
+  function avatarSourcesForProfile(profile) {
+    return [...new Set(normalizePhotoURLList(
+      profile?.photoURL,
+      profile?.providerPhotoURL,
+      profile?.photoURLCandidates
+    ).flatMap(avatarURLVariants))];
+  }
+
+  function photoCandidatesFromUser(user) {
+    return normalizePhotoURLList(
+      user?.photoURL,
+      (user?.providerData || []).map(provider => provider?.photoURL)
+    );
+  }
+
+  function profilePhotoFromUser(user) {
+    return photoCandidatesFromUser(user)[0] || '';
+  }
+
+  function profilePhotoFields(...sources) {
+    const candidates = normalizePhotoURLList(...sources);
+    return {
+      photoURL: candidates[0] || '',
+      photoURLCandidates: candidates
+    };
+  }
+
   function normalizeLinkedProfile(key, value) {
     if (!value || typeof value !== 'object') return null;
     const email = normalizeEmail(value.email || '');
     const uid = value.uid || key || (email ? emailProfileKey(email) : '');
     if (!uid) return null;
+    const photos = profilePhotoFields(value.photoURL, value.providerPhotoURL, value.photoURLCandidates);
     return {
       uid,
       displayName: value.displayName || value.name || (email ? email.split('@')[0] : 'Linked Profile'),
       email,
-      photoURL: value.photoURL || '',
+      photoURL: photos.photoURL,
+      photoURLCandidates: photos.photoURLCandidates,
       linkedAt: value.linkedAt || '',
       emailOnly: !!value.emailOnly || uid === emailProfileKey(email)
     };
@@ -1462,10 +1542,31 @@
     return name.trim().split(/\s+/).slice(0, 2).map(p => p[0]).join('').toUpperCase() || 'U';
   }
 
+  function handleAvatarImageError(img) {
+    if (!img) return;
+    let sources = [];
+    try { sources = JSON.parse(img.dataset.avatarSrcs || '[]'); }
+    catch (err) { sources = []; }
+    const current = img.currentSrc || img.src || '';
+    let next = '';
+    while (sources.length && !next) {
+      const candidate = normalizePhotoURL(sources.shift());
+      if (candidate && candidate !== current) next = candidate;
+    }
+    if (next) {
+      img.dataset.avatarSrcs = JSON.stringify(sources);
+      img.src = next;
+      return;
+    }
+    img.remove();
+  }
+  window.handleAvatarImageError = handleAvatarImageError;
+
   function renderAvatar(profile, className) {
     const initials = esc(profileInitials(profile));
-    if (profile?.photoURL) {
-      return '<span class="' + className + '">' + initials + '<img src="' + esc(profile.photoURL) + '" alt="" referrerpolicy="no-referrer" onerror="this.remove()" /></span>';
+    const sources = avatarSourcesForProfile(profile);
+    if (sources.length) {
+      return '<span class="' + className + '">' + initials + '<img src="' + esc(sources[0]) + '" alt="" referrerpolicy="no-referrer" data-avatar-srcs="' + esc(JSON.stringify(sources.slice(1))) + '" onerror="window.handleAvatarImageError(this)" /></span>';
     }
     return '<span class="' + className + '">' + initials + '</span>';
   }
@@ -1477,15 +1578,29 @@
   function updateUserAvatar(user) {
     const av = document.getElementById('user-avatar');
     if (!av) return;
-    av.onerror = () => {
-      av.removeAttribute('src');
-      av.style.display = 'none';
+    const sources = avatarSourcesForProfile({
+      photoURL: profilePhotoFromUser(user),
+      photoURLCandidates: photoCandidatesFromUser(user)
+    });
+    const loadNext = () => {
+      const current = av.currentSrc || av.src || '';
+      let next = '';
+      while (sources.length && !next) {
+        const candidate = normalizePhotoURL(sources.shift());
+        if (candidate && candidate !== current) next = candidate;
+      }
+      if (next) {
+        av.src = next;
+        av.style.display = '';
+      } else {
+        av.removeAttribute('src');
+        av.style.display = 'none';
+      }
     };
-    if (user?.photoURL) {
-      av.referrerPolicy = 'no-referrer';
-      av.src = user.photoURL;
-      av.style.display = '';
-    } else {
+    av.referrerPolicy = 'no-referrer';
+    av.onerror = loadNext;
+    if (sources.length) loadNext();
+    else {
       av.removeAttribute('src');
       av.style.display = 'none';
     }
@@ -1503,10 +1618,12 @@
 
     const existingProfile = existing.profile || {};
     const email = normalizeEmail(user.email || existingProfile.email || '');
+    const photos = profilePhotoFields(photoCandidatesFromUser(user), existingProfile.photoURL, existingProfile.photoURLCandidates);
     currentProfile = {
       uid: user.uid,
       displayName: profileNameFromUser(user),
-      photoURL: user.photoURL || '',
+      photoURL: photos.photoURL,
+      photoURLCandidates: photos.photoURLCandidates,
       email
     };
 
@@ -1520,6 +1637,7 @@
           email,
           displayName: currentProfile.displayName,
           photoURL: currentProfile.photoURL,
+          photoURLCandidates: currentProfile.photoURLCandidates,
           updated: serverTimestamp()
         }, { merge: true });
       }
@@ -1549,7 +1667,20 @@
   }
 
   function applyUserProfileData(data) {
-    if (data?.profile) currentProfile = { ...(currentProfile || {}), ...data.profile };
+    if (data?.profile) {
+      const photos = profilePhotoFields(
+        currentProfile?.photoURL,
+        currentProfile?.photoURLCandidates,
+        data.profile.photoURL,
+        data.profile.photoURLCandidates
+      );
+      currentProfile = {
+        ...(data.profile || {}),
+        ...(currentProfile || {}),
+        photoURL: photos.photoURL,
+        photoURLCandidates: photos.photoURLCandidates
+      };
+    }
     linkedProfiles = { ..._readLinkedProfilesFromLocal(), ..._readLinkedProfiles(data) };
     _writeLinkedProfilesToLocal();
     scheduleLinkedProfileRefresh();
@@ -1578,6 +1709,7 @@
         .catch(err => console.error('sync local note alarms:', err));
     }
     renderProfileConnectionUI();
+    renderProfileLinkRequestsUI();
     renderShareProfileList();
     renderNotificationButton();
     renderAlarmButton();
@@ -1593,7 +1725,7 @@
   async function refreshLinkedProfileDetails() {
     if (_refreshingLinkedProfiles || !userId) return;
     const candidates = Object.values(linkedProfiles)
-      .filter(profile => profile?.email && (profile.emailOnly || !profile.photoURL));
+      .filter(profile => profile?.email);
     if (!candidates.length) return;
 
     _refreshingLinkedProfiles = true;
@@ -1607,12 +1739,14 @@
         if (!snap.exists()) continue;
         const data = snap.data() || {};
         if (!data.uid || data.uid === userId) continue;
+        const photos = profilePhotoFields(data.photoURL, data.photoURLCandidates, profile.photoURL, profile.photoURLCandidates);
         const next = {
           ...profile,
           uid: data.uid,
           email: normalizeEmail(data.email || email),
           displayName: data.displayName || profile.displayName || email.split('@')[0],
-          photoURL: data.photoURL || profile.photoURL || '',
+          photoURL: photos.photoURL,
+          photoURLCandidates: photos.photoURLCandidates,
           emailOnly: false
         };
         const oldUid = profile.uid;
@@ -1709,10 +1843,11 @@
   function renderProfileConnectionUI() {
     const list = document.getElementById('linked-profiles-list');
     if (!list) return;
+    renderProfileLinkRequestsUI();
 
     const profiles = Object.values(linkedProfiles).sort((a, b) => (a.displayName || '').localeCompare(b.displayName || ''));
     if (!profiles.length) {
-      list.innerHTML = '<div class="profile-empty">Enter another Notas user&apos;s Google email to link them for direct sharing and @mentions.</div>';
+      list.innerHTML = '<div class="profile-empty">Enter another Notas user&apos;s Google email to request a profile link for direct sharing and @mentions.</div>';
       return;
     }
 
@@ -1729,14 +1864,100 @@
     });
   }
 
-  function openProfileLinkApproval(profile) {
+  function renderProfileLinkRequestsUI() {
+    const panel = document.getElementById('profile-link-requests-panel');
+    const list = document.getElementById('profile-link-requests-list');
+    if (!panel || !list) return;
+    const requests = Object.values(profileLinkRequests)
+      .filter(request => request.status === 'pending')
+      .sort((a, b) => new Date(b.created) - new Date(a.created));
+    panel.hidden = !requests.length;
+    if (!requests.length) {
+      list.innerHTML = '';
+      return;
+    }
+
+    list.innerHTML = requests.map(request => {
+      const profile = profileFromProfileLinkRequest(request) || { displayName: 'Linked Profile', email: '', photoURL: '' };
+      return '<div class="profile-row">' +
+        renderProfileAvatar(profile) +
+        '<div class="profile-main"><div class="profile-name">' + esc(profile.displayName || 'Linked Profile') + '</div><div class="profile-sub">Wants to link profiles</div></div>' +
+        '<div class="profile-link-actions">' +
+          '<button class="modal-btn" data-deny-profile-link="' + esc(request.id) + '" type="button">Deny</button>' +
+          '<button class="modal-btn primary" data-approve-profile-link="' + esc(request.id) + '" type="button">Approve</button>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+
+    list.querySelectorAll('[data-approve-profile-link]').forEach(btn => {
+      btn.addEventListener('click', () => approveProfileLinkRequest(profileLinkRequests[btn.dataset.approveProfileLink]));
+    });
+    list.querySelectorAll('[data-deny-profile-link]').forEach(btn => {
+      btn.addEventListener('click', () => denyProfileLinkRequest(profileLinkRequests[btn.dataset.denyProfileLink]));
+    });
+  }
+
+  function profileLinkRequestDocId(fromUid, targetKey) {
+    return ('profile_link_' + fromUid + '_' + targetKey).replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 180);
+  }
+
+  function currentProfileLinkPayload() {
+    const photos = profilePhotoFields(currentProfile?.photoURL, currentProfile?.photoURLCandidates, photoCandidatesFromUser(auth.currentUser));
+    return {
+      uid: userId,
+      displayName: currentProfile?.displayName || auth.currentUser?.displayName || 'Notas User',
+      email: normalizeEmail(currentProfile?.email || auth.currentUser?.email || ''),
+      photoURL: photos.photoURL,
+      photoURLCandidates: photos.photoURLCandidates,
+      linkedAt: new Date().toISOString(),
+      emailOnly: false
+    };
+  }
+
+  function profileFromProfileLinkRequest(request) {
+    if (!request) return null;
+    return normalizeLinkedProfile(request.fromUid, {
+      uid: request.fromUid,
+      displayName: request.fromName || (request.fromEmail ? request.fromEmail.split('@')[0] : 'Linked Profile'),
+      email: request.fromEmail || '',
+      photoURL: request.fromPhotoURL || '',
+      photoURLCandidates: request.fromPhotoURLCandidates || [],
+      linkedAt: new Date().toISOString(),
+      emailOnly: false
+    });
+  }
+
+  function profileMatchesLink(a, b) {
+    const emailA = normalizeEmail(a?.email || '');
+    const emailB = normalizeEmail(b?.email || '');
+    if (a?.uid && b?.uid && a.uid === b.uid) return true;
+    return !!(emailA && emailB && emailA === emailB);
+  }
+
+  function linkedProfileAliasKeys(profile) {
+    return Object.keys(linkedProfiles).filter(key => {
+      const existing = linkedProfiles[key];
+      return key === profile?.uid || profileMatchesLink(existing, profile);
+    });
+  }
+
+  function openProfileLinkApproval(profileOrRequest) {
     const modal = document.getElementById('profile-link-modal');
     const preview = document.getElementById('profile-link-preview');
+    const note = document.getElementById('profile-link-note');
     if (!modal || !preview) return;
-    _pendingProfileLink = profile;
+    const request = profileOrRequest?.type === 'profile_link' ? profileOrRequest : null;
+    const profile = request ? profileFromProfileLinkRequest(request) : normalizeLinkedProfile(profileOrRequest?.uid, profileOrRequest);
+    if (!profile) return;
+    _pendingProfileLink = { profile, request };
     preview.innerHTML =
       renderProfileAvatar(profile) +
       '<div class="profile-main"><div class="profile-name">' + esc(profile.displayName || 'Linked Profile') + '</div><div class="profile-sub">' + esc(profile.email || 'Google profile') + '</div></div>';
+    if (note) {
+      note.textContent = request
+        ? 'Approve to link this profile with yours for direct shares and @mentions. Deny cancels the request.'
+        : 'Approve to add this profile for direct shares and @mentions. Deny cancels the link.';
+    }
     modal.classList.add('open');
   }
 
@@ -1746,32 +1967,79 @@
   }
 
   async function approvePendingProfileLink() {
-    const profile = _pendingProfileLink;
-    if (!profile) return;
+    const pending = _pendingProfileLink;
+    if (!pending?.profile) return;
     closeProfileLinkApproval();
-    await commitLinkedProfile(profile);
+    if (pending.request) await approveProfileLinkRequest(pending.request);
+    else await commitLinkedProfile(pending.profile);
   }
 
-  async function commitLinkedProfile(profile) {
+  async function denyPendingProfileLink() {
+    const pending = _pendingProfileLink;
+    closeProfileLinkApproval();
+    if (pending?.request) await denyProfileLinkRequest(pending.request);
+  }
+
+  async function commitLinkedProfile(profile, options = {}) {
     const input = document.getElementById('connect-profile-email-input');
-    const email = normalizeEmail(profile?.email || '');
+    const normalized = normalizeLinkedProfile(profile?.uid, profile);
+    if (!normalized || normalized.uid === userId || normalizeEmail(normalized.email) === normalizeEmail(currentProfile?.email)) return false;
+    const duplicateKeys = linkedProfileAliasKeys(normalized).filter(key => key !== normalized.uid);
+    const updates = { [normalized.uid]: normalized };
+    duplicateKeys.forEach(key => { updates[key] = deleteField(); });
     Object.keys(linkedProfiles).forEach(key => {
-      if (normalizeEmail(linkedProfiles[key]?.email) === email && key !== profile.uid) delete linkedProfiles[key];
+      if (duplicateKeys.includes(key)) delete linkedProfiles[key];
     });
-    linkedProfiles[profile.uid] = profile;
+    linkedProfiles[normalized.uid] = normalized;
     _writeLinkedProfilesToLocal();
-    if (input) input.value = '';
+    if (input && options.clearInput !== false) input.value = '';
     renderProfileConnectionUI();
     renderShareProfileList();
     scheduleLinkedProfileRefresh();
 
     try {
-      await setDoc(_getUserDocRef(), { linkedProfiles: { [profile.uid]: profile } }, { merge: true });
-      showToast(profile.emailOnly ? 'Email Linked' : 'Profile Linked', 'success');
+      await setDoc(_getUserDocRef(), { linkedProfiles: updates }, { merge: true });
+      if (options.toast !== false) showToast(options.toast || (normalized.emailOnly ? 'Email Linked' : 'Profile Linked'), 'success');
+      return true;
     } catch (err) {
       console.warn('persist linked profile:', err);
-      showToast('Email Linked', 'success');
+      if (options.toast !== false) showToast('Profile linked locally; cloud sync failed', 'error');
+      return false;
     }
+  }
+
+  async function sendProfileLinkRequest(profile) {
+    const email = normalizeEmail(profile?.email || '');
+    const targetKey = profile?.uid || emailProfileKey(email);
+    if (!targetKey || !userId) return false;
+    const requestId = profileLinkRequestDocId(userId, targetKey);
+    const now = new Date().toISOString();
+    const sender = currentProfileLinkPayload();
+    const payload = {
+      id: requestId,
+      type: 'profile_link',
+      status: 'pending',
+      fromUid: sender.uid,
+      fromName: sender.displayName,
+      fromEmail: sender.email,
+      fromPhotoURL: sender.photoURL,
+      fromPhotoURLCandidates: sender.photoURLCandidates,
+      toUid: profile.emailOnly ? '' : profile.uid,
+      toEmail: email,
+      toProfileKey: targetKey,
+      recipientName: profile.displayName || '',
+      recipientPhotoURL: profile.photoURL || '',
+      createdIso: now,
+      created: serverTimestamp()
+    };
+
+    const writes = [];
+    if (!profile.emailOnly && profile.uid) writes.push(setDoc(doc(fsDb, 'profileShares', profile.uid, 'items', requestId), payload, { merge: true }));
+    if (email) writes.push(setDoc(doc(fsDb, 'profileEmailShares', emailProfileDocId(email), 'items', requestId), payload, { merge: true }));
+    if (!writes.length) return false;
+    const results = await Promise.allSettled(writes);
+    if (results.some(result => result.status === 'rejected')) console.warn('profile link request delivery:', results);
+    return results.some(result => result.status === 'fulfilled');
   }
 
   async function connectProfileByEmail() {
@@ -1785,12 +2053,18 @@
       showToast('That Is Your Email', 'error');
       return;
     }
+    if (Object.values(linkedProfiles).some(profile => normalizeEmail(profile.email) === email)) {
+      showToast('Profile Already Linked', 'success');
+      if (input) input.value = '';
+      return;
+    }
 
     let profile = {
       uid: emailProfileKey(email),
       email,
       displayName: email.split('@')[0],
       photoURL: '',
+      photoURLCandidates: [],
       linkedAt: new Date().toISOString(),
       emailOnly: true
     };
@@ -1799,11 +2073,13 @@
       const snap = await getDoc(doc(fsDb, 'profileEmails', emailProfileDocId(email)));
       const data = snap.exists() ? (snap.data() || {}) : {};
       if (data.uid && data.uid !== userId) {
+        const photos = profilePhotoFields(data.photoURL, data.photoURLCandidates);
         profile = {
           uid: data.uid,
           email: normalizeEmail(data.email || email),
           displayName: data.displayName || email.split('@')[0],
-          photoURL: data.photoURL || '',
+          photoURL: photos.photoURL,
+          photoURLCandidates: photos.photoURLCandidates,
           linkedAt: new Date().toISOString(),
           emailOnly: false
         };
@@ -1812,22 +2088,224 @@
       console.warn('profile email lookup:', err);
     }
 
-    openProfileLinkApproval(profile);
+    if (linkedProfileAliasKeys(profile).length) {
+      showToast('Profile Already Linked', 'success');
+      if (input) input.value = '';
+      return;
+    }
+
+    try {
+      const sent = await sendProfileLinkRequest(profile);
+      if (!sent) {
+        showToast('Could Not Send Link Request', 'error');
+        return;
+      }
+      if (input) input.value = '';
+      showToast('Link Request Sent', 'success');
+    } catch (err) {
+      console.warn('send profile link request:', err);
+      showToast('Could Not Send Link Request', 'error');
+    }
   }
 
   async function removeLinkedProfile(uid) {
     if (!uid || !linkedProfiles[uid]) return;
-    delete linkedProfiles[uid];
+    const profile = linkedProfiles[uid];
+    const removeKeys = linkedProfileAliasKeys(profile);
+    removeKeys.forEach(key => { delete linkedProfiles[key]; });
     _writeLinkedProfilesToLocal();
     renderProfileConnectionUI();
     renderShareProfileList();
     try {
-      await setDoc(_getUserDocRef(), { linkedProfiles: { [uid]: deleteField() } }, { merge: true });
+      const updates = {};
+      removeKeys.forEach(key => { updates[key] = deleteField(); });
+      await setDoc(_getUserDocRef(), { linkedProfiles: updates }, { merge: true });
       showToast('Profile Removed', 'success');
     } catch (err) {
       console.error('remove profile:', err);
       showToast('Could Not Remove Profile', 'error');
     }
+  }
+
+  function normalizeProfileLinkRequest(id, data) {
+    const createdDate = data?.created?.toDate?.();
+    const created = createdDate ? createdDate.toISOString() : (data?.createdIso || data?.acceptedIso || new Date().toISOString());
+    const photos = profilePhotoFields(data?.fromPhotoURL, data?.fromPhotoURLCandidates);
+    const fromEmail = normalizeEmail(data?.fromEmail || '');
+    return {
+      id,
+      type: 'profile_link',
+      status: data?.status === 'accepted' ? 'accepted' : (data?.status === 'denied' ? 'denied' : 'pending'),
+      fromUid: data?.fromUid || '',
+      fromName: data?.fromName || (fromEmail ? fromEmail.split('@')[0] : 'Linked Profile'),
+      fromEmail,
+      fromPhotoURL: photos.photoURL,
+      fromPhotoURLCandidates: photos.photoURLCandidates,
+      toUid: data?.toUid || '',
+      toEmail: normalizeEmail(data?.toEmail || ''),
+      toProfileKey: data?.toProfileKey || '',
+      created,
+      readKey: 'profile_link_' + id,
+      read: false,
+      source: 'profile_link'
+    };
+  }
+
+  function profileLinkRequestBelongsToCurrentUser(request) {
+    const email = normalizeEmail(currentProfile?.email || auth.currentUser?.email || '');
+    return !!request && (
+      request.toUid === userId ||
+      (request.toEmail && request.toEmail === email)
+    );
+  }
+
+  function applyProfileLinkRequestSource(sourceKey, id, request) {
+    if (!profileLinkRequestSources[id]) profileLinkRequestSources[id] = {};
+    profileLinkRequestSources[id][sourceKey] = request;
+    const sourceValues = Object.values(profileLinkRequestSources[id]);
+    profileLinkRequests[id] = sourceValues.sort((a, b) => new Date(b.created) - new Date(a.created))[0];
+  }
+
+  function removeProfileLinkRequestSource(sourceKey, id) {
+    if (!profileLinkRequestSources[id]) return;
+    delete profileLinkRequestSources[id][sourceKey];
+    const remaining = Object.values(profileLinkRequestSources[id]);
+    if (remaining.length) {
+      profileLinkRequests[id] = remaining.sort((a, b) => new Date(b.created) - new Date(a.created))[0];
+    } else {
+      delete profileLinkRequestSources[id];
+      delete profileLinkRequests[id];
+    }
+  }
+
+  async function deleteProfileLinkRequestCopies(request) {
+    if (!request?.id || !userId) return false;
+    const email = normalizeEmail(currentProfile?.email || auth.currentUser?.email || request.toEmail || '');
+    const deletes = [
+      deleteDoc(doc(fsDb, 'profileShares', userId, 'items', request.id))
+    ];
+    if (email) deletes.push(deleteDoc(doc(fsDb, 'profileEmailShares', emailProfileDocId(email), 'items', request.id)));
+    const results = await Promise.allSettled(deletes);
+    if (results.some(result => result.status === 'rejected')) console.warn('delete profile link request:', results);
+    delete profileLinkRequests[request.id];
+    delete profileLinkRequestSources[request.id];
+    renderProfileLinkRequestsUI();
+    renderNotificationButton();
+    if (document.getElementById('notifications-modal')?.classList.contains('open')) renderNotificationsList();
+    return results.some(result => result.status === 'fulfilled');
+  }
+
+  async function sendProfileLinkAcceptance(request) {
+    if (!request?.fromUid || request.fromUid === userId) return false;
+    const profile = currentProfileLinkPayload();
+    const now = new Date().toISOString();
+    const payload = {
+      id: request.id,
+      type: 'profile_link',
+      status: 'accepted',
+      fromUid: profile.uid,
+      fromName: profile.displayName,
+      fromEmail: profile.email,
+      fromPhotoURL: profile.photoURL,
+      fromPhotoURLCandidates: profile.photoURLCandidates,
+      toUid: request.fromUid,
+      toEmail: request.fromEmail,
+      acceptedIso: now,
+      createdIso: now,
+      created: serverTimestamp()
+    };
+    try {
+      await setDoc(doc(fsDb, 'profileShares', request.fromUid, 'items', request.id), payload, { merge: true });
+      return true;
+    } catch (err) {
+      console.warn('send profile link acceptance:', err);
+      return false;
+    }
+  }
+
+  async function approveProfileLinkRequest(request) {
+    if (!request?.id) return;
+    const profile = profileFromProfileLinkRequest(request);
+    if (!profile) return;
+    const linked = await commitLinkedProfile(profile, { clearInput: false, toast: false });
+    if (!linked) return;
+    const accepted = await sendProfileLinkAcceptance(request);
+    if (!accepted) {
+      showToast('Profile linked; sender notification failed', 'error');
+      return;
+    }
+    await deleteProfileLinkRequestCopies(request);
+    showToast('Profile Linked', 'success');
+  }
+
+  async function denyProfileLinkRequest(request) {
+    if (!request?.id) return;
+    await deleteProfileLinkRequestCopies(request);
+    showToast('Link Request Denied', 'success');
+  }
+
+  async function handleAcceptedProfileLinkRequest(request) {
+    if (!request?.id || _processingProfileLinkResponses.has(request.id)) return;
+    _processingProfileLinkResponses.add(request.id);
+    try {
+      const profile = profileFromProfileLinkRequest(request);
+      if (!profile) return;
+      const linked = await commitLinkedProfile(profile, { clearInput: false, toast: 'Profile Link Accepted' });
+      if (linked) await deleteProfileLinkRequestCopies(request);
+    } finally {
+      _processingProfileLinkResponses.delete(request.id);
+    }
+  }
+
+  function listenToProfileLinkRequests() {
+    if (unsubProfileLinkRequests) unsubProfileLinkRequests();
+    if (!userId) return;
+    profileLinkRequests = {};
+    profileLinkRequestSources = {};
+    renderProfileLinkRequestsUI();
+    renderNotificationButton();
+
+    const email = normalizeEmail(currentProfile?.email || auth.currentUser?.email || '');
+    const sources = [
+      { key: 'uid:' + userId, ref: collection(fsDb, 'profileShares', userId, 'items') }
+    ];
+    if (email) sources.push({ key: 'email:' + emailProfileDocId(email), ref: collection(fsDb, 'profileEmailShares', emailProfileDocId(email), 'items') });
+
+    const unsubs = sources.map(source => onSnapshot(source.ref, snap => {
+      snap.docChanges().forEach(ch => {
+        const id = ch.doc.id;
+        if (ch.type === 'removed') {
+          removeProfileLinkRequestSource(source.key, id);
+          return;
+        }
+        const data = ch.doc.data() || {};
+        if (data.type !== 'profile_link') {
+          removeProfileLinkRequestSource(source.key, id);
+          return;
+        }
+        const request = normalizeProfileLinkRequest(id, data);
+        if (request.status === 'accepted' && request.toUid === userId) {
+          handleAcceptedProfileLinkRequest(request);
+          return;
+        }
+        if (request.status !== 'pending' || request.fromUid === userId || !profileLinkRequestBelongsToCurrentUser(request)) {
+          removeProfileLinkRequestSource(source.key, id);
+          return;
+        }
+        applyProfileLinkRequestSource(source.key, id, request);
+      });
+      renderProfileLinkRequestsUI();
+      renderNotificationButton();
+      if (document.getElementById('notifications-modal')?.classList.contains('open')) renderNotificationsList();
+    }, err => {
+      console.warn('profile link requests listener:', err);
+    }));
+
+    unsubProfileLinkRequests = () => {
+      unsubs.forEach(fn => fn());
+      profileLinkRequests = {};
+      profileLinkRequestSources = {};
+    };
   }
 
   /* Firestore Listener */
@@ -1907,6 +2385,7 @@
           sourceOwnerUid: d.sourceOwnerUid || '',
           sourceOwnerName: d.sourceOwnerName || '',
           sourceOwnerPhotoURL: d.sourceOwnerPhotoURL || '',
+          sourceOwnerPhotoURLCandidates: Array.isArray(d.sourceOwnerPhotoURLCandidates) ? d.sourceOwnerPhotoURLCandidates : [],
           created:  d.created?.toDate?.()?.toISOString()  || new Date().toISOString(),
           modified: d.modified?.toDate?.()?.toISOString() || new Date().toISOString()
         };
@@ -2914,7 +3393,7 @@
     n.content.replace(/<[^>]+>/g, ' ').toLowerCase().includes(f);
 
   function profileIdentityKey(profile) {
-    return profile?.uid || normalizeEmail(profile?.email || '') || profile?.displayName || '';
+    return normalizeEmail(profile?.email || '') || profile?.uid || profile?.displayName || '';
   }
 
   function uniqueProfiles(profiles) {
@@ -2937,7 +3416,8 @@
         uid: entry.uid || emailProfileKey(entry.email || ''),
         displayName: entry.displayName || entry.email || 'Linked Profile',
         email: normalizeEmail(entry.email || ''),
-        photoURL: entry.photoURL || ''
+        photoURL: entry.photoURL || '',
+        photoURLCandidates: entry.photoURLCandidates || []
       })));
   }
 
@@ -2947,7 +3427,8 @@
       uid: access.fromUid || '',
       displayName: access.fromName || fallbackName,
       email: normalizeEmail(access.fromEmail || ''),
-      photoURL: access.fromPhotoURL || ''
+      photoURL: access.fromPhotoURL || '',
+      photoURLCandidates: access.fromPhotoURLCandidates || []
     };
   }
 
@@ -2964,7 +3445,8 @@
       uid: folder.sourceOwnerUid || '',
       displayName: folder.sourceOwnerName || 'Shared Owner',
       email: '',
-      photoURL: folder.sourceOwnerPhotoURL || ''
+      photoURL: folder.sourceOwnerPhotoURL || '',
+      photoURLCandidates: folder.sourceOwnerPhotoURLCandidates || []
     }]);
   }
 
@@ -4294,9 +4776,13 @@
     return [...new Set([profile?.uid, emailProfileKey(email)].filter(Boolean))];
   }
 
-  function profileAccessKeys(profile) {
+  function profileMatchKeys(profile) {
     const email = normalizeEmail(profile?.email || '');
     return [...new Set([...profileMetadataKeys(profile), email].filter(Boolean))];
+  }
+
+  function profileAccessKeys(profile) {
+    return profileMatchKeys(profile);
   }
 
   function normalizeFolderShares(entry) {
@@ -4344,6 +4830,8 @@
     const target = linkedProfileForUid(targetUid);
     const now = new Date().toISOString();
     const targetEmail = normalizeEmail(target.email || existing?.email || '');
+    const targetPhotos = profilePhotoFields(target.photoURL, target.photoURLCandidates, existing?.photoURL, existing?.photoURLCandidates);
+    const sender = currentProfileLinkPayload();
     const sourceFolderId = context.sourceFolderId || '';
     const sourceFolderTitle = context.sourceFolderTitle || '';
     const normalizedExisting = normalizeAccessEntry(existing) || {};
@@ -4359,11 +4847,13 @@
       uid: targetUid,
       displayName: target.displayName || normalizedExisting.displayName || 'Linked Profile',
       email: targetEmail,
-      photoURL: target.photoURL || normalizedExisting.photoURL || '',
+      photoURL: targetPhotos.photoURL,
+      photoURLCandidates: targetPhotos.photoURLCandidates,
       fromUid: userId,
-      fromName: currentProfile?.displayName || auth.currentUser?.displayName || 'Someone',
-      fromPhotoURL: currentProfile?.photoURL || auth.currentUser?.photoURL || '',
-      fromEmail: normalizeEmail(currentProfile?.email || auth.currentUser?.email || ''),
+      fromName: sender.displayName || 'Someone',
+      fromPhotoURL: sender.photoURL,
+      fromPhotoURLCandidates: sender.photoURLCandidates,
+      fromEmail: sender.email,
       type: kind === 'mention' ? 'mention' : (normalizedExisting.type || 'share'),
       sharedAt: normalizedExisting.sharedAt || now,
       lastSharedAt: now,
@@ -4479,7 +4969,7 @@
     const note = notes[noteId];
     const profile = linkedProfiles[targetUid];
     if (!note || !profile || !isOwnedNote(note) || !folderId) return false;
-    const keys = new Set(profileMetadataKeys(profile));
+    const keys = new Set(profileMatchKeys(profile));
     const nextSharedWith = { ...normalizeSharedWith(note.sharedWith) };
     Object.keys(nextSharedWith).forEach(key => {
       const entry = nextSharedWith[key];
@@ -4510,7 +5000,7 @@
     const note = notes[noteId];
     const profile = linkedProfiles[targetUid];
     if (!note || !profile || !isOwnedNote(note)) return false;
-    const keys = new Set(profileMetadataKeys(profile));
+    const keys = new Set(profileMatchKeys(profile));
     const nextSharedWith = { ...normalizeSharedWith(note.sharedWith) };
     Object.keys(nextSharedWith).forEach(key => {
       const entry = nextSharedWith[key];
@@ -4529,7 +5019,7 @@
     const folder = folders[folderId];
     const profile = linkedProfiles[targetUid];
     if (!folder || !profile) return false;
-    const keys = new Set(profileMetadataKeys(profile));
+    const keys = new Set(profileMatchKeys(profile));
     const nextSharedWith = { ...normalizeSharedWith(folder.sharedWith) };
     Object.keys(nextSharedWith).forEach(key => {
       const entry = nextSharedWith[key];
@@ -4555,7 +5045,8 @@
         uid,
         displayName: entry.displayName || 'Linked Profile',
         email: normalizeEmail(entry.email || ''),
-        photoURL: entry.photoURL || ''
+        photoURL: entry.photoURL || '',
+        photoURLCandidates: entry.photoURLCandidates || []
       };
     });
     return Object.values(byUidOrEmail);
@@ -4573,14 +5064,13 @@
 
   function isFolderSharedWithProfile(folder, profile) {
     const sharedWith = normalizeSharedWith(folder?.sharedWith);
-    const keys = profileMetadataKeys(profile);
+    const keys = profileMatchKeys(profile);
     return keys.some(key => !!sharedWith[key]);
   }
 
   function isNoteDirectlySharedWithProfile(note, profile) {
     const sharedWith = normalizeSharedWith(note?.sharedWith);
-    const email = normalizeEmail(profile?.email || '');
-    const keys = [profile?.uid, emailProfileKey(email), email].filter(Boolean);
+    const keys = profileMatchKeys(profile);
     return keys.some(key => accessEntryHasNoteScope(sharedWith[key]));
   }
 
@@ -4594,7 +5084,7 @@
     if (!list || !panel) return;
     const profiles = linkedProfileArray();
     if (!profiles.length) {
-      list.innerHTML = '<div class="profile-empty">Connect profiles in Settings to share notes privately without sending links.</div>';
+      list.innerHTML = '<div class="profile-empty">Request profile links in Settings to share notes privately without sending links.</div>';
       return;
     }
 
@@ -4633,6 +5123,7 @@
 
   async function writeProfileShare(note, targetUid, kind = 'share', context = {}, options = {}) {
     const target = linkedProfileForUid(targetUid);
+    const sender = currentProfileLinkPayload();
     const shareId = profileShareDocId(kind, note.id, targetUid);
     const now = new Date().toISOString();
     const targetEmail = normalizeEmail(target.email || '');
@@ -4669,9 +5160,10 @@
       recipientName: target.displayName || '',
       recipientEmail: targetEmail,
       fromUid: userId,
-      fromName: currentProfile?.displayName || auth.currentUser?.displayName || 'Someone',
-      fromPhotoURL: currentProfile?.photoURL || auth.currentUser?.photoURL || '',
-      fromEmail: normalizeEmail(currentProfile?.email || auth.currentUser?.email || ''),
+      fromName: sender.displayName || 'Someone',
+      fromPhotoURL: sender.photoURL,
+      fromPhotoURLCandidates: sender.photoURLCandidates,
+      fromEmail: sender.email,
       createdIso: now,
       created: serverTimestamp()
     };
@@ -4703,6 +5195,7 @@
     const folder = folders[folderId];
     if (!folder || !targetUid || targetUid === userId) return { notified: false };
     const target = linkedProfileForUid(targetUid);
+    const sender = currentProfileLinkPayload();
     const shareId = profileShareDocId('folder_share', folderId, targetUid);
     const now = new Date().toISOString();
     const targetEmail = normalizeEmail(target.email || '');
@@ -4720,9 +5213,10 @@
       recipientName: target.displayName || '',
       recipientEmail: targetEmail,
       fromUid: userId,
-      fromName: currentProfile?.displayName || auth.currentUser?.displayName || 'Someone',
-      fromPhotoURL: currentProfile?.photoURL || auth.currentUser?.photoURL || '',
-      fromEmail: normalizeEmail(currentProfile?.email || auth.currentUser?.email || ''),
+      fromName: sender.displayName || 'Someone',
+      fromPhotoURL: sender.photoURL,
+      fromPhotoURLCandidates: sender.photoURLCandidates,
+      fromEmail: sender.email,
       createdIso: now,
       created: serverTimestamp()
     };
@@ -4917,7 +5411,8 @@
       title: String(data?.sourceFolderTitle || data?.folderTitle || 'Shared Folder').trim() || 'Shared Folder',
       sourceOwnerUid: data?.fromUid || data?.sourceOwnerUid || '',
       sourceOwnerName: data?.fromName || data?.sourceOwnerName || '',
-      sourceOwnerPhotoURL: data?.fromPhotoURL || data?.sourceOwnerPhotoURL || ''
+      sourceOwnerPhotoURL: data?.fromPhotoURL || data?.sourceOwnerPhotoURL || '',
+      sourceOwnerPhotoURLCandidates: data?.fromPhotoURLCandidates || data?.sourceOwnerPhotoURLCandidates || []
     };
   }
 
@@ -4929,6 +5424,7 @@
     const title = info.title || existing?.title || 'Shared Folder';
     const iconColor = normalizeFolderIconColor(existing?.iconColor, existing?.iconColorMode) || FOLDER_ICON_THEME;
     const iconColorMode = iconColor === FOLDER_ICON_THEME ? 'theme' : 'manual';
+    const sourceOwnerPhotos = profilePhotoFields(info.sourceOwnerPhotoURL, info.sourceOwnerPhotoURLCandidates, existing?.sourceOwnerPhotoURL, existing?.sourceOwnerPhotoURLCandidates);
     folders[id] = {
       id,
       title,
@@ -4939,7 +5435,8 @@
       sourceFolderId: info.sourceFolderId,
       sourceOwnerUid: info.sourceOwnerUid || existing?.sourceOwnerUid || '',
       sourceOwnerName: info.sourceOwnerName || existing?.sourceOwnerName || '',
-      sourceOwnerPhotoURL: info.sourceOwnerPhotoURL || existing?.sourceOwnerPhotoURL || '',
+      sourceOwnerPhotoURL: sourceOwnerPhotos.photoURL,
+      sourceOwnerPhotoURLCandidates: sourceOwnerPhotos.photoURLCandidates,
       created: existing?.created || now,
       modified: now
     };
@@ -4952,7 +5449,8 @@
       sourceFolderId: info.sourceFolderId,
       sourceOwnerUid: info.sourceOwnerUid || existing?.sourceOwnerUid || '',
       sourceOwnerName: info.sourceOwnerName || existing?.sourceOwnerName || '',
-      sourceOwnerPhotoURL: info.sourceOwnerPhotoURL || existing?.sourceOwnerPhotoURL || '',
+      sourceOwnerPhotoURL: sourceOwnerPhotos.photoURL,
+      sourceOwnerPhotoURLCandidates: sourceOwnerPhotos.photoURLCandidates,
       iconColor,
       iconColorMode,
       title,
@@ -5115,8 +5613,7 @@
 
   function isNoteSharedWithProfile(note, profile) {
     const sharedWith = note?.sharedWith && typeof note.sharedWith === 'object' ? note.sharedWith : {};
-    const email = normalizeEmail(profile?.email || '');
-    const keys = [profile?.uid, emailProfileKey(email), email].filter(Boolean);
+    const keys = profileMatchKeys(profile);
     const sharedAccessKeys = Array.isArray(note?.sharedAccessKeys) ? note.sharedAccessKeys : [];
     return keys.some(key => sharedAccessKeys.includes(key) || !!sharedWith[key]);
   }
@@ -5309,6 +5806,7 @@
     const sourceFolderId = data.sourceFolderId || data.folderId || '';
     const sourceFolderTitle = data.sourceFolderTitle || data.folderTitle || 'Shared Folder';
     const targetId = data.noteId || sourceFolderId || id;
+    const fromPhotos = profilePhotoFields(data.fromPhotoURL, data.fromPhotoURLCandidates);
     return {
       id,
       type,
@@ -5317,7 +5815,8 @@
       noteTitle: data.noteTitle || 'Untitled Note',
       fromUid: data.fromUid || '',
       fromName: data.fromName || 'Someone',
-      fromPhotoURL: data.fromPhotoURL || '',
+      fromPhotoURL: fromPhotos.photoURL,
+      fromPhotoURLCandidates: fromPhotos.photoURLCandidates,
       fromEmail: normalizeEmail(data.fromEmail || ''),
       sourceFolderId,
       sourceFolderTitle,
@@ -5372,6 +5871,7 @@
           fromUid: access.fromUid || d.owner || '',
           fromName: access.fromName || 'Someone',
           fromPhotoURL: access.fromPhotoURL || '',
+          fromPhotoURLCandidates: access.fromPhotoURLCandidates || [],
           fromEmail: normalizeEmail(access.fromEmail || ''),
           sourceFolderId: folderInfo.sourceFolderId,
           sourceFolderTitle: folderInfo.title || 'Shared Folder',
@@ -5395,6 +5895,7 @@
       fromUid: access.fromUid || d.owner || '',
       fromName: access.fromName || 'Someone',
       fromPhotoURL: access.fromPhotoURL || '',
+      fromPhotoURLCandidates: access.fromPhotoURLCandidates || [],
       fromEmail: normalizeEmail(access.fromEmail || ''),
       created,
       readKey: notificationReadKeyForParts(type, noteId, access.fromUid || d.owner || ''),
@@ -5518,6 +6019,11 @@
         byReadKey[readKey] = item;
       }
     });
+    Object.values(profileLinkRequests).forEach(request => {
+      if (request.status !== 'pending') return;
+      const readKey = request.readKey || ('profile_link_' + request.id);
+      byReadKey[readKey] = { ...request, readKey, read: isNotificationRead({ ...request, readKey }) };
+    });
     return Object.values(byReadKey)
       .sort((a, b) => new Date(b.created) - new Date(a.created));
   }
@@ -5531,6 +6037,7 @@
   }
 
   function notificationText(n) {
+    if (n.type === 'profile_link') return n.fromName + ' wants to link profiles';
     if (n.type === 'folder_share') return n.fromName + ' shared folder "' + (n.sourceFolderTitle || 'Shared Folder') + '" with you';
     if (n.type === 'mention') return n.fromName + ' mentioned you in "' + n.noteTitle + '"';
     return n.fromName + ' shared "' + n.noteTitle + '" with you';
@@ -5562,7 +6069,7 @@
 
     list.innerHTML = items.map(n =>
       '<div class="profile-row notification-row' + (n.read ? '' : ' unread') + '" data-notification-id="' + esc(n.id) + '">' +
-        renderProfileAvatar({ displayName: n.fromName, photoURL: n.fromPhotoURL }) +
+        renderProfileAvatar({ displayName: n.fromName, photoURL: n.fromPhotoURL, photoURLCandidates: n.fromPhotoURLCandidates || [] }) +
         '<div class="profile-main"><div class="profile-name">' + esc(notificationText(n)) + '</div><div class="notification-time">' + esc(relativeNotificationTime(n.created)) + '</div></div>' +
         (n.read ? '' : '<span class="profile-avatar" style="width:9px;height:9px;min-width:9px;background:var(--accent);padding:0;"></span>') +
       '</div>'
@@ -5586,9 +6093,13 @@
   }
 
   async function openNotification(id) {
-    const item = profileShareNotifications[id];
+    const item = profileShareNotifications[id] || profileLinkRequests[id];
     if (!item) return;
     document.getElementById('notifications-modal')?.classList.remove('open');
+    if (item.type === 'profile_link') {
+      openProfileLinkApproval(item);
+      return;
+    }
     let opened = false;
     if (item.type === 'folder_share') {
       opened = await openSharedFolderNotification(item);
@@ -5611,7 +6122,8 @@
       title: item.sourceFolderTitle || 'Shared Folder',
       sourceOwnerUid: item.fromUid || '',
       sourceOwnerName: item.fromName || '',
-      sourceOwnerPhotoURL: item.fromPhotoURL || ''
+      sourceOwnerPhotoURL: item.fromPhotoURL || '',
+      sourceOwnerPhotoURLCandidates: item.fromPhotoURLCandidates || []
     });
     const noteIds = notificationNoteIds(item);
     noteIds.forEach(noteId => {
@@ -6628,7 +7140,7 @@
     if (e.key === 'Enter') connectProfileByEmail();
   });
   document.getElementById('profile-link-approve').addEventListener('click', approvePendingProfileLink);
-  document.getElementById('profile-link-deny').addEventListener('click', closeProfileLinkApproval);
+  document.getElementById('profile-link-deny').addEventListener('click', denyPendingProfileLink);
   document.getElementById('profile-link-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeProfileLinkApproval(); });
   document.getElementById('share-btn').addEventListener('click',       () => openShareModal('note', activeId));
   document.getElementById('share-link-toggle').addEventListener('change', e => setShareLinkEnabled(e.target.checked));
