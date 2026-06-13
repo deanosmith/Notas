@@ -581,6 +581,8 @@
     .profile-connect-row .modal-btn { flex-shrink: 0; padding-left: 12px; padding-right: 12px; }
     .profile-list { display: flex; flex-direction: column; gap: 6px; max-height: 180px; overflow-y: auto; }
     .profile-row { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 8px 10px; border: 1px solid var(--glass-border); border-radius: var(--radius-xs); background: linear-gradient(180deg, rgba(255,255,255,.045), rgba(255,255,255,.015)); }
+    .profile-row .settings-select { min-width: 88px; max-width: 96px; flex-shrink: 0; }
+    .profile-row .modal-btn { flex-shrink: 0; }
     .profile-avatar { width: 26px; height: 26px; border-radius: 50%; object-fit: cover; flex-shrink: 0; background: var(--surface3); color: var(--accent); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; overflow: hidden; position: relative; }
     .profile-avatar img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
     .profile-main { min-width: 0; flex: 1; }
@@ -868,6 +870,7 @@
         <div class="main-header">
           <div style="display:flex;align-items:center;gap:8px;">
             <input class="doc-title-input" id="doc-title" type="text" placeholder="Untitled Note" autocomplete="off" />
+            <div id="doc-access-avatars" aria-hidden="true"></div>
             <button class="new-note-btn" id="share-btn" title="Share Note" style="flex-shrink:0;width:32px;height:32px;"><i class="fa-solid fa-arrow-up-from-bracket"></i></button>
           </div>
           <div class="toolbar" id="toolbar">
@@ -1033,9 +1036,9 @@
           <button class="modal-btn primary" id="native-share-btn" style="flex:1;justify-content:center;display:none;gap:6px;"><i class="fa-solid fa-share-nodes"></i> Share</button>
         </div>
       </div>
-      <p style="font-size:12px;color:var(--muted);margin-bottom:20px;line-height:1.5;" id="share-modal-desc">Linked profiles receive this note directly.</p>
+      <p style="font-size:12px;color:var(--muted);margin-bottom:20px;line-height:1.5;" id="share-modal-desc">Friends receive this note directly.</p>
       <div class="share-profile-panel" id="share-profile-panel">
-        <div class="share-section-title"><i class="fa-solid fa-user-group"></i><span>Share To Linked Profiles</span></div>
+        <div class="share-section-title"><i class="fa-solid fa-user-group"></i><span>Share With Friends</span></div>
         <div class="profile-list" id="share-profiles-list"></div>
       </div>
       <div class="modal-actions">
@@ -1166,7 +1169,7 @@
   import {
     getFirestore, collection, doc, setDoc, deleteDoc, getDocs, getDoc,
     onSnapshot, query, where, Timestamp, writeBatch, serverTimestamp, deleteField, updateDoc,
-    arrayUnion, arrayRemove
+    arrayUnion, arrayRemove, limit
   } from 'https://www.gstatic.com/firebasejs/12.13.0/firebase-firestore.js';
 
   const __env = window.__env || {};
@@ -1196,6 +1199,11 @@
   let userId        = null;
   let currentProfile = null;
   let linkedProfiles = {};
+  let friends = {};
+  let incomingFriendRequests = {};
+  let noteAccessByNote = {};
+  let noteAccessById = {};
+  let myNoteAccessByNote = {};
   let profileLinkRequests = {};
   let profileLinkRequestSources = {};
   let readNotifications = {};
@@ -1208,6 +1216,10 @@
   let unsubUserDoc  = null;
   let unsubProfileShares = null;
   let unsubProfileLinkRequests = null;
+  let unsubFriends = null;
+  let unsubIncomingFriendRequests = null;
+  let unsubOwnedNoteAccess = null;
+  let unsubSharedWithMe = null;
   let directShareUnsubs = [];
   let sharedNoteUnsubs = {};   // noteId → unsubscribe fn, for real-time shared-note updates
   let sharedLibraryMeta = {};  // noteId → recipient-owned metadata, e.g. local folder placement
@@ -1368,8 +1380,10 @@
       listenToNotes();
       listenToFolders();
       listenToSharedNotes();
-      listenToProfileShares();
-      listenToProfileLinkRequests();
+      listenFriends();
+      listenIncomingFriendRequests();
+      listenOwnedNoteAccess();
+      listenSharedWithMe();
       _flushOfflineEdits();
       if (_sharedNoteId)   handleShareLink(_sharedNoteId);
       if (_sharedFolderId) importSharedFolder(_sharedFolderId);
@@ -1388,6 +1402,10 @@
       if (unsubUserDoc) { unsubUserDoc(); unsubUserDoc = null; }
       if (unsubProfileShares) { unsubProfileShares(); unsubProfileShares = null; }
       if (unsubProfileLinkRequests) { unsubProfileLinkRequests(); unsubProfileLinkRequests = null; }
+      if (unsubFriends) { unsubFriends(); unsubFriends = null; }
+      if (unsubIncomingFriendRequests) { unsubIncomingFriendRequests(); unsubIncomingFriendRequests = null; }
+      if (unsubOwnedNoteAccess) { unsubOwnedNoteAccess(); unsubOwnedNoteAccess = null; }
+      if (unsubSharedWithMe) { unsubSharedWithMe(); unsubSharedWithMe = null; }
       directShareUnsubs.forEach(fn => fn());
       directShareUnsubs = [];
       Object.values(sharedNoteUnsubs).forEach(fn => fn());
@@ -1396,6 +1414,11 @@
       removedSharedNoteIds = {};
       currentProfile = null;
       linkedProfiles = {};
+      friends = {};
+      incomingFriendRequests = {};
+      noteAccessByNote = {};
+      noteAccessById = {};
+      myNoteAccessByNote = {};
       profileLinkRequests = {};
       profileLinkRequestSources = {};
       readNotifications = {};
@@ -1741,9 +1764,17 @@
     };
 
     try {
-      await setDoc(_getUserDocRef(), {
+      const userPayload = {
+        uid: user.uid,
+        displayName: currentProfile.displayName || '',
+        email: user.email || existing.email || existingProfile.email || '',
+        emailLower: email,
+        photoURL: currentProfile.photoURL || '',
+        lastLogin: serverTimestamp(),
         profile: { ...currentProfile, updated: serverTimestamp() }
-      }, { merge: true });
+      };
+      if (!existing.created) userPayload.created = serverTimestamp();
+      await setDoc(_getUserDocRef(), userPayload, { merge: true });
       if (email) {
         await setDoc(doc(fsDb, 'profileEmails', emailProfileDocId(email)), {
           uid: user.uid,
@@ -1952,14 +1983,11 @@
 
   function noteLinkPublicFromData(data) {
     if (typeof data?.linkPublic === 'boolean') return data.linkPublic;
-    const sharedWith = normalizeSharedWith(data?.sharedWith);
-    const hasProfileAccess = Object.keys(sharedWith).length > 0 || normalizeSharedAccessKeys(data?.sharedAccessKeys).length > 0;
-    const hasFolderPublic = normalizePublicFolderIds(data?.publicFolderIds).length > 0;
-    return !!data?.public && !hasProfileAccess && !hasFolderPublic;
+    return !!data?.public;
   }
 
   function computeEffectiveNotePublic(note) {
-    return !!(note?.linkPublic || normalizePublicFolderIds(note?.publicFolderIds).length || hasProfileShareMetadata(note));
+    return !!(note?.linkPublic || normalizePublicFolderIds(note?.publicFolderIds).length);
   }
 
   function normalizePinnedAt(value) {
@@ -2005,30 +2033,25 @@
       listId: options.requestsListId || 'profile-link-requests-list'
     });
 
-    const profiles = Object.values(linkedProfiles).sort((a, b) => (a.displayName || '').localeCompare(b.displayName || ''));
+    const profiles = friendArray();
     if (!profiles.length) {
-      list.innerHTML = '<div class="profile-empty">Enter another Notas user&apos;s Google email to request a profile link for direct sharing and @mentions.</div>';
+      list.innerHTML = '<div class="profile-empty">Search for another Notas user by exact Google email to add them as a friend.</div>';
       return;
     }
 
     list.innerHTML = profiles.map(p =>
       '<div class="profile-row">' +
         renderProfileAvatar(p) +
-        '<div class="profile-main"><div class="profile-name">' + esc(p.displayName) + '</div><div class="profile-sub">' + esc(p.email || 'Linked profile') + '</div></div>' +
-        '<button class="modal-btn" data-remove-profile="' + esc(p.uid) + '" type="button" title="Remove"><i class="fa-solid fa-xmark"></i></button>' +
+        '<div class="profile-main"><div class="profile-name">' + esc(p.displayName) + '</div><div class="profile-sub">' + esc(p.email || 'Friend') + '</div></div>' +
       '</div>'
     ).join('');
-
-    list.querySelectorAll('[data-remove-profile]').forEach(btn => {
-      btn.addEventListener('click', () => openRemoveLinkedProfileModal(btn.dataset.removeProfile));
-    });
   }
 
   function renderProfileLinkRequestsUI(options = {}) {
     const panel = document.getElementById(options.panelId || 'profile-link-requests-panel');
     const list = document.getElementById(options.listId || 'profile-link-requests-list');
     if (!panel || !list) return;
-    const requests = Object.values(profileLinkRequests)
+    const requests = Object.values(incomingFriendRequests)
       .filter(request => request.status === 'pending')
       .sort((a, b) => new Date(b.created) - new Date(a.created));
     panel.hidden = !requests.length;
@@ -2038,22 +2061,22 @@
     }
 
     list.innerHTML = requests.map(request => {
-      const profile = profileFromProfileLinkRequest(request) || { displayName: 'Linked Profile', email: '', photoURL: '' };
+      const profile = profileFromFriendRequest(request) || { displayName: 'Notas User', email: '', photoURL: '' };
       return '<div class="profile-row">' +
         renderProfileAvatar(profile) +
-        '<div class="profile-main"><div class="profile-name">' + esc(profile.displayName || 'Linked Profile') + '</div><div class="profile-sub">Wants to link profiles</div></div>' +
+        '<div class="profile-main"><div class="profile-name">' + esc(profile.displayName || 'Notas User') + '</div><div class="profile-sub">' + esc(profile.email || 'Incoming friend request') + '</div></div>' +
         '<div class="profile-link-actions">' +
-          '<button class="modal-btn" data-deny-profile-link="' + esc(request.id) + '" type="button">Deny</button>' +
-          '<button class="modal-btn primary" data-approve-profile-link="' + esc(request.id) + '" type="button">Approve</button>' +
+          '<button class="modal-btn" data-deny-friend-request="' + esc(request.id) + '" type="button">Reject</button>' +
+          '<button class="modal-btn primary" data-accept-friend-request="' + esc(request.id) + '" type="button">Accept</button>' +
         '</div>' +
       '</div>';
     }).join('');
 
-    list.querySelectorAll('[data-approve-profile-link]').forEach(btn => {
-      btn.addEventListener('click', () => approveProfileLinkRequest(profileLinkRequests[btn.dataset.approveProfileLink]));
+    list.querySelectorAll('[data-accept-friend-request]').forEach(btn => {
+      btn.addEventListener('click', () => acceptFriendRequest(incomingFriendRequests[btn.dataset.acceptFriendRequest]));
     });
-    list.querySelectorAll('[data-deny-profile-link]').forEach(btn => {
-      btn.addEventListener('click', () => denyProfileLinkRequest(profileLinkRequests[btn.dataset.denyProfileLink]));
+    list.querySelectorAll('[data-deny-friend-request]').forEach(btn => {
+      btn.addEventListener('click', () => rejectFriendRequest(incomingFriendRequests[btn.dataset.denyFriendRequest]));
     });
   }
 
@@ -2072,6 +2095,214 @@
       linkedAt: new Date().toISOString(),
       emailOnly: false
     };
+  }
+
+  function isoFromTimestamp(value) {
+    const date = value?.toDate?.() || (value ? new Date(value) : null);
+    return date instanceof Date && Number.isFinite(date.getTime()) ? date.toISOString() : '';
+  }
+
+  function normalizeUserProfile(uid, data = {}) {
+    const email = normalizeEmail(data.email || data.emailLower || '');
+    const photos = profilePhotoFields(data.photoURL, data.photoURLCandidates);
+    return {
+      uid: data.uid || uid || '',
+      displayName: data.displayName || (email ? email.split('@')[0] : 'Notas User'),
+      email,
+      emailLower: normalizeEmail(data.emailLower || email),
+      photoURL: photos.photoURL,
+      photoURLCandidates: photos.photoURLCandidates
+    };
+  }
+
+  function friendDocPayload(profile) {
+    const normalized = normalizeUserProfile(profile?.uid, profile || {});
+    return {
+      uid: normalized.uid,
+      displayName: normalized.displayName || '',
+      email: normalized.email || '',
+      emailLower: normalized.emailLower || normalizeEmail(normalized.email || ''),
+      photoURL: normalized.photoURL || '',
+      created: serverTimestamp()
+    };
+  }
+
+  function currentFriendProfile() {
+    const profile = currentProfileLinkPayload();
+    return {
+      uid: userId,
+      displayName: profile.displayName || '',
+      email: profile.email || '',
+      emailLower: normalizeEmail(profile.email || ''),
+      photoURL: profile.photoURL || ''
+    };
+  }
+
+  function friendArray() {
+    return Object.values(friends).sort((a, b) => (a.displayName || '').localeCompare(b.displayName || ''));
+  }
+
+  function friendRequestDocId(fromUid, toUid) {
+    return (fromUid + '_' + toUid).replace(/[^A-Za-z0-9_-]/g, '_');
+  }
+
+  function normalizeFriendRequest(id, data = {}) {
+    return {
+      id,
+      fromUid: data.fromUid || '',
+      toUid: data.toUid || '',
+      fromEmail: normalizeEmail(data.fromEmail || ''),
+      toEmail: normalizeEmail(data.toEmail || ''),
+      fromDisplayName: data.fromDisplayName || data.fromName || 'Notas User',
+      toDisplayName: data.toDisplayName || data.toName || 'Notas User',
+      fromPhotoURL: data.fromPhotoURL || '',
+      toPhotoURL: data.toPhotoURL || '',
+      status: data.status || 'pending',
+      created: isoFromTimestamp(data.created) || data.createdIso || new Date().toISOString(),
+      modified: isoFromTimestamp(data.modified) || isoFromTimestamp(data.created) || new Date().toISOString(),
+      type: 'friend_request',
+      readKey: 'friend_request_' + id
+    };
+  }
+
+  function profileFromFriendRequest(request) {
+    if (!request) return null;
+    return normalizeUserProfile(request.fromUid, {
+      uid: request.fromUid,
+      displayName: request.fromDisplayName,
+      email: request.fromEmail,
+      emailLower: request.fromEmail,
+      photoURL: request.fromPhotoURL
+    });
+  }
+
+  async function findUserByExactEmail(email) {
+    const emailLower = normalizeEmail(email);
+    if (!emailLower) return null;
+    const snap = await getDocs(query(collection(fsDb, 'users'), where('emailLower', '==', emailLower), limit(1)));
+    if (snap.empty) return null;
+    const userSnap = snap.docs[0];
+    return normalizeUserProfile(userSnap.id, userSnap.data() || {});
+  }
+
+  async function sendFriendRequest(toUser) {
+    if (!userId || !toUser?.uid) return false;
+    if (toUser.uid === userId || normalizeEmail(toUser.email) === normalizeEmail(currentProfile?.email)) {
+      showToast('You Cannot Add Yourself', 'error');
+      return false;
+    }
+    if (friends[toUser.uid]) {
+      showToast('Already Friends', 'success');
+      return true;
+    }
+
+    const requestId = friendRequestDocId(userId, toUser.uid);
+    const reverseId = friendRequestDocId(toUser.uid, userId);
+    const [existingSnap, reverseSnap] = await Promise.all([
+      getDoc(doc(fsDb, 'friendRequests', requestId)),
+      getDoc(doc(fsDb, 'friendRequests', reverseId))
+    ]);
+
+    const existing = existingSnap.exists() ? normalizeFriendRequest(existingSnap.id, existingSnap.data()) : null;
+    const reverse = reverseSnap.exists() ? normalizeFriendRequest(reverseSnap.id, reverseSnap.data()) : null;
+    if (existing?.status === 'pending') {
+      showToast('Friend Request Already Sent', 'success');
+      return true;
+    }
+    if (existing?.status === 'accepted' || reverse?.status === 'accepted') {
+      showToast('Already Friends', 'success');
+      return true;
+    }
+    if (reverse?.status === 'pending') {
+      showToast('They Already Sent You A Request', 'success');
+      refreshOpenSidebarPage('friends');
+      return true;
+    }
+
+    const sender = currentFriendProfile();
+    const target = normalizeUserProfile(toUser.uid, toUser);
+    await setDoc(doc(fsDb, 'friendRequests', requestId), {
+      fromUid: userId,
+      toUid: target.uid,
+      fromEmail: sender.email || '',
+      toEmail: target.email || '',
+      fromDisplayName: sender.displayName || '',
+      toDisplayName: target.displayName || '',
+      fromPhotoURL: sender.photoURL || '',
+      toPhotoURL: target.photoURL || '',
+      status: 'pending',
+      created: existingSnap.exists() ? (existingSnap.data().created || serverTimestamp()) : serverTimestamp(),
+      modified: serverTimestamp()
+    }, { merge: true });
+    showToast('Friend Request Sent', 'success');
+    return true;
+  }
+
+  async function acceptFriendRequest(request) {
+    if (!request?.id || request.toUid !== userId) return false;
+    const requester = profileFromFriendRequest(request);
+    const me = currentFriendProfile();
+    const batch = writeBatch(fsDb);
+    batch.update(doc(fsDb, 'friendRequests', request.id), {
+      status: 'accepted',
+      modified: serverTimestamp()
+    });
+    batch.set(doc(fsDb, 'users', userId, 'friends', requester.uid), friendDocPayload(requester), { merge: true });
+    batch.set(doc(fsDb, 'users', requester.uid, 'friends', userId), friendDocPayload(me), { merge: true });
+    await batch.commit();
+    showToast('Friend Added', 'success');
+    return true;
+  }
+
+  async function rejectFriendRequest(request) {
+    if (!request?.id || request.toUid !== userId) return false;
+    await updateDoc(doc(fsDb, 'friendRequests', request.id), {
+      status: 'rejected',
+      modified: serverTimestamp()
+    });
+    showToast('Friend Request Rejected', 'success');
+    return true;
+  }
+
+  function listenFriends() {
+    if (unsubFriends) unsubFriends();
+    if (!userId) return;
+    friends = {};
+    unsubFriends = onSnapshot(collection(fsDb, 'users', userId, 'friends'), snap => {
+      friends = {};
+      snap.forEach(friendSnap => {
+        const friend = normalizeUserProfile(friendSnap.id, friendSnap.data() || {});
+        if (friend.uid && friend.uid !== userId) friends[friend.uid] = friend;
+      });
+      linkedProfiles = mergeLinkedProfileMaps(_readLinkedProfilesFromLocal(), linkedProfiles, friends);
+      renderProfileConnectionUI();
+      renderShareProfileList();
+      refreshOpenSidebarPage('friends');
+      renderSidebar();
+    }, err => {
+      console.warn('friends listener:', err);
+      showToast('Could Not Load Friends', 'error');
+    });
+  }
+
+  function listenIncomingFriendRequests() {
+    if (unsubIncomingFriendRequests) unsubIncomingFriendRequests();
+    if (!userId) return;
+    incomingFriendRequests = {};
+    const q = query(collection(fsDb, 'friendRequests'), where('toUid', '==', userId), where('status', '==', 'pending'));
+    unsubIncomingFriendRequests = onSnapshot(q, snap => {
+      incomingFriendRequests = {};
+      snap.forEach(requestSnap => {
+        const request = normalizeFriendRequest(requestSnap.id, requestSnap.data() || {});
+        if (request.fromUid && request.fromUid !== userId) incomingFriendRequests[request.id] = request;
+      });
+      renderProfileLinkRequestsUI();
+      renderNotificationButton();
+      refreshOpenSidebarPage('friends');
+      refreshOpenSidebarPage('notifications');
+    }, err => {
+      console.warn('friend requests listener:', err);
+    });
   }
 
   function profileFromProfileLinkRequest(request) {
@@ -2214,59 +2445,24 @@
       showToast('That Is Your Email', 'error');
       return;
     }
-    if (Object.values(linkedProfiles).some(profile => normalizeEmail(profile.email) === email)) {
-      showToast('Profile Already Linked', 'success');
-      if (input) input.value = '';
-      return;
-    }
-
-    let profile = {
-      uid: emailProfileKey(email),
-      email,
-      displayName: email.split('@')[0],
-      photoURL: '',
-      photoURLCandidates: [],
-      linkedAt: new Date().toISOString(),
-      emailOnly: true
-    };
-
-    try {
-      const snap = await getDoc(doc(fsDb, 'profileEmails', emailProfileDocId(email)));
-      const data = snap.exists() ? (snap.data() || {}) : {};
-      if (data.uid && data.uid !== userId) {
-        const photos = profilePhotoFields(data.photoURL, data.photoURLCandidates);
-        profile = {
-          uid: data.uid,
-          email: normalizeEmail(data.email || email),
-          displayName: data.displayName || email.split('@')[0],
-          photoURL: photos.photoURL,
-          photoURLCandidates: photos.photoURLCandidates,
-          linkedAt: new Date().toISOString(),
-          emailOnly: false
-        };
-      }
-    } catch (err) {
-      console.warn('profile email lookup:', err);
-    }
-
-    if (linkedProfileAliasKeys(profile).length) {
-      showToast('Profile Already Linked', 'success');
+    if (Object.values(friends).some(profile => normalizeEmail(profile.email) === email)) {
+      showToast('Already Friends', 'success');
       if (input) input.value = '';
       return;
     }
 
     try {
-      const sent = await sendProfileLinkRequest(profile);
-      if (!sent) {
-        showToast('Could Not Send Link Request', 'error');
+      const profile = await findUserByExactEmail(email);
+      if (!profile) {
+        showToast('No Notas User Found For That Email', 'error');
         return;
       }
+      const sent = await sendFriendRequest(profile);
       if (input) input.value = '';
-      showToast('Link Request Sent', 'success');
-      refreshOpenSidebarPage('friends');
+      if (sent) refreshOpenSidebarPage('friends');
     } catch (err) {
-      console.warn('send profile link request:', err);
-      showToast('Could Not Send Link Request', 'error');
+      console.warn('send friend request:', err);
+      showToast('Could Not Send Friend Request', 'error');
     }
   }
 
@@ -2630,10 +2826,6 @@
           created:  d.created?.toDate?.()?.toISOString()  || new Date().toISOString(),
           modified: d.modified?.toDate?.()?.toISOString() || new Date().toISOString()
         });
-        if (!notes[id].public && hasProfileShareMetadata(notes[id])) {
-          notes[id].public = computeEffectiveNotePublic(notes[id]);
-          ensureOwnedDirectShareReadable(id);
-        }
         // If this note is open and the content changed (e.g. a collaborator saved),
         // sync the editor as long as the user isn't actively typing.
         if (id === activeId && prevContent !== undefined && prevContent !== d.content) {
@@ -2702,6 +2894,10 @@
   /* Write / Delete */
   async function saveDoc(note) {
     if (!userId) return;
+    if (!canEditNote(note)) {
+      setSaveState('readonly');
+      return;
+    }
     setSaveState('saving');
     try {
       const isOwner = !note.owner || note.owner === userId;
@@ -3059,15 +3255,16 @@
     const note = notes[id];
     if (!note) return;
     const isOwned = !note.owner || note.owner === userId;
+    const isEditable = canEditNote(note);
     activeId = id;
     activeFolderId = note.folderId || null;
     const titleEl = document.getElementById('doc-title');
     titleEl.value    = note.title;
-    titleEl.readOnly = false;
-    document.getElementById('toolbar').style.display   = '';
+    titleEl.readOnly = !isEditable;
+    document.getElementById('toolbar').style.display   = isEditable ? '' : 'none';
     document.getElementById('share-btn').style.display = isOwned ? '' : 'none';
     const ed = document.getElementById('editor');
-    ed.contentEditable = 'true';
+    ed.contentEditable = isEditable ? 'true' : 'false';
     ed.innerHTML = renderMarkdownContent(note.content || '');
     const linkified = linkifyTextNodes(ed);
     ensureLinkAttrs(ed);
@@ -3078,11 +3275,12 @@
     refreshEmpty(ed);
     showEditorView(true);
     renderSidebar();
+    updateActiveNoteAccessAvatars();
     updateCounts();
-    setSaveState('saved');
+    setSaveState(isEditable ? 'saved' : 'readonly');
     initUndoSnapshot();
     _capitalizeNext = false;
-    if (!isMobile()) setTimeout(() => placeCursorAtEnd(ed), 40);
+    if (isEditable && !isMobile()) setTimeout(() => placeCursorAtEnd(ed), 40);
     if (isMobile()) closeDrawer();
     else if (!sidebarMinimized && window.matchMedia('(orientation: portrait)').matches) setSidebarMinimized(true);
   }
@@ -3405,7 +3603,7 @@
   function setSaveState(s) {
     const dot = document.getElementById('save-dot');
     const lbl = document.getElementById('save-label');
-    const cfg = { saved:['saved','Saved'], unsaved:['unsaved','Saving'], saving:['saving','Saving...'], error:['error','Error'], local:['local','Local'] };
+    const cfg = { saved:['saved','Saved'], unsaved:['unsaved','Saving'], saving:['saving','Saving...'], error:['error','Error'], local:['local','Local'], readonly:['local','Read Only'] };
     const [cls, txt] = cfg[s] || cfg.local;
     dot.className = 'save-dot ' + cls; lbl.textContent = txt;
   }
@@ -3656,6 +3854,7 @@
 
   function syncActiveNoteFromEditor() {
     if (!activeId || !notes[activeId]) return false;
+    if (!canEditNote(notes[activeId])) return false;
     notes[activeId].content  = getCleanHTML();
     notes[activeId].modified = new Date().toISOString();
     updateCounts();
@@ -3743,6 +3942,8 @@
 
   function accessProfilesForNote(note) {
     if (!note) return [];
+    const directProfiles = noteAccessProfiles(note.id);
+    if (directProfiles.length) return directProfiles;
     if (isOwnedNote(note)) return accessProfilesFromSharedWith(note.sharedWith);
     return uniqueProfiles([sourceProfileFromAccess(getSharedAccessEntry(note.sharedWith), 'Shared Owner')]);
   }
@@ -3768,6 +3969,13 @@
       shown.map(p => renderAvatar(p, 'access-avatar')).join('') +
       (visible.length > shown.length ? '<span class="access-avatar access-more">+' + (visible.length - shown.length) + '</span>' : '') +
     '</span>';
+  }
+
+  function updateActiveNoteAccessAvatars() {
+    const el = document.getElementById('doc-access-avatars');
+    if (!el) return;
+    const note = activeId ? notes[activeId] : null;
+    el.innerHTML = note ? renderAccessAvatars(accessProfilesForNote(note), isOwnedNote(note) ? 'Shared with' : 'Your access') : '';
   }
 
   /* ── Context Menu ────────────────────────────────── */
@@ -3986,13 +4194,14 @@
     if (view === 'friends') {
       content.innerHTML =
         '<div class="profile-connect-row">' +
-          '<input class="modal-input" id="sidebar-connect-profile-email-input" type="email" placeholder="Enter Google Email" autocomplete="email" />' +
-          '<button class="modal-btn primary" id="sidebar-connect-profile-btn" type="button">Connect</button>' +
+          '<input class="modal-input" id="sidebar-connect-profile-email-input" type="email" placeholder="Friend Google Email" autocomplete="email" />' +
+          '<button class="modal-btn primary" id="sidebar-connect-profile-btn" type="button">Add</button>' +
         '</div>' +
         '<div class="profile-link-requests" id="sidebar-profile-link-requests-panel" hidden>' +
-          '<div class="share-section-title"><i class="fa-solid fa-user-check"></i><span>Profile Requests</span></div>' +
+          '<div class="share-section-title"><i class="fa-solid fa-user-check"></i><span>Friend Requests</span></div>' +
           '<div class="profile-list" id="sidebar-profile-link-requests-list"></div>' +
         '</div>' +
+        '<div class="share-section-title"><i class="fa-solid fa-user-group"></i><span>Friends</span></div>' +
         '<div class="profile-list" id="sidebar-linked-profiles-list"></div>';
       renderProfileConnectionUI({
         inputId: 'sidebar-connect-profile-email-input',
@@ -4196,7 +4405,7 @@
     }
 
     if (sharedUncategorized.length) {
-      appendLooseSection(sharedUncategorized, 'Shared Notes', true);
+      appendLooseSection(sharedUncategorized, 'Shared With Me', true);
     }
 
     if (!hasContent) {
@@ -5183,8 +5392,8 @@
 
     document.getElementById('share-modal-title').textContent = type === 'note' ? 'Share Note' : 'Share Folder';
     document.getElementById('share-modal-desc').textContent  = type === 'note'
-      ? 'Linked profiles receive this note directly.'
-      : 'Linked profiles receive this folder and its notes directly.';
+      ? 'Choose friend access, or turn on a read-only public link.'
+      : 'Folder link sharing creates a read-only public folder link.';
     document.getElementById('share-link-input').value = url;
 
     const nativeBtn = document.getElementById('native-share-btn');
@@ -5196,11 +5405,12 @@
   }
 
   function linkedProfileArray() {
-    return Object.values(linkedProfiles).sort((a, b) => (a.displayName || '').localeCompare(b.displayName || ''));
+    const source = Object.keys(friends).length ? friends : linkedProfiles;
+    return Object.values(source).sort((a, b) => (a.displayName || '').localeCompare(b.displayName || ''));
   }
 
   function linkedProfileForUid(uid) {
-    return linkedProfiles[uid] || { uid, displayName: 'Linked Profile', email: '', photoURL: '' };
+    return friends[uid] || linkedProfiles[uid] || { uid, displayName: 'Friend', email: '', photoURL: '' };
   }
 
   function profileMetadataKeys(profile) {
@@ -5510,42 +5720,262 @@
     return isNoteSharedWithProfile(note, profile) && !isNoteDirectlySharedWithProfile(note, profile);
   }
 
+  function noteAccessDocId(noteId, targetUid) {
+    return (noteId + '_' + targetUid).replace(/[^A-Za-z0-9_-]/g, '_');
+  }
+
+  function normalizeNoteAccess(id, data = {}) {
+    const email = normalizeEmail(data.email || data.emailLower || '');
+    return {
+      id,
+      noteId: data.noteId || '',
+      userUid: data.userUid || '',
+      role: data.role === 'editor' ? 'editor' : 'viewer',
+      grantedBy: data.grantedBy || '',
+      displayName: data.displayName || (email ? email.split('@')[0] : 'Friend'),
+      email,
+      emailLower: normalizeEmail(data.emailLower || email),
+      photoURL: data.photoURL || '',
+      created: isoFromTimestamp(data.created) || new Date().toISOString(),
+      modified: isoFromTimestamp(data.modified) || new Date().toISOString()
+    };
+  }
+
+  function rebuildNoteAccessGroups() {
+    noteAccessByNote = {};
+    Object.values(noteAccessById).forEach(access => {
+      if (!access?.noteId) return;
+      if (!noteAccessByNote[access.noteId]) noteAccessByNote[access.noteId] = [];
+      noteAccessByNote[access.noteId].push(access);
+    });
+    Object.keys(noteAccessByNote).forEach(noteId => {
+      noteAccessByNote[noteId].sort((a, b) => (a.displayName || '').localeCompare(b.displayName || ''));
+    });
+  }
+
+  function noteAccessProfiles(noteId) {
+    return (noteAccessByNote[noteId] || []).map(access => ({
+      uid: access.userUid,
+      displayName: access.displayName,
+      email: access.email,
+      photoURL: access.photoURL
+    }));
+  }
+
+  function directAccessForNote(noteId) {
+    return myNoteAccessByNote[noteId] || noteAccessById[noteAccessDocId(noteId, userId)] || null;
+  }
+
+  function hasDirectNoteAccess(noteId) {
+    return !!directAccessForNote(noteId);
+  }
+
+  function directAccessRoleForNote(noteId) {
+    return directAccessForNote(noteId)?.role || '';
+  }
+
+  function canEditNote(note) {
+    if (!note) return false;
+    if (isOwnedNote(note)) return true;
+    return directAccessRoleForNote(note.id) === 'editor' || note.directAccessRole === 'editor';
+  }
+
+  function canReadLoadedSharedNote(noteId, data) {
+    const sharedWith = normalizeSharedWith(data?.sharedWith);
+    const sharedAccessKeys = normalizeSharedAccessKeys(data?.sharedAccessKeys);
+    return !!(
+      data?.owner === userId ||
+      noteLinkPublicFromData(data) ||
+      hasDirectNoteAccess(noteId) ||
+      !!sharedLibraryMeta[noteId] ||
+      hasSharedAccess(sharedWith, sharedAccessKeys) ||
+      hasImportedFolderPublicAccess(noteId, data)
+    );
+  }
+
+  function accessProfilePayload(friend) {
+    const profile = normalizeUserProfile(friend?.uid, friend || {});
+    return {
+      displayName: profile.displayName || '',
+      email: profile.email || '',
+      emailLower: profile.emailLower || normalizeEmail(profile.email || ''),
+      photoURL: profile.photoURL || ''
+    };
+  }
+
+  async function shareNoteWithFriend(noteId, friend, role = 'viewer') {
+    const note = notes[noteId];
+    if (!note || !friend?.uid || !isOwnedNote(note) || friend.uid === userId) return false;
+    const normalizedRole = role === 'editor' ? 'editor' : 'viewer';
+    const accessId = noteAccessDocId(noteId, friend.uid);
+    const ref = doc(fsDb, 'noteAccess', accessId);
+    const existingSnap = await getDoc(ref).catch(() => null);
+    const profile = accessProfilePayload(friend);
+    await setDoc(ref, {
+      noteId,
+      userUid: friend.uid,
+      role: normalizedRole,
+      grantedBy: userId,
+      ...profile,
+      created: existingSnap?.exists?.() ? (existingSnap.data().created || serverTimestamp()) : serverTimestamp(),
+      modified: serverTimestamp()
+    }, { merge: true });
+    showToast('Shared With ' + (profile.displayName || profile.email || 'Friend'), 'success');
+    return true;
+  }
+
+  async function revokeNoteAccess(noteId, targetUid) {
+    const note = notes[noteId];
+    if (!note || !targetUid || !isOwnedNote(note)) return false;
+    await deleteDoc(doc(fsDb, 'noteAccess', noteAccessDocId(noteId, targetUid)));
+    showToast('Access Revoked', 'success');
+    return true;
+  }
+
+  function applySharedNoteFromData(noteId, data, access = directAccessForNote(noteId) || {}) {
+    if (!data || data.owner === userId) return false;
+    const folderId = _applySharedFolderFromData(noteId, access) || _getSharedNoteFolder(noteId);
+    notes[noteId] = hydrateNoteShareState(data, {
+      id: noteId,
+      owner: data.owner,
+      title: data.title || 'Untitled Note',
+      content: data.content || '',
+      folderId,
+      pinnedAt: _getSharedNotePinnedAt(noteId),
+      pinScope: _getSharedNotePinScope(noteId),
+      directAccessRole: access.role || '',
+      directAccess: access,
+      created: data.created?.toDate?.()?.toISOString() || new Date().toISOString(),
+      modified: data.modified?.toDate?.()?.toISOString() || new Date().toISOString()
+    });
+    return true;
+  }
+
+  async function loadSharedNoteFromAccess(access) {
+    if (!access?.noteId || access.userUid !== userId) return false;
+    try {
+      const wasActive = activeId === access.noteId;
+      const snap = await getDoc(doc(fsDb, 'notes', access.noteId));
+      if (!snap.exists()) return false;
+      const data = snap.data() || {};
+      if (!canReadLoadedSharedNote(access.noteId, data)) return false;
+      applySharedNoteFromData(access.noteId, data, access);
+      await _addSharedId(access.noteId);
+      _subscribeSharedNote(access.noteId);
+      renderSidebar();
+      if (wasActive) openNote(access.noteId);
+      if (!activeId) { const ids = sortedIds(); ids.length ? openNote(ids[0]) : showEditorView(false); }
+      return true;
+    } catch (err) {
+      console.warn('load shared note from access:', err);
+      return false;
+    }
+  }
+
+  function removeSharedAccessNote(noteId) {
+    delete myNoteAccessByNote[noteId];
+    delete noteAccessById[noteAccessDocId(noteId, userId)];
+    rebuildNoteAccessGroups();
+    if (notes[noteId] && !isOwnedNote(notes[noteId])) {
+      delete notes[noteId];
+      _removeSharedId(noteId);
+      if (sharedNoteUnsubs[noteId]) { sharedNoteUnsubs[noteId](); delete sharedNoteUnsubs[noteId]; }
+      if (activeId === noteId) activeId = null;
+      renderSidebar();
+      if (!activeId) { const ids = sortedIds(); ids.length ? openNote(ids[0]) : showEditorView(false); }
+    }
+  }
+
+  function listenOwnedNoteAccess() {
+    if (unsubOwnedNoteAccess) unsubOwnedNoteAccess();
+    if (!userId) return;
+    const q = query(collection(fsDb, 'noteAccess'), where('grantedBy', '==', userId));
+    unsubOwnedNoteAccess = onSnapshot(q, snap => {
+      snap.docChanges().forEach(ch => {
+        if (ch.type === 'removed') delete noteAccessById[ch.doc.id];
+        else noteAccessById[ch.doc.id] = normalizeNoteAccess(ch.doc.id, ch.doc.data() || {});
+      });
+      rebuildNoteAccessGroups();
+      renderShareProfileList();
+      updateActiveNoteAccessAvatars();
+      renderSidebar();
+    }, err => {
+      console.warn('owned note access listener:', err);
+    });
+  }
+
+  function listenSharedWithMe() {
+    if (unsubSharedWithMe) unsubSharedWithMe();
+    if (!userId) return;
+    const q = query(collection(fsDb, 'noteAccess'), where('userUid', '==', userId));
+    unsubSharedWithMe = onSnapshot(q, snap => {
+      snap.docChanges().forEach(ch => {
+        const id = ch.doc.id;
+        if (ch.type === 'removed') {
+          const old = noteAccessById[id];
+          if (old?.noteId) removeSharedAccessNote(old.noteId);
+          return;
+        }
+        const access = normalizeNoteAccess(id, ch.doc.data() || {});
+        noteAccessById[id] = access;
+        myNoteAccessByNote[access.noteId] = access;
+        loadSharedNoteFromAccess(access);
+      });
+      rebuildNoteAccessGroups();
+      updateActiveNoteAccessAvatars();
+      renderSidebar();
+      renderNotificationButton();
+      refreshOpenSidebarPage('notifications');
+    }, err => {
+      console.warn('shared with me listener:', err);
+    });
+  }
+
   function renderShareProfileList() {
     const list = document.getElementById('share-profiles-list');
     const panel = document.getElementById('share-profile-panel');
     if (!list || !panel) return;
-    const profiles = linkedProfileArray();
+    const profiles = friendArray();
     if (!profiles.length) {
-      list.innerHTML = '<div class="profile-empty">Request profile links in Settings to share notes privately without sending links.</div>';
+      list.innerHTML = '<div class="profile-empty">Add friends first, then share notes with viewer or editor access.</div>';
       return;
     }
 
     const type = _shareCtx?.type || 'note';
+    if (type !== 'note') {
+      list.innerHTML = '<div class="profile-empty">Friend roles are available for notes. Folder link sharing still uses public folder links.</div>';
+      return;
+    }
+
     list.innerHTML = profiles.map(p => {
-      const note = type === 'note' ? notes[_shareCtx?.id] : null;
-      const folder = type === 'folder' ? folders[_shareCtx?.id] : null;
-      const directShared = type === 'folder'
-        ? isFolderSharedWithProfile(folder, p)
-        : isNoteDirectlySharedWithProfile(note, p);
-      const folderOnly = type === 'note' && !directShared && isNoteSharedViaFolderOnly(note, p);
-      const sub = folderOnly ? 'Shared via folder' : (directShared ? 'Direct share active' : (type === 'folder' ? 'Direct folder share' : 'Direct note share'));
-      const button = folderOnly
-        ? '<button class="modal-btn" type="button" disabled><i class="fa-solid fa-folder-tree" style="margin-right:6px;"></i>Via Folder</button>'
-        : (directShared
-          ? '<button class="modal-btn" data-unshare-profile="' + esc(p.uid) + '" type="button"><i class="fa-solid fa-user-minus" style="margin-right:6px;"></i>Unshare</button>'
-          : '<button class="modal-btn primary" data-share-profile="' + esc(p.uid) + '" type="button"><i class="fa-solid fa-paper-plane" style="margin-right:6px;"></i>Share</button>');
+      const access = (noteAccessByNote[_shareCtx?.id] || []).find(item => item.userUid === p.uid);
+      const currentRole = access?.role || 'viewer';
+      const sub = access ? ('Access: ' + currentRole) : 'No direct access';
+      const button = access
+        ? '<button class="modal-btn danger" data-revoke-note-access="' + esc(p.uid) + '" type="button"><i class="fa-solid fa-user-minus" style="margin-right:6px;"></i>Revoke</button>'
+        : '<button class="modal-btn primary" data-share-friend="' + esc(p.uid) + '" type="button"><i class="fa-solid fa-paper-plane" style="margin-right:6px;"></i>Share</button>';
       return '<div class="profile-row">' +
         renderProfileAvatar(p) +
         '<div class="profile-main"><div class="profile-name">' + esc(p.displayName) + '</div><div class="profile-sub">' + esc(sub) + '</div></div>' +
+        '<select class="settings-select" data-share-role="' + esc(p.uid) + '" aria-label="Access role">' +
+          '<option value="viewer"' + (currentRole === 'viewer' ? ' selected' : '') + '>Viewer</option>' +
+          '<option value="editor"' + (currentRole === 'editor' ? ' selected' : '') + '>Editor</option>' +
+        '</select>' +
         button +
       '</div>';
     }).join('');
 
-    list.querySelectorAll('[data-share-profile]').forEach(btn => {
-      btn.addEventListener('click', () => shareWithProfile(btn.dataset.shareProfile));
+    list.querySelectorAll('[data-share-friend]').forEach(btn => {
+      btn.addEventListener('click', () => shareWithProfile(btn.dataset.shareFriend));
     });
-    list.querySelectorAll('[data-unshare-profile]').forEach(btn => {
-      btn.addEventListener('click', () => unshareWithProfile(btn.dataset.unshareProfile));
+    list.querySelectorAll('[data-revoke-note-access]').forEach(btn => {
+      btn.addEventListener('click', () => unshareWithProfile(btn.dataset.revokeNoteAccess));
+    });
+    list.querySelectorAll('[data-share-role]').forEach(select => {
+      select.addEventListener('change', () => {
+        const access = (noteAccessByNote[_shareCtx?.id] || []).find(item => item.userUid === select.dataset.shareRole);
+        if (access) shareWithProfile(select.dataset.shareRole);
+      });
     });
   }
 
@@ -5694,19 +6124,22 @@
   }
 
   async function shareWithProfile(targetUid) {
-    if (!_shareCtx || !linkedProfiles[targetUid]) return;
-    const targetName = linkedProfiles[targetUid].displayName || 'Profile';
+    if (!_shareCtx || !friends[targetUid]) return;
+    const targetName = friends[targetUid].displayName || 'Friend';
     if (_shareCtx.type === 'note' && notes[_shareCtx.id] && !isOwnedNote(notes[_shareCtx.id])) {
       showToast('Only The Owner Can Share This Note', 'error');
       return;
     }
     try {
-      const ok = _shareCtx.type === 'folder'
-        ? await shareFolderWithProfile(_shareCtx.id, targetUid)
-        : await shareNoteWithProfile(_shareCtx.id, targetUid, 'share');
+      if (_shareCtx.type !== 'note') {
+        showToast('Friend role sharing is for notes', 'error');
+        return;
+      }
+      const roleSelect = [...document.querySelectorAll('[data-share-role]')].find(select => select.dataset.shareRole === targetUid);
+      const role = roleSelect?.value === 'editor' ? 'editor' : 'viewer';
+      const ok = await shareNoteWithFriend(_shareCtx.id, friends[targetUid], role);
       if (!ok) { showToast('Could Not Share With ' + targetName, 'error'); return; }
       renderShareProfileList();
-      showToast('Shared With ' + targetName, 'success');
     } catch (err) {
       console.error('share with profile:', err);
       showToast('Could Not Share With ' + targetName, 'error');
@@ -5714,16 +6147,15 @@
   }
 
   async function unshareWithProfile(targetUid) {
-    if (!_shareCtx || !linkedProfiles[targetUid]) return;
-    const targetName = linkedProfiles[targetUid].displayName || 'Profile';
+    if (!_shareCtx || !friends[targetUid]) return;
+    const targetName = friends[targetUid].displayName || 'Friend';
     try {
-      const ok = _shareCtx.type === 'folder'
-        ? await removeProfileFolderShare(_shareCtx.id, targetUid)
-        : await removeProfileNoteShare(_shareCtx.id, targetUid);
+      const ok = _shareCtx.type === 'note'
+        ? await revokeNoteAccess(_shareCtx.id, targetUid)
+        : false;
       if (!ok) { showToast('Could Not Unshare With ' + targetName, 'error'); return; }
       renderShareProfileList();
       renderSidebar();
-      showToast('Unshared With ' + targetName, 'success');
     } catch (err) {
       console.error('unshare with profile:', err);
       showToast('Could Not Unshare With ' + targetName, 'error');
@@ -5732,6 +6164,10 @@
 
   async function setNotePublic(noteId, isPublic) {
     if (!notes[noteId]) return;
+    if (!isOwnedNote(notes[noteId])) {
+      showToast('Only The Owner Can Change Link Sharing', 'error');
+      return false;
+    }
     const previousLinkPublic = !!notes[noteId].linkPublic;
     const previousPublic = !!notes[noteId].public;
     notes[noteId].linkPublic = isPublic;
@@ -6093,6 +6529,7 @@
     const sharedWith = note?.sharedWith && typeof note.sharedWith === 'object' ? note.sharedWith : {};
     const keys = profileMatchKeys(profile);
     const sharedAccessKeys = Array.isArray(note?.sharedAccessKeys) ? note.sharedAccessKeys : [];
+    if ((noteAccessByNote[note?.id] || []).some(access => access.userUid === profile?.uid)) return true;
     return keys.some(key => sharedAccessKeys.includes(key) || !!sharedWith[key]);
   }
 
@@ -6315,12 +6752,10 @@
 
     const sharedWith = d.sharedWith && typeof d.sharedWith === 'object' ? d.sharedWith : {};
     const sharedAccessKeys = Array.isArray(d.sharedAccessKeys) ? d.sharedAccessKeys : [];
-    const hasDirectAccess = hasSharedAccess(sharedWith, sharedAccessKeys);
-    const hasFolderPublicAccess = hasImportedFolderPublicAccess(noteId, d);
-    const access = getSharedAccessEntry(sharedWith) || {};
+    const access = directAccessForNote(noteId) || getSharedAccessEntry(sharedWith) || {};
     const shareTimestamp = access.lastSharedAt || access.sharedAt || '';
     const created = shareTimestamp || d.modified?.toDate?.()?.toISOString() || new Date().toISOString();
-    if (!noteLinkPublicFromData(d) && !hasDirectAccess && !hasFolderPublicAccess) return;
+    if (!canReadLoadedSharedNote(noteId, d)) return;
     if (!sharedLibraryMeta[noteId] && _isSharedIdRemoved(noteId, shareTimestamp)) {
       delete notes[noteId];
       return;
@@ -6336,6 +6771,8 @@
       folderId: folderId || _getSharedNoteFolder(noteId),
       pinnedAt: _getSharedNotePinnedAt(noteId),
       pinScope: _getSharedNotePinScope(noteId),
+      directAccessRole: access.role || '',
+      directAccess: access,
       created:  d.created?.toDate?.()?.toISOString()  || new Date().toISOString(),
       modified: d.modified?.toDate?.()?.toISOString() || new Date().toISOString()
     });
@@ -6516,6 +6953,18 @@
       const readKey = request.readKey || ('profile_link_' + request.id);
       byReadKey[readKey] = { ...request, readKey, read: isNotificationRead({ ...request, readKey }) };
     });
+    Object.values(incomingFriendRequests).forEach(request => {
+      if (request.status !== 'pending') return;
+      const readKey = request.readKey || ('friend_request_' + request.id);
+      byReadKey[readKey] = {
+        ...request,
+        fromName: request.fromDisplayName,
+        fromPhotoURL: request.fromPhotoURL,
+        type: 'friend_request',
+        readKey,
+        read: isNotificationRead({ ...request, readKey })
+      };
+    });
     return Object.values(byReadKey)
       .sort((a, b) => new Date(b.created) - new Date(a.created));
   }
@@ -6529,6 +6978,7 @@
   }
 
   function notificationText(n) {
+    if (n.type === 'friend_request') return n.fromDisplayName + ' sent you a friend request';
     if (n.type === 'profile_link') return n.fromName + ' wants to link profiles';
     if (n.type === 'folder_share') return n.fromName + ' shared folder "' + (n.sourceFolderTitle || 'Shared Folder') + '" with you';
     if (n.type === 'mention') return n.fromName + ' mentioned you in "' + n.noteTitle + '"';
@@ -6585,9 +7035,14 @@
   }
 
   async function openNotification(id) {
-    const item = profileShareNotifications[id] || profileLinkRequests[id];
+    const item = profileShareNotifications[id] || profileLinkRequests[id] || incomingFriendRequests[id];
     if (!item) return;
     document.getElementById('notifications-modal')?.classList.remove('open');
+    if (item.type === 'friend_request') {
+      setSidebarView('friends');
+      await markNotificationRead(id);
+      return;
+    }
     if (item.type === 'profile_link') {
       openProfileLinkApproval(item);
       return;
@@ -7266,7 +7721,7 @@
         }
       }
       try {
-        const ok = await shareNoteWithProfile(note.id, uid, 'mention');
+        const ok = await shareNoteWithFriend(note.id, friends[uid] || profile, 'viewer');
         if (ok) sent.push(uid);
       } catch (err) {
         console.error('mention notification:', err);
@@ -7304,13 +7759,11 @@
 
       const sharedWith = d.sharedWith && typeof d.sharedWith === 'object' ? d.sharedWith : {};
       const sharedAccessKeys = Array.isArray(d.sharedAccessKeys) ? d.sharedAccessKeys : [];
-      const hasDirectAccess = hasSharedAccess(sharedWith, sharedAccessKeys);
-      const hasFolderPublicAccess = hasImportedFolderPublicAccess(noteId, d);
-      const access = getSharedAccessEntry(sharedWith) || {};
+      const access = directAccessForNote(noteId) || getSharedAccessEntry(sharedWith) || {};
       const folderId = _applySharedFolderFromData(noteId, access);
 
       // If the owner stopped sharing, remove the note from this user's library
-      if (!noteLinkPublicFromData(d) && !hasDirectAccess && !hasFolderPublicAccess) {
+      if (!canReadLoadedSharedNote(noteId, d)) {
         delete notes[noteId];
         _removeSharedId(noteId);
         if (sharedNoteUnsubs[noteId]) { sharedNoteUnsubs[noteId](); delete sharedNoteUnsubs[noteId]; }
@@ -7329,6 +7782,8 @@
         folderId: folderId || _getSharedNoteFolder(noteId),
         pinnedAt: _getSharedNotePinnedAt(noteId),
         pinScope: _getSharedNotePinScope(noteId),
+        directAccessRole: access.role || '',
+        directAccess: access,
         created:  d.created?.toDate?.()?.toISOString()  || new Date().toISOString(),
         modified: d.modified?.toDate?.()?.toISOString() || new Date().toISOString()
       });
@@ -7344,6 +7799,7 @@
           ed.innerHTML  = renderMarkdownContent(d.content || '');
           linkifyTextNodes(ed); ensureLinkAttrs(ed);
           restoreChecklistState(ed); restoreAlarmMarks(ed); refreshEmpty(ed); updateCounts();
+          openNote(noteId);
         }
       }
     }, err => {
@@ -7413,10 +7869,17 @@
         return;
       }
       const d = snap.data();
+      const accessSnap = await getDoc(doc(fsDb, 'noteAccess', noteAccessDocId(noteId, userId))).catch(() => null);
+      if (accessSnap?.exists?.()) {
+        const accessDoc = normalizeNoteAccess(accessSnap.id, accessSnap.data() || {});
+        noteAccessById[accessSnap.id] = accessDoc;
+        myNoteAccessByNote[noteId] = accessDoc;
+        rebuildNoteAccessGroups();
+      }
       const sharedWith = d.sharedWith && typeof d.sharedWith === 'object' ? d.sharedWith : {};
       const sharedAccessKeys = Array.isArray(d.sharedAccessKeys) ? d.sharedAccessKeys : [];
-      const sharedAccess = getSharedAccessEntry(sharedWith) || {};
-      if (!noteLinkPublicFromData(d) && !hasSharedAccess(sharedWith, sharedAccessKeys)) {
+      const sharedAccess = directAccessForNote(noteId) || getSharedAccessEntry(sharedWith) || {};
+      if (!canReadLoadedSharedNote(noteId, d)) {
         showToast('This shared note is no longer available', 'error');
         window.history.replaceState({}, '', location.pathname);
         return;
@@ -7435,6 +7898,8 @@
         folderId: _applySharedFolderFromData(noteId, sharedAccess) || _getSharedNoteFolder(noteId),
         pinnedAt: _getSharedNotePinnedAt(noteId),
         pinScope: _getSharedNotePinScope(noteId),
+        directAccessRole: sharedAccess.role || '',
+        directAccess: sharedAccess,
         created:  d.created?.toDate?.()?.toISOString()  || new Date().toISOString(),
         modified: d.modified?.toDate?.()?.toISOString() || new Date().toISOString()
       });
@@ -7465,10 +7930,17 @@
         if (notes[noteId]) openNote(noteId);
         return !!notes[noteId];
       }
+      const accessSnap = await getDoc(doc(fsDb, 'noteAccess', noteAccessDocId(noteId, userId))).catch(() => null);
+      if (accessSnap?.exists?.()) {
+        const accessDoc = normalizeNoteAccess(accessSnap.id, accessSnap.data() || {});
+        noteAccessById[accessSnap.id] = accessDoc;
+        myNoteAccessByNote[noteId] = accessDoc;
+        rebuildNoteAccessGroups();
+      }
       const sharedWith = d.sharedWith && typeof d.sharedWith === 'object' ? d.sharedWith : {};
       const sharedAccessKeys = Array.isArray(d.sharedAccessKeys) ? d.sharedAccessKeys : [];
-      const sharedAccess = getSharedAccessEntry(sharedWith) || {};
-      if (!noteLinkPublicFromData(d) && !hasSharedAccess(sharedWith, sharedAccessKeys)) {
+      const sharedAccess = directAccessForNote(noteId) || getSharedAccessEntry(sharedWith) || {};
+      if (!canReadLoadedSharedNote(noteId, d)) {
         showToast('This shared note is no longer available', 'error');
         return false;
       }
@@ -7480,6 +7952,8 @@
         folderId: _applySharedFolderFromData(noteId, sharedAccess) || _getSharedNoteFolder(noteId),
         pinnedAt: _getSharedNotePinnedAt(noteId),
         pinScope: _getSharedNotePinScope(noteId),
+        directAccessRole: sharedAccess.role || '',
+        directAccess: sharedAccess,
         created:  d.created?.toDate?.()?.toISOString()  || new Date().toISOString(),
         modified: d.modified?.toDate?.()?.toISOString() || new Date().toISOString()
       });
@@ -8004,6 +8478,7 @@
 
   document.getElementById('doc-title').addEventListener('input', () => {
     if (!activeId || !notes[activeId]) return;
+    if (!canEditNote(notes[activeId])) return;
     notes[activeId].title    = document.getElementById('doc-title').value;
     notes[activeId].modified = new Date().toISOString();
     const el = document.querySelector('.sidebar-item.active .item-name');
@@ -8012,6 +8487,7 @@
   });
   document.getElementById('doc-title').addEventListener('blur', () => {
     if (!activeId || !notes[activeId]) return;
+    if (!canEditNote(notes[activeId])) return;
     const titled = document.getElementById('doc-title').value.trim() || 'Untitled Note';
     document.getElementById('doc-title').value = titled;
     notes[activeId].title = titled;
