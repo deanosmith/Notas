@@ -133,14 +133,14 @@ service cloud.firestore {
         );
 
       allow create: if signedIn()
-        && request.resource.data.role in ["viewer", "editor"]
+        && request.resource.data.role == "editor"
         && request.resource.data.grantedBy == request.auth.uid
         && isNoteOwner(request.resource.data.noteId)
         && accessId == request.resource.data.noteId + "_" + request.resource.data.userUid
         && request.resource.data.userUid != request.auth.uid;
 
       allow update: if signedIn()
-        && request.resource.data.role in ["viewer", "editor"]
+        && request.resource.data.role == "editor"
         && request.resource.data.noteId == resource.data.noteId
         && request.resource.data.userUid == resource.data.userUid
         && request.resource.data.grantedBy == resource.data.grantedBy

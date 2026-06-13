@@ -117,7 +117,7 @@ function accessProfilesForNote(note) {
   const directProfiles = noteAccessProfiles(note.id);
   if (directProfiles.length) return directProfiles;
   if (isOwnedNote(note)) return accessProfilesFromSharedWith(note.sharedWith);
-  return uniqueProfiles([sourceProfileFromAccess(getSharedAccessEntry(note.sharedWith), 'Shared Owner')]);
+  return uniqueProfiles([sourceProfileFromAccess(note.directAccess || getSharedAccessEntry(note.sharedWith), 'Shared Owner')]);
 }
 
 function accessProfilesForFolder(folder) {

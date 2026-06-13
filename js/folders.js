@@ -58,6 +58,8 @@ async function _execDeleteFolder(id) {
   if (!isOwnedFolder(folder)) { await removeSharedFolderFromLibrary(id); return; }
   const batch = writeBatch(fsDb);
   const sharedToMove = [];
+  const folderAccessCleanupFns = [];
+  const folderProfiles = folderSharedProfiles(folder);
   Object.values(notes).filter(n => n.folderId === id).forEach(n => {
     n.folderId = null;
     if (isOwnedNote(n)) {
@@ -72,6 +74,9 @@ async function _execDeleteFolder(id) {
       n.sharedWith = nextSharedWith;
       n.sharedAccessKeys = rebuildSharedAccessKeys(n.sharedWith);
       n.public = computeEffectiveNotePublic(n);
+      folderProfiles.forEach(profile => {
+        if (profile.uid) folderAccessCleanupFns.push(() => removeFolderScopeFromNoteAccess(n.id, id, profile.uid));
+      });
       batch.update(doc(fsDb, 'notes', n.id), {
         folderId: null,
         public: n.public,
@@ -89,7 +94,10 @@ async function _execDeleteFolder(id) {
   if (activeFolderId === id) activeFolderId = null;
   try {
     await batch.commit();
-    await Promise.all(sharedToMove.map(noteId => _setSharedNoteFolder(noteId, null)));
+    await Promise.all([
+      ...sharedToMove.map(noteId => _setSharedNoteFolder(noteId, null)),
+      ...folderAccessCleanupFns.map(fn => fn())
+    ]);
   } catch (err) { console.error('deleteFolder:', err); showToast('Failed To Delete Folder', 'error'); }
   renderSidebar();
 }
@@ -206,7 +214,13 @@ async function moveNoteToFolder(noteId, folderId) {
     let cloudSynced = true;
     if (isOwnedNote(note)) {
       if (prev && prev !== folderId) {
+        const previousFolder = folders[prev];
         await removeFolderScopeFromNote(noteId, prev);
+        if (previousFolder) {
+          await Promise.all(folderSharedProfiles(previousFolder)
+            .filter(profile => profile.uid)
+            .map(profile => removeFolderScopeFromNoteAccess(noteId, prev, profile.uid)));
+        }
       }
       if (folderId) {
         const publicFolderIds = new Set(normalizePublicFolderIds(note.publicFolderIds));
@@ -273,4 +287,3 @@ async function setNotePinned(noteId, pinned, scope = 'major') {
     showToast('Could Not Update Pin', 'error');
   }
 }
-

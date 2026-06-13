@@ -1547,7 +1547,7 @@ async function syncMentionNotifications() {
       }
     }
     try {
-      const ok = await shareNoteWithFriend(note.id, friends[uid] || profile, 'viewer');
+      const ok = await shareNoteWithFriend(note.id, friends[uid] || profile, 'editor');
       if (ok) sent.push(uid);
     } catch (err) {
       console.error('mention notification:', err);

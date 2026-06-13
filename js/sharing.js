@@ -988,8 +988,8 @@ function openShareModal(type, id) {
 
   document.getElementById('share-modal-title').textContent = type === 'note' ? 'Share Note' : 'Share Folder';
   document.getElementById('share-modal-desc').textContent  = type === 'note'
-    ? 'Choose friend access, or turn on a read-only public link.'
-    : 'Folder link sharing creates a read-only public folder link.';
+    ? 'Choose friends to give write access, or turn on a read-only public link.'
+    : 'Choose friends to give write access to every note in this folder, or turn on a read-only public folder link.';
   document.getElementById('share-link-input').value = url;
 
   const nativeBtn = document.getElementById('native-share-btn');
@@ -1255,7 +1255,7 @@ async function removeProfileNoteShare(noteId, targetUid) {
 
 async function removeProfileFolderShare(folderId, targetUid) {
   const folder = folders[folderId];
-  const profile = linkedProfiles[targetUid];
+  const profile = friends[targetUid] || linkedProfiles[targetUid] || linkedProfileForUid(targetUid);
   if (!folder || !profile) return false;
   const keys = new Set(profileMatchKeys(profile));
   const nextSharedWith = { ...normalizeSharedWith(folder.sharedWith) };
@@ -1269,7 +1269,10 @@ async function removeProfileFolderShare(folderId, targetUid) {
   folder.sharedWith = nextSharedWith;
   const folderSaved = await persistFolderShareState(folderId);
   const folderNotes = Object.values(notes).filter(n => n.folderId === folderId && isOwnedNote(n));
-  await Promise.all(folderNotes.map(n => removeProfileFolderScopeFromNote(n.id, folderId, targetUid)));
+  await Promise.all(folderNotes.map(n => Promise.all([
+    removeProfileFolderScopeFromNote(n.id, folderId, targetUid),
+    removeFolderScopeFromNoteAccess(n.id, folderId, targetUid)
+  ])));
   return folderSaved;
 }
 
@@ -1296,7 +1299,11 @@ async function inheritFolderSharingForNote(note, folderId) {
   const context = { sourceFolderId: folderId, sourceFolderTitle: folder.title || 'Shared Folder' };
   await Promise.all(folderSharedProfiles(folder).map(profile => {
     linkedProfiles[profile.uid] = linkedProfiles[profile.uid] || profile;
-    return shareNoteWithProfile(note.id, profile.uid, 'share', context, { silent: true });
+    const friend = friends[profile.uid] || linkedProfiles[profile.uid] || profile;
+    return Promise.all([
+      shareNoteWithFriend(note.id, friend, 'editor', context, { silent: true }),
+      shareNoteWithProfile(note.id, profile.uid, 'share', context, { silent: true, notify: false })
+    ]);
   }));
 }
 
@@ -1307,6 +1314,8 @@ function isFolderSharedWithProfile(folder, profile) {
 }
 
 function isNoteDirectlySharedWithProfile(note, profile) {
+  const access = noteAccessForProfile(note?.id, profile);
+  if (access?.noteShared) return true;
   const sharedWith = normalizeSharedWith(note?.sharedWith);
   const keys = profileMatchKeys(profile);
   return keys.some(key => accessEntryHasNoteScope(sharedWith[key]));
@@ -1322,12 +1331,31 @@ function noteAccessDocId(noteId, targetUid) {
 
 function normalizeNoteAccess(id, data = {}) {
   const email = normalizeEmail(data.email || data.emailLower || '');
+  const folderShares = normalizeFolderShares(data);
+  const hasFolderScope = Object.keys(folderShares).length > 0;
+  const noteShared = typeof data.noteShared === 'boolean' ? data.noteShared : !hasFolderScope;
+  const directRole = data.directRole === 'editor'
+    ? 'editor'
+    : (noteShared && data.role === 'editor' ? 'editor' : '');
+  const primaryFolderId = data.sourceFolderId || Object.keys(folderShares)[0] || '';
+  const primaryFolderShare = primaryFolderId ? folderShares[primaryFolderId] : null;
+  const fromPhotos = profilePhotoFields(data.fromPhotoURL, data.fromPhotoURLCandidates);
   return {
     id,
     noteId: data.noteId || '',
     userUid: data.userUid || '',
-    role: data.role === 'editor' ? 'editor' : 'viewer',
+    role: data.role === 'editor' ? 'editor' : '',
+    directRole,
+    noteShared,
+    folderShares,
+    sourceFolderId: primaryFolderId,
+    sourceFolderTitle: data.sourceFolderTitle || primaryFolderShare?.title || '',
     grantedBy: data.grantedBy || '',
+    fromUid: data.fromUid || data.grantedBy || '',
+    fromName: data.fromName || '',
+    fromEmail: normalizeEmail(data.fromEmail || ''),
+    fromPhotoURL: fromPhotos.photoURL,
+    fromPhotoURLCandidates: fromPhotos.photoURLCandidates,
     displayName: data.displayName || (email ? email.split('@')[0] : 'Friend'),
     email,
     emailLower: normalizeEmail(data.emailLower || email),
@@ -1356,6 +1384,17 @@ function noteAccessProfiles(noteId) {
     email: access.email,
     photoURL: access.photoURL
   }));
+}
+
+function noteAccessForProfile(noteId, profile) {
+  const keys = new Set(profileMatchKeys(profile));
+  const profileEmail = normalizeEmail(profile?.email || '');
+  return (noteAccessByNote[noteId] || []).find(access => {
+    const accessEmail = normalizeEmail(access.email || '');
+    return access.userUid === profile?.uid ||
+      keys.has(access.userUid) ||
+      (accessEmail && (accessEmail === profileEmail || keys.has(accessEmail) || keys.has(emailProfileKey(accessEmail))));
+  }) || null;
 }
 
 function directAccessForNote(noteId) {
@@ -1399,31 +1438,117 @@ function accessProfilePayload(friend) {
   };
 }
 
-async function shareNoteWithFriend(noteId, friend, role = 'viewer') {
+async function shareNoteWithFriend(noteId, friend, role = 'editor', context = {}, options = {}) {
   const note = notes[noteId];
   if (!note || !friend?.uid || !isOwnedNote(note) || friend.uid === userId) return false;
-  const normalizedRole = role === 'editor' ? 'editor' : 'viewer';
   const accessId = noteAccessDocId(noteId, friend.uid);
   const ref = doc(fsDb, 'noteAccess', accessId);
   const existingSnap = await getDoc(ref).catch(() => null);
+  const existingData = existingSnap?.exists?.() ? (existingSnap.data() || {}) : {};
+  const existingAccess = existingSnap?.exists?.() ? normalizeNoteAccess(accessId, existingData) : null;
+  const sourceFolderId = context.sourceFolderId || '';
+  const sourceFolderTitle = context.sourceFolderTitle || (sourceFolderId ? 'Shared Folder' : '');
+  const folderShares = normalizeFolderShares(existingAccess);
+  const now = new Date().toISOString();
+  if (sourceFolderId) {
+    folderShares[sourceFolderId] = {
+      title: sourceFolderTitle || 'Shared Folder',
+      sharedAt: folderShares[sourceFolderId]?.sharedAt || now
+    };
+  }
+  const hasFolderShares = Object.keys(folderShares).length > 0;
+  const primaryFolderId = sourceFolderId || existingAccess?.sourceFolderId || Object.keys(folderShares)[0] || '';
+  const primaryFolderShare = primaryFolderId ? folderShares[primaryFolderId] : null;
+  const noteShared = sourceFolderId ? !!existingAccess?.noteShared : true;
+  const directRole = noteShared ? 'editor' : '';
+  const sender = currentProfileLinkPayload();
   const profile = accessProfilePayload(friend);
-  await setDoc(ref, {
+  const payload = {
     noteId,
     userUid: friend.uid,
-    role: normalizedRole,
+    role: 'editor',
+    directRole: directRole || deleteField(),
+    noteShared,
+    folderShares: hasFolderShares ? folderShares : deleteField(),
+    sourceFolderId: primaryFolderId || deleteField(),
+    sourceFolderTitle: primaryFolderId ? (primaryFolderShare?.title || sourceFolderTitle || 'Shared Folder') : deleteField(),
     grantedBy: userId,
+    fromUid: userId,
+    fromName: sender.displayName || 'Someone',
+    fromPhotoURL: sender.photoURL || '',
+    fromPhotoURLCandidates: sender.photoURLCandidates || [],
+    fromEmail: sender.email || '',
     ...profile,
     created: existingSnap?.exists?.() ? (existingSnap.data().created || serverTimestamp()) : serverTimestamp(),
     modified: serverTimestamp()
-  }, { merge: true });
-  showToast('Shared With ' + (profile.displayName || profile.email || 'Friend'), 'success');
+  };
+  await setDoc(ref, payload, { merge: true });
+  if (!options.silent) showToast('Shared With ' + (profile.displayName || profile.email || 'Friend'), 'success');
+  return true;
+}
+
+function ensureNoteAccessWritable(access) {
+  if (!access?.id || access.grantedBy !== userId) return;
+  const updates = {};
+  if (access.role !== 'editor') updates.role = 'editor';
+  if (access.noteShared && access.directRole !== 'editor') updates.directRole = 'editor';
+  if (!access.noteShared && access.directRole) updates.directRole = deleteField();
+  if (!Object.keys(updates).length) return;
+  setDoc(doc(fsDb, 'noteAccess', access.id), {
+    ...updates,
+    modified: serverTimestamp()
+  }, { merge: true }).catch(err => console.warn('upgrade note access write permission:', err));
+}
+
+async function removeFolderScopeFromNoteAccess(noteId, folderId, targetUid) {
+  const note = notes[noteId];
+  if (!note || !folderId || !targetUid || !isOwnedNote(note)) return false;
+  const ref = doc(fsDb, 'noteAccess', noteAccessDocId(noteId, targetUid));
+  const snap = await getDoc(ref).catch(() => null);
+  if (!snap?.exists?.()) return true;
+  const access = normalizeNoteAccess(snap.id, snap.data() || {});
+  const folderShares = normalizeFolderShares(access);
+  delete folderShares[folderId];
+  const remainingFolderIds = Object.keys(folderShares);
+  if (access.noteShared || remainingFolderIds.length) {
+    const primaryFolderId = remainingFolderIds[0] || '';
+    await setDoc(ref, {
+      role: 'editor',
+      directRole: access.noteShared ? 'editor' : deleteField(),
+      noteShared: !!access.noteShared,
+      folderShares: remainingFolderIds.length ? folderShares : deleteField(),
+      sourceFolderId: primaryFolderId || deleteField(),
+      sourceFolderTitle: primaryFolderId ? (folderShares[primaryFolderId]?.title || 'Shared Folder') : deleteField(),
+      modified: serverTimestamp()
+    }, { merge: true });
+  } else {
+    await deleteDoc(ref);
+  }
   return true;
 }
 
 async function revokeNoteAccess(noteId, targetUid) {
   const note = notes[noteId];
   if (!note || !targetUid || !isOwnedNote(note)) return false;
-  await deleteDoc(doc(fsDb, 'noteAccess', noteAccessDocId(noteId, targetUid)));
+  const ref = doc(fsDb, 'noteAccess', noteAccessDocId(noteId, targetUid));
+  const snap = await getDoc(ref).catch(() => null);
+  if (!snap?.exists?.()) return true;
+  const access = normalizeNoteAccess(snap.id, snap.data() || {});
+  const folderShares = normalizeFolderShares(access);
+  if (Object.keys(folderShares).length) {
+    const primaryFolderId = Object.keys(folderShares)[0] || '';
+    await setDoc(ref, {
+      role: 'editor',
+      directRole: deleteField(),
+      noteShared: false,
+      folderShares,
+      sourceFolderId: primaryFolderId || deleteField(),
+      sourceFolderTitle: primaryFolderId ? (folderShares[primaryFolderId]?.title || 'Shared Folder') : deleteField(),
+      modified: serverTimestamp()
+    }, { merge: true });
+  } else {
+    await deleteDoc(ref);
+  }
   showToast('Access Revoked', 'success');
   return true;
 }
@@ -1489,7 +1614,11 @@ function listenOwnedNoteAccess() {
   unsubOwnedNoteAccess = onSnapshot(q, snap => {
     snap.docChanges().forEach(ch => {
       if (ch.type === 'removed') delete noteAccessById[ch.doc.id];
-      else noteAccessById[ch.doc.id] = normalizeNoteAccess(ch.doc.id, ch.doc.data() || {});
+      else {
+        const access = normalizeNoteAccess(ch.doc.id, ch.doc.data() || {});
+        noteAccessById[ch.doc.id] = access;
+        ensureNoteAccessWritable(access);
+      }
     });
     rebuildNoteAccessGroups();
     renderShareProfileList();
@@ -1512,7 +1641,15 @@ function listenSharedWithMe() {
         if (old?.noteId) removeSharedAccessNote(old.noteId);
         return;
       }
+      const previousAccess = noteAccessById[id];
       const access = normalizeNoteAccess(id, ch.doc.data() || {});
+      if (
+        previousAccess?.sourceFolderId &&
+        previousAccess.sourceFolderId !== access.sourceFolderId &&
+        _getSharedNoteFolder(access.noteId) === _sharedFolderLocalId(previousAccess.sourceFolderId)
+      ) {
+        _setSharedNoteFolder(access.noteId, null).catch(err => console.error('clear revoked shared folder placement:', err));
+      }
       noteAccessById[id] = access;
       myNoteAccessByNote[access.noteId] = access;
       loadSharedNoteFromAccess(access);
@@ -1533,30 +1670,56 @@ function renderShareProfileList() {
   if (!list || !panel) return;
   const profiles = friendArray();
   if (!profiles.length) {
-    list.innerHTML = '<div class="profile-empty">Add friends first, then share notes with viewer or editor access.</div>';
+    list.innerHTML = '<div class="profile-empty">Add friends first, then share notes or folders with write access.</div>';
     return;
   }
 
   const type = _shareCtx?.type || 'note';
-  if (type !== 'note') {
-    list.innerHTML = '<div class="profile-empty">Friend roles are available for notes. Folder link sharing still uses public folder links.</div>';
+  if (type === 'folder') {
+    const folder = folders[_shareCtx?.id];
+    if (!folder) {
+      list.innerHTML = '';
+      return;
+    }
+    const noteCount = Object.values(notes).filter(n => n.folderId === folder.id && isOwnedNote(n)).length;
+    const noteLabel = noteCount + ' note' + (noteCount === 1 ? '' : 's');
+    list.innerHTML = profiles.map(p => {
+      const shared = isFolderSharedWithProfile(folder, p);
+      const sub = shared ? ('Write access to ' + noteLabel) : ('Share write access to ' + noteLabel);
+      const button = shared
+        ? '<button class="modal-btn danger" data-revoke-folder-access="' + esc(p.uid) + '" type="button"><i class="fa-solid fa-user-minus" style="margin-right:6px;"></i>Revoke</button>'
+        : '<button class="modal-btn primary" data-share-friend="' + esc(p.uid) + '" type="button"><i class="fa-solid fa-paper-plane" style="margin-right:6px;"></i>Share</button>';
+      return '<div class="profile-row">' +
+        renderProfileAvatar(p) +
+        '<div class="profile-main"><div class="profile-name">' + esc(p.displayName) + '</div><div class="profile-sub">' + esc(sub) + '</div></div>' +
+        button +
+      '</div>';
+    }).join('');
+
+    list.querySelectorAll('[data-share-friend]').forEach(btn => {
+      btn.addEventListener('click', () => shareWithProfile(btn.dataset.shareFriend));
+    });
+    list.querySelectorAll('[data-revoke-folder-access]').forEach(btn => {
+      btn.addEventListener('click', () => unshareWithProfile(btn.dataset.revokeFolderAccess));
+    });
     return;
   }
 
   list.innerHTML = profiles.map(p => {
-    const access = (noteAccessByNote[_shareCtx?.id] || []).find(item => item.userUid === p.uid);
-    const currentRole = access?.role || 'viewer';
-    const sub = access ? ('Access: ' + currentRole) : 'No direct access';
-    const button = access
+    const access = noteAccessForProfile(_shareCtx?.id, p);
+    const hasFolderAccess = !!Object.keys(normalizeFolderShares(access)).length;
+    const hasDirectAccess = !!access?.noteShared;
+    const sub = hasDirectAccess
+      ? ('Write access' + (hasFolderAccess ? ' + folder access' : ''))
+      : (hasFolderAccess ? 'Write access via folder' : 'No access');
+    const button = hasDirectAccess
       ? '<button class="modal-btn danger" data-revoke-note-access="' + esc(p.uid) + '" type="button"><i class="fa-solid fa-user-minus" style="margin-right:6px;"></i>Revoke</button>'
-      : '<button class="modal-btn primary" data-share-friend="' + esc(p.uid) + '" type="button"><i class="fa-solid fa-paper-plane" style="margin-right:6px;"></i>Share</button>';
+      : (hasFolderAccess
+        ? '<button class="modal-btn" type="button" disabled><i class="fa-solid fa-check" style="margin-right:6px;"></i>Shared</button>'
+        : '<button class="modal-btn primary" data-share-friend="' + esc(p.uid) + '" type="button"><i class="fa-solid fa-paper-plane" style="margin-right:6px;"></i>Share</button>');
     return '<div class="profile-row">' +
       renderProfileAvatar(p) +
       '<div class="profile-main"><div class="profile-name">' + esc(p.displayName) + '</div><div class="profile-sub">' + esc(sub) + '</div></div>' +
-      '<select class="settings-select" data-share-role="' + esc(p.uid) + '" aria-label="Access role">' +
-        '<option value="viewer"' + (currentRole === 'viewer' ? ' selected' : '') + '>Viewer</option>' +
-        '<option value="editor"' + (currentRole === 'editor' ? ' selected' : '') + '>Editor</option>' +
-      '</select>' +
       button +
     '</div>';
   }).join('');
@@ -1566,12 +1729,6 @@ function renderShareProfileList() {
   });
   list.querySelectorAll('[data-revoke-note-access]').forEach(btn => {
     btn.addEventListener('click', () => unshareWithProfile(btn.dataset.revokeNoteAccess));
-  });
-  list.querySelectorAll('[data-share-role]').forEach(select => {
-    select.addEventListener('change', () => {
-      const access = (noteAccessByNote[_shareCtx?.id] || []).find(item => item.userUid === select.dataset.shareRole);
-      if (access) shareWithProfile(select.dataset.shareRole);
-    });
   });
 }
 
@@ -1708,13 +1865,13 @@ async function shareFolderWithProfile(folderId, targetUid) {
   const folderShared = await writeFolderProfileShare(folderId, targetUid);
   if (!folderShared) return false;
   const context = { sourceFolderId: folderId, sourceFolderTitle: folder.title || 'Shared Folder' };
-  const grants = await Promise.all(folderNotes.map(n => shareNoteWithProfile(n.id, targetUid, 'share', context, { silent: true, notify: false })));
+  const friend = friends[targetUid] || linkedProfileForUid(targetUid);
+  const grants = await Promise.all(folderNotes.map(n => Promise.all([
+    shareNoteWithFriend(n.id, friend, 'editor', context, { silent: true }),
+    shareNoteWithProfile(n.id, targetUid, 'share', context, { silent: true, notify: false })
+  ]).then(results => results.every(Boolean))));
   if (grants.some(ok => !ok)) return false;
-  const folderNotice = await writeFolderShareNotification(folderId, targetUid, folderNotes.map(n => n.id));
-  if (!folderNotice.notified && !folderNotes.length) return false;
-  if (!folderNotice.notified && folderNotes.length) {
-    await Promise.all(folderNotes.map(n => shareNoteWithProfile(n.id, targetUid, 'share', context, { silent: true })));
-  }
+  await writeFolderShareNotification(folderId, targetUid, folderNotes.map(n => n.id));
   renderSidebar();
   return true;
 }
@@ -1726,16 +1883,20 @@ async function shareWithProfile(targetUid) {
     showToast('Only The Owner Can Share This Note', 'error');
     return;
   }
+  if (_shareCtx.type === 'folder' && folders[_shareCtx.id] && !isOwnedFolder(folders[_shareCtx.id])) {
+    showToast('Only The Owner Can Share This Folder', 'error');
+    return;
+  }
   try {
-    if (_shareCtx.type !== 'note') {
-      showToast('Friend role sharing is for notes', 'error');
-      return;
+    let ok = false;
+    if (_shareCtx.type === 'note') {
+      ok = await shareNoteWithFriend(_shareCtx.id, friends[targetUid], 'editor');
+    } else {
+      ok = await shareFolderWithProfile(_shareCtx.id, targetUid);
     }
-    const roleSelect = [...document.querySelectorAll('[data-share-role]')].find(select => select.dataset.shareRole === targetUid);
-    const role = roleSelect?.value === 'editor' ? 'editor' : 'viewer';
-    const ok = await shareNoteWithFriend(_shareCtx.id, friends[targetUid], role);
     if (!ok) { showToast('Could Not Share With ' + targetName, 'error'); return; }
     renderShareProfileList();
+    if (_shareCtx.type === 'folder') showToast('Folder Shared With ' + targetName, 'success');
   } catch (err) {
     console.error('share with profile:', err);
     showToast('Could Not Share With ' + targetName, 'error');
@@ -1748,10 +1909,11 @@ async function unshareWithProfile(targetUid) {
   try {
     const ok = _shareCtx.type === 'note'
       ? await revokeNoteAccess(_shareCtx.id, targetUid)
-      : false;
+      : await removeProfileFolderShare(_shareCtx.id, targetUid);
     if (!ok) { showToast('Could Not Unshare With ' + targetName, 'error'); return; }
     renderShareProfileList();
     renderSidebar();
+    if (_shareCtx.type === 'folder') showToast('Folder Access Revoked', 'success');
   } catch (err) {
     console.error('unshare with profile:', err);
     showToast('Could Not Unshare With ' + targetName, 'error');
