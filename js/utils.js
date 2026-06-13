@@ -1,0 +1,575 @@
+/* Utility and profile normalization helpers - extracted from index.original.html. */
+function normalizeEmail(email) {
+  return String(email || '').trim().toLowerCase();
+}
+
+function emailProfileDocId(email) {
+  return encodeURIComponent(normalizeEmail(email)).replace(/\./g, '%2E');
+}
+
+function emailProfileKey(email) {
+  const id = emailProfileDocId(email);
+  return id ? 'email_' + id : '';
+}
+
+function _linkedProfilesStorageKey() {
+  return 'notas_linked_profiles_' + userId;
+}
+
+function _notificationStateStorageKey() {
+  return 'notas_read_notifications_' + userId;
+}
+
+function _noteAlarmsStorageKey() {
+  return 'notas_note_alarms_' + userId;
+}
+
+function _readLinkedProfilesFromLocal() {
+  if (!userId) return {};
+  try {
+    const raw = localStorage.getItem(_linkedProfilesStorageKey());
+    const parsed = raw ? JSON.parse(raw) : {};
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch (err) {
+    console.error('read linked profiles local:', err);
+    return {};
+  }
+}
+
+function _writeLinkedProfilesToLocal() {
+  if (!userId) return;
+  try {
+    const keys = Object.keys(linkedProfiles);
+    if (keys.length) localStorage.setItem(_linkedProfilesStorageKey(), JSON.stringify(linkedProfiles));
+    else localStorage.removeItem(_linkedProfilesStorageKey());
+  } catch (err) {
+    console.error('write linked profiles local:', err);
+  }
+}
+
+function _readNotificationStateFromLocal() {
+  if (!userId) return {};
+  try {
+    const raw = localStorage.getItem(_notificationStateStorageKey());
+    const parsed = raw ? JSON.parse(raw) : {};
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch (err) {
+    console.error('read notification local:', err);
+    return {};
+  }
+}
+
+function _writeNotificationStateToLocal() {
+  if (!userId) return;
+  try {
+    const keys = Object.keys(readNotifications).filter(key => readNotifications[key]);
+    if (keys.length) localStorage.setItem(_notificationStateStorageKey(), JSON.stringify(keys.reduce((acc, key) => {
+      acc[key] = true;
+      return acc;
+    }, {})));
+    else localStorage.removeItem(_notificationStateStorageKey());
+  } catch (err) {
+    console.error('write notification local:', err);
+  }
+}
+
+function _mergeNotificationState(...states) {
+  const out = {};
+  states.forEach(state => {
+    Object.keys(state || {}).forEach(id => { if (state[id]) out[id] = true; });
+  });
+  return out;
+}
+
+function normalizeAlarmAt(value) {
+  if (!value) return '';
+  const date = value?.toDate?.() || new Date(value);
+  return date instanceof Date && Number.isFinite(date.getTime()) ? date.toISOString() : '';
+}
+
+function _readNoteAlarmsFromLocal() {
+  if (!userId) return {};
+  try {
+    const raw = localStorage.getItem(_noteAlarmsStorageKey());
+    const parsed = raw ? JSON.parse(raw) : {};
+    const out = {};
+    Object.keys(parsed || {}).forEach(id => {
+      const alarmAt = normalizeAlarmAt(parsed[id]);
+      if (alarmAt) out[id] = alarmAt;
+    });
+    return out;
+  } catch (err) {
+    console.error('read note alarms local:', err);
+    return {};
+  }
+}
+
+function _writeNoteAlarmsToLocal() {
+  if (!userId) return;
+  try {
+    const keys = Object.keys(noteAlarms).filter(id => normalizeAlarmAt(noteAlarms[id]));
+    if (keys.length) localStorage.setItem(_noteAlarmsStorageKey(), JSON.stringify(keys.reduce((acc, id) => {
+      acc[id] = normalizeAlarmAt(noteAlarms[id]);
+      return acc;
+    }, {})));
+    else localStorage.removeItem(_noteAlarmsStorageKey());
+  } catch (err) {
+    console.error('write note alarms local:', err);
+  }
+}
+
+function _readNoteAlarms(data) {
+  const raw = data?.noteAlarms && typeof data.noteAlarms === 'object' ? data.noteAlarms : {};
+  const out = {};
+  Object.keys(raw).forEach(id => {
+    const alarmAt = normalizeAlarmAt(raw[id]);
+    if (alarmAt) out[id] = alarmAt;
+  });
+  return out;
+}
+
+function _mergeNoteAlarms(...states) {
+  const out = {};
+  states.forEach(state => {
+    Object.keys(state || {}).forEach(id => {
+      const alarmAt = normalizeAlarmAt(state[id]);
+      if (!alarmAt) return;
+      if (!out[id] || new Date(alarmAt) > new Date(out[id])) out[id] = alarmAt;
+    });
+  });
+  return out;
+}
+
+function normalizePhotoURL(value) {
+  const url = String(value || '').trim();
+  if (!url) return '';
+  if (/^(https?:|data:image\/)/i.test(url)) return url;
+  return '';
+}
+
+function normalizePhotoURLList(...values) {
+  const out = [];
+  const add = value => {
+    if (Array.isArray(value)) {
+      value.forEach(add);
+      return;
+    }
+    const url = normalizePhotoURL(value);
+    if (url && !out.includes(url)) out.push(url);
+  };
+  values.forEach(add);
+  return out;
+}
+
+function avatarURLVariants(url) {
+  const src = normalizePhotoURL(url);
+  if (!src) return [];
+  const out = [src];
+  if (/googleusercontent\.com/i.test(src)) {
+    const sized = src.replace(/=s\d+(-c)?(?=($|[&#?]))/i, '=s256-c');
+    if (sized !== src) out.push(sized);
+    if (!/[?&]sz=\d+/i.test(src)) out.push(src + (src.includes('?') ? '&' : '?') + 'sz=256');
+  }
+  return [...new Set(out)];
+}
+
+function avatarSourcesForProfile(profile) {
+  return [...new Set(normalizePhotoURLList(
+    profile?.photoURL,
+    profile?.providerPhotoURL,
+    profile?.photoURLCandidates
+  ).flatMap(avatarURLVariants))];
+}
+
+function photoCandidatesFromUser(user) {
+  return normalizePhotoURLList(
+    user?.photoURL,
+    (user?.providerData || []).map(provider => provider?.photoURL)
+  );
+}
+
+function profilePhotoFromUser(user) {
+  return photoCandidatesFromUser(user)[0] || '';
+}
+
+function profilePhotoFields(...sources) {
+  const candidates = normalizePhotoURLList(...sources);
+  return {
+    photoURL: candidates[0] || '',
+    photoURLCandidates: candidates
+  };
+}
+
+function normalizeLinkedProfile(key, value) {
+  if (!value || typeof value !== 'object') return null;
+  const email = normalizeEmail(value.email || '');
+  const uid = value.uid || key || (email ? emailProfileKey(email) : '');
+  if (!uid) return null;
+  const photos = profilePhotoFields(value.photoURL, value.providerPhotoURL, value.photoURLCandidates);
+  return {
+    uid,
+    displayName: value.displayName || value.name || (email ? email.split('@')[0] : 'Linked Profile'),
+    email,
+    photoURL: photos.photoURL,
+    photoURLCandidates: photos.photoURLCandidates,
+    linkedAt: value.linkedAt || '',
+    emailOnly: !!value.emailOnly || uid === emailProfileKey(email)
+  };
+}
+
+function profileNameFromUser(user) {
+  return user?.displayName || (user?.email ? user.email.split('@')[0] : 'Notas User');
+}
+
+function profileInitials(profile) {
+  const name = profile?.displayName || profile?.name || 'U';
+  return name.trim().split(/\s+/).slice(0, 2).map(p => p[0]).join('').toUpperCase() || 'U';
+}
+
+function handleAvatarImageError(img) {
+  if (!img) return;
+  let sources = [];
+  try { sources = JSON.parse(img.dataset.avatarSrcs || '[]'); }
+  catch (err) { sources = []; }
+  const current = img.currentSrc || img.src || '';
+  let next = '';
+  while (sources.length && !next) {
+    const candidate = normalizePhotoURL(sources.shift());
+    if (candidate && candidate !== current) next = candidate;
+  }
+  if (next) {
+    img.dataset.avatarSrcs = JSON.stringify(sources);
+    img.src = next;
+    return;
+  }
+  img.remove();
+}
+window.handleAvatarImageError = handleAvatarImageError;
+
+function renderAvatar(profile, className) {
+  const initials = esc(profileInitials(profile));
+  const sources = avatarSourcesForProfile(profile);
+  if (sources.length) {
+    return '<span class="' + className + '">' + initials + '<img src="' + esc(sources[0]) + '" alt="" referrerpolicy="no-referrer" data-avatar-srcs="' + esc(JSON.stringify(sources.slice(1))) + '" onerror="window.handleAvatarImageError(this)" /></span>';
+  }
+  return '<span class="' + className + '">' + initials + '</span>';
+}
+
+function renderProfileAvatar(profile) {
+  return renderAvatar(profile, 'profile-avatar');
+}
+
+function updateUserAvatar(user) {
+  const av = document.getElementById('user-avatar');
+  if (!av) return;
+  const sources = avatarSourcesForProfile({
+    photoURL: profilePhotoFromUser(user),
+    photoURLCandidates: photoCandidatesFromUser(user)
+  });
+  const loadNext = () => {
+    const current = av.currentSrc || av.src || '';
+    let next = '';
+    while (sources.length && !next) {
+      const candidate = normalizePhotoURL(sources.shift());
+      if (candidate && candidate !== current) next = candidate;
+    }
+    if (next) {
+      av.src = next;
+      av.style.display = '';
+    } else {
+      av.removeAttribute('src');
+      av.style.display = 'none';
+    }
+  };
+  av.referrerPolicy = 'no-referrer';
+  av.onerror = loadNext;
+  if (sources.length) loadNext();
+  else {
+    av.removeAttribute('src');
+    av.style.display = 'none';
+  }
+}
+
+async function ensureProfileDocument(user) {
+  if (!userId) return;
+  let existing = {};
+  try {
+    const snap = await getDoc(_getUserDocRef());
+    existing = snap.data() || {};
+  } catch (err) {
+    console.error('read profile:', err);
+  }
+
+  const existingProfile = existing.profile || {};
+  const email = normalizeEmail(user.email || existingProfile.email || '');
+  const photos = profilePhotoFields(photoCandidatesFromUser(user), existingProfile.photoURL, existingProfile.photoURLCandidates);
+  currentProfile = {
+    uid: user.uid,
+    displayName: profileNameFromUser(user),
+    photoURL: photos.photoURL,
+    photoURLCandidates: photos.photoURLCandidates,
+    email
+  };
+
+  try {
+    const userPayload = {
+      uid: user.uid,
+      displayName: currentProfile.displayName || '',
+      email: user.email || existing.email || existingProfile.email || '',
+      emailLower: email,
+      photoURL: currentProfile.photoURL || '',
+      lastLogin: serverTimestamp(),
+      profile: { ...currentProfile, updated: serverTimestamp() }
+    };
+    if (!existing.created) userPayload.created = serverTimestamp();
+    await setDoc(_getUserDocRef(), userPayload, { merge: true });
+    if (email) {
+      await setDoc(doc(fsDb, 'profileEmails', emailProfileDocId(email)), {
+        uid: user.uid,
+        email,
+        displayName: currentProfile.displayName,
+        photoURL: currentProfile.photoURL,
+        photoURLCandidates: currentProfile.photoURLCandidates,
+        updated: serverTimestamp()
+      }, { merge: true });
+    }
+  } catch (err) {
+    console.error('ensure profile:', err);
+  }
+
+  renderProfileConnectionUI();
+  refreshOpenSidebarPage('friends');
+}
+
+function _readLinkedProfiles(data) {
+  const raw = data?.linkedProfiles && typeof data.linkedProfiles === 'object' ? data.linkedProfiles : {};
+  const out = {};
+  Object.keys(raw).forEach(uid => {
+    const profile = normalizeLinkedProfile(uid, raw[uid]);
+    if (!profile || profile.uid === userId) return;
+    out[profile.uid] = profile;
+  });
+  return out;
+}
+
+function mergeLinkedProfileRecords(...records) {
+  const normalized = records.map(record => normalizeLinkedProfile(record?.uid, record)).filter(Boolean);
+  if (!normalized.length) return null;
+  const merged = normalized.reduce((acc, profile) => {
+    const photos = profilePhotoFields(profile.photoURL, profile.photoURLCandidates, acc.photoURL, acc.photoURLCandidates);
+    const email = normalizeEmail(profile.email || acc.email || '');
+    const profileEmailOnly = !!profile.emailOnly || profile.uid === emailProfileKey(profile.email);
+    const accEmailOnly = !!acc.emailOnly || acc.uid === emailProfileKey(acc.email);
+    const uid = (!profileEmailOnly && profile.uid) || (!accEmailOnly && acc.uid) || profile.uid || acc.uid;
+    return {
+      ...acc,
+      ...profile,
+      uid,
+      displayName: (!profileEmailOnly && profile.displayName) || acc.displayName || profile.displayName,
+      email,
+      photoURL: photos.photoURL,
+      photoURLCandidates: photos.photoURLCandidates,
+      linkedAt: profile.linkedAt || acc.linkedAt || '',
+      emailOnly: !!(uid && email && uid === emailProfileKey(email))
+    };
+  }, {});
+  return normalizeLinkedProfile(merged.uid, merged);
+}
+
+function mergeLinkedProfileMaps(...maps) {
+  const out = {};
+  maps.forEach(map => {
+    Object.values(map || {}).forEach(profile => {
+      const normalized = normalizeLinkedProfile(profile?.uid, profile);
+      if (!normalized || normalized.uid === userId) return;
+      const existingKey = Object.keys(out).find(key => profileMatchesLink(out[key], normalized));
+      const key = existingKey || normalized.uid;
+      const merged = mergeLinkedProfileRecords(out[key], normalized);
+      if (existingKey && existingKey !== merged.uid) delete out[existingKey];
+      out[merged.uid] = merged;
+    });
+  });
+  return out;
+}
+
+function _readNotificationState(data) {
+  const raw = data?.readNotifications && typeof data.readNotifications === 'object' ? data.readNotifications : {};
+  const out = {};
+  Object.keys(raw).forEach(id => { if (raw[id]) out[id] = true; });
+  return out;
+}
+
+function applyUserProfileData(data) {
+  if (data?.profile) {
+    const photos = profilePhotoFields(
+      currentProfile?.photoURL,
+      currentProfile?.photoURLCandidates,
+      data.profile.photoURL,
+      data.profile.photoURLCandidates
+    );
+    currentProfile = {
+      ...(data.profile || {}),
+      ...(currentProfile || {}),
+      photoURL: photos.photoURL,
+      photoURLCandidates: photos.photoURLCandidates
+    };
+  }
+  linkedProfiles = mergeLinkedProfileMaps(_readLinkedProfilesFromLocal(), _readLinkedProfiles(data));
+  _writeLinkedProfilesToLocal();
+  scheduleLinkedProfileRefresh();
+  const remoteReadNotifications = _readNotificationState(data);
+  const localReadNotifications = _readNotificationStateFromLocal();
+  readNotifications = _mergeNotificationState(remoteReadNotifications, localReadNotifications);
+  _writeNotificationStateToLocal();
+  const localOnly = {};
+  Object.keys(localReadNotifications).forEach(id => {
+    if (!remoteReadNotifications[id]) localOnly[id] = true;
+  });
+  if (Object.keys(localOnly).length) {
+    setDoc(_getUserDocRef(), { readNotifications: localOnly }, { merge: true })
+      .catch(err => console.error('sync local notification reads:', err));
+  }
+  const remoteNoteAlarms = _readNoteAlarms(data);
+  const localNoteAlarms = _readNoteAlarmsFromLocal();
+  noteAlarms = _mergeNoteAlarms(remoteNoteAlarms, localNoteAlarms);
+  _writeNoteAlarmsToLocal();
+  const localOnlyAlarms = {};
+  Object.keys(localNoteAlarms).forEach(id => {
+    if (!remoteNoteAlarms[id]) localOnlyAlarms[id] = localNoteAlarms[id];
+  });
+  if (Object.keys(localOnlyAlarms).length) {
+    setDoc(_getUserDocRef(), { noteAlarms: localOnlyAlarms }, { merge: true })
+      .catch(err => console.error('sync local note alarms:', err));
+  }
+  renderProfileConnectionUI();
+  renderProfileLinkRequestsUI();
+  renderShareProfileList();
+  renderNotificationButton();
+  renderAlarmButton();
+  if (document.getElementById('notifications-modal')?.classList.contains('open')) renderNotificationsList();
+  if (document.getElementById('alarms-modal')?.classList.contains('open')) renderAlarmsList();
+  refreshOpenSidebarPage('friends');
+  refreshOpenSidebarPage('notifications');
+  refreshOpenSidebarPage('alarms');
+}
+
+function scheduleLinkedProfileRefresh() {
+  clearTimeout(_linkedProfileRefreshTimer);
+  _linkedProfileRefreshTimer = setTimeout(refreshLinkedProfileDetails, 300);
+}
+
+async function refreshLinkedProfileDetails() {
+  if (_refreshingLinkedProfiles || !userId) return;
+  const candidates = Object.values(linkedProfiles)
+    .filter(profile => profile?.email);
+  if (!candidates.length) return;
+
+  _refreshingLinkedProfiles = true;
+  const updates = {};
+  let changed = false;
+  try {
+    for (const profile of candidates) {
+      const email = normalizeEmail(profile.email);
+      if (!email) continue;
+      const snap = await getDoc(doc(fsDb, 'profileEmails', emailProfileDocId(email)));
+      if (!snap.exists()) continue;
+      const data = snap.data() || {};
+      if (!data.uid || data.uid === userId) continue;
+      const photos = profilePhotoFields(data.photoURL, data.photoURLCandidates, profile.photoURL, profile.photoURLCandidates);
+      const next = {
+        ...profile,
+        uid: data.uid,
+        email: normalizeEmail(data.email || email),
+        displayName: data.displayName || profile.displayName || email.split('@')[0],
+        photoURL: photos.photoURL,
+        photoURLCandidates: photos.photoURLCandidates,
+        emailOnly: false
+      };
+      const oldUid = profile.uid;
+      if (oldUid !== next.uid) {
+        delete linkedProfiles[oldUid];
+        updates[oldUid] = deleteField();
+        changed = true;
+      }
+      if (JSON.stringify(linkedProfiles[next.uid] || {}) !== JSON.stringify(next)) {
+        linkedProfiles[next.uid] = next;
+        updates[next.uid] = next;
+        changed = true;
+      }
+    }
+    if (!changed) return;
+    _writeLinkedProfilesToLocal();
+    renderProfileConnectionUI();
+    renderShareProfileList();
+    renderSidebar();
+    if (Object.keys(updates).length) {
+      await setDoc(_getUserDocRef(), { linkedProfiles: updates }, { merge: true });
+    }
+  } catch (err) {
+    console.warn('refresh linked profiles:', err);
+  } finally {
+    _refreshingLinkedProfiles = false;
+  }
+}
+
+function hasProfileShareMetadata(note) {
+  const sharedWith = note?.sharedWith && typeof note.sharedWith === 'object' ? note.sharedWith : {};
+  return Object.keys(sharedWith).length > 0 || (Array.isArray(note?.sharedAccessKeys) && note.sharedAccessKeys.length > 0);
+}
+
+function normalizePublicFolderIds(value) {
+  return Array.isArray(value) ? [...new Set(value.filter(id => typeof id === 'string' && id))] : [];
+}
+
+function normalizeSharedWith(value) {
+  return value && typeof value === 'object' ? value : {};
+}
+
+function normalizeSharedAccessKeys(value) {
+  return Array.isArray(value) ? [...new Set(value.filter(Boolean))] : [];
+}
+
+function noteLinkPublicFromData(data) {
+  if (typeof data?.linkPublic === 'boolean') return data.linkPublic;
+  return !!data?.public;
+}
+
+function computeEffectiveNotePublic(note) {
+  return !!(note?.linkPublic || normalizePublicFolderIds(note?.publicFolderIds).length);
+}
+
+function normalizePinnedAt(value) {
+  if (!value) return '';
+  const date = value?.toDate?.() || new Date(value);
+  if (date instanceof Date && Number.isFinite(date.getTime())) return date.toISOString();
+  return '';
+}
+
+function hydrateNoteShareState(data, base = {}) {
+  const sharedWith = normalizeSharedWith(data?.sharedWith);
+  const sharedAccessKeys = normalizeSharedAccessKeys(data?.sharedAccessKeys);
+  const publicFolderIds = normalizePublicFolderIds(data?.publicFolderIds);
+  const linkPublic = noteLinkPublicFromData(data);
+  const pinnedAt = normalizePinnedAt(_hasOwn(base, 'pinnedAt') ? base.pinnedAt : data?.pinnedAt);
+  const pinScope = pinnedAt ? ((_hasOwn(base, 'pinScope') ? base.pinScope : data?.pinScope) === 'minor' ? 'minor' : 'major') : '';
+  return {
+    ...base,
+    public: !!data?.public,
+    linkPublic,
+    publicFolderIds,
+    sharedWith,
+    sharedAccessKeys,
+    pinnedAt,
+    pinScope,
+    mentionedUids: Array.isArray(data?.mentionedUids) ? data.mentionedUids : []
+  };
+}
+
+function ensureOwnedDirectShareReadable(noteId) {
+  const note = notes[noteId];
+  if (!note) return;
+  note.public = computeEffectiveNotePublic(note);
+  setDoc(doc(fsDb, 'notes', noteId), { public: note.public }, { merge: true })
+    .catch(err => console.error('repair direct share access:', err));
+}
+

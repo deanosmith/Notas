@@ -10,14 +10,6 @@ service cloud.firestore {
       return signedIn() && request.auth.uid == uid;
     }
 
-    function requestId(fromUid, toUid) {
-      return fromUid + "_" + toUid;
-    }
-
-    function friendRequestPath(fromUid, toUid) {
-      return /databases/$(database)/documents/friendRequests/$(requestId(fromUid, toUid));
-    }
-
     function noteAccessId(noteId, uid) {
       return noteId + "_" + uid;
     }
@@ -58,13 +50,7 @@ service cloud.firestore {
         allow read: if isSelf(uid);
 
         allow create, update: if isSelf(uid)
-          || (
-            signedIn()
-            && request.auth.uid == friendUid
-            && request.resource.data.uid == request.auth.uid
-            && exists(friendRequestPath(uid, friendUid))
-            && get(friendRequestPath(uid, friendUid)).data.status == "pending"
-          );
+          && request.resource.data.uid == friendUid;
 
         allow delete: if isSelf(uid);
       }
@@ -88,19 +74,11 @@ service cloud.firestore {
         && request.resource.data.status == "pending";
 
       allow update: if signedIn()
+        && resource.data.status == "pending"
         && request.resource.data.fromUid == resource.data.fromUid
         && request.resource.data.toUid == resource.data.toUid
-        && (
-          (
-            resource.data.toUid == request.auth.uid
-            && request.resource.data.status in ["accepted", "rejected"]
-          )
-          || (
-            resource.data.fromUid == request.auth.uid
-            && resource.data.status == "rejected"
-            && request.resource.data.status == "pending"
-          )
-        );
+        && resource.data.toUid == request.auth.uid
+        && request.resource.data.status in ["accepted", "rejected"];
 
       allow delete: if signedIn()
         && (resource.data.fromUid == request.auth.uid || resource.data.toUid == request.auth.uid);
