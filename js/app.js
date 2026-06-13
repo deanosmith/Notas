@@ -1,0 +1,596 @@
+import * as firebase from './firebase.js';
+
+Object.assign(window, firebase);
+
+// Keep the extracted sections in the original shared browser scope while app.js
+// owns Firebase module imports and startup sequencing.
+const sectionScripts = [
+  './state.js',
+  './utils.js',
+  './firestore.js',
+  './notes.js',
+  './folders.js',
+  './editor.js',
+  './ui.js',
+  './sharing.js',
+  './auth.js'
+];
+
+function loadSectionScript(src) {
+  return new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = new URL(src, import.meta.url).href;
+    script.async = false;
+    script.onload = resolve;
+    script.onerror = () => reject(new Error('Failed to load ' + src));
+    document.head.appendChild(script);
+  });
+}
+
+if (window.marked?.setOptions) {
+  window.marked.setOptions({ gfm: true, breaks: true });
+}
+
+for (const src of sectionScripts) {
+  await loadSectionScript(src);
+}
+
+showEditorView(false);
+
+document.getElementById('drawer-btn').addEventListener('click',     toggleDrawer);
+document.getElementById('mob-logo-btn').addEventListener('click',   toggleDrawer);
+document.getElementById('sidebar-logo-btn').addEventListener('click', toggleSidebarFromLogo);
+document.getElementById('sidebar').addEventListener('click', () => { if (sidebarMinimized && !isMobile()) setSidebarMinimized(false); });
+document.querySelectorAll('[data-sidebar-view]').forEach(btn => {
+  btn.addEventListener('click', () => setSidebarView(btn.dataset.sidebarView));
+});
+document.getElementById('mob-new-btn').addEventListener('click',    openModal);
+document.getElementById('google-signin-btn').addEventListener('click', signInWithGoogle);
+document.getElementById('signout-btn').addEventListener('click', () => {
+  closeTransientSurfaces();
+  signOut(auth);
+});
+document.getElementById('notifications-close').addEventListener('click', () => document.getElementById('notifications-modal').classList.remove('open'));
+document.getElementById('notifications-mark-read').addEventListener('click', markAllNotificationsRead);
+document.getElementById('notifications-modal').addEventListener('click', e => { if (e.target === e.currentTarget) document.getElementById('notifications-modal').classList.remove('open'); });
+document.getElementById('alarms-close').addEventListener('click', () => document.getElementById('alarms-modal').classList.remove('open'));
+document.getElementById('alarms-modal').addEventListener('click', e => { if (e.target === e.currentTarget) document.getElementById('alarms-modal').classList.remove('open'); });
+document.getElementById('alarm-save').addEventListener('click', saveNoteAlarm);
+document.getElementById('alarm-clear').addEventListener('click', () => clearNoteAlarm());
+document.getElementById('alarm-cancel').addEventListener('click', closeNoteAlarmModal);
+document.getElementById('note-alarm-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeNoteAlarmModal(); });
+['alarm-date-input', 'alarm-time-input'].forEach(id => {
+  document.getElementById(id).addEventListener('keydown', e => {
+    if (e.key === 'Enter') saveNoteAlarm();
+    if (e.key === 'Escape') closeNoteAlarmModal();
+  });
+  document.getElementById(id).addEventListener('input', updateAlarmSummary);
+});
+document.querySelectorAll('[data-alarm-date-preset]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const date = new Date();
+    if (btn.dataset.alarmDatePreset === 'tomorrow') date.setDate(date.getDate() + 1);
+    if (btn.dataset.alarmDatePreset === 'next-week') date.setDate(date.getDate() + 7);
+    document.getElementById('alarm-date-input').value = localDateParts(date).date;
+    updateAlarmSummary();
+  });
+});
+document.querySelectorAll('[data-alarm-time-preset]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.getElementById('alarm-time-input').value = btn.dataset.alarmTimePreset;
+    updateAlarmSummary();
+  });
+});
+document.getElementById('mention-share-confirm').addEventListener('click', () => closeMentionShareModal(true));
+document.getElementById('mention-share-cancel').addEventListener('click', () => closeMentionShareModal(false));
+document.getElementById('mention-share-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeMentionShareModal(false); });
+document.getElementById('connect-profile-btn')?.addEventListener('click', connectProfileByEmail);
+document.getElementById('connect-profile-email-input')?.addEventListener('keydown', e => {
+  if (e.key === 'Enter') connectProfileByEmail();
+});
+document.getElementById('profile-link-approve').addEventListener('click', approvePendingProfileLink);
+document.getElementById('profile-link-deny').addEventListener('click', denyPendingProfileLink);
+document.getElementById('profile-link-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeProfileLinkApproval(); });
+document.getElementById('share-btn').addEventListener('click',       () => openShareModal('note', activeId));
+document.getElementById('share-link-toggle').addEventListener('change', e => setShareLinkEnabled(e.target.checked));
+document.getElementById('copy-link-btn').addEventListener('click',   copyShareLink);
+document.getElementById('native-share-btn').addEventListener('click', nativeShare);
+document.getElementById('share-close').addEventListener('click',     () => document.getElementById('share-modal').classList.remove('open'));
+document.getElementById('share-modal').addEventListener('click',     e => { if (e.target === e.currentTarget) document.getElementById('share-modal').classList.remove('open'); });
+document.getElementById('new-folder-btn')?.addEventListener('click', openFolderModal);
+document.getElementById('folder-modal-create').addEventListener('click', confirmCreateFolder);
+document.getElementById('folder-modal-cancel').addEventListener('click', closeFolderModal);
+document.getElementById('folder-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeFolderModal(); });
+document.getElementById('folder-modal-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') confirmCreateFolder();
+  if (e.key === 'Escape') closeFolderModal();
+});
+document.getElementById('delete-modal-confirm').addEventListener('click', confirmDelete);
+document.getElementById('delete-modal-cancel').addEventListener('click', closeDeleteModal);
+document.getElementById('delete-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeDeleteModal(); });
+document.getElementById('link-modal-insert').addEventListener('click', _confirmInsertLink);
+document.getElementById('link-modal-cancel').addEventListener('click', () => document.getElementById('link-modal').classList.remove('open'));
+document.getElementById('link-modal').addEventListener('click', e => { if (e.target === e.currentTarget) document.getElementById('link-modal').classList.remove('open'); });
+document.getElementById('link-modal-url').addEventListener('keydown', e => {
+  if (e.key === 'Enter') _confirmInsertLink();
+  if (e.key === 'Escape') document.getElementById('link-modal').classList.remove('open');
+});
+document.getElementById('move-modal-cancel').addEventListener('click', closeMoveModal);
+document.getElementById('move-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeMoveModal(); });
+document.getElementById('folder-color-input').addEventListener('change', e => {
+  const folderId = e.target.dataset.folderId;
+  delete e.target.dataset.folderId;
+  if (folderId) setFolderIconColor(folderId, e.target.value);
+});
+document.getElementById('drawer-overlay').addEventListener('click', closeDrawer);
+document.getElementById('new-note-btn')?.addEventListener('click',   openModal);
+document.getElementById('empty-cta-btn').addEventListener('click',  openModal);
+document.getElementById('modal-create').addEventListener('click',   confirmCreate);
+document.getElementById('modal-cancel').addEventListener('click',   closeModal);
+document.getElementById('modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeModal(); });
+document.getElementById('modal-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') confirmCreate();
+  if (e.key === 'Escape') closeModal();
+});
+
+window.editorEl = document.getElementById('editor');
+const editorEl = window.editorEl;
+
+editorEl.addEventListener('beforeinput', e => {
+  if (e.inputType === 'insertParagraph' || e.inputType === 'insertLineBreak') {
+    _capitalizeNext = true;
+  }
+});
+
+editorEl.addEventListener('input', e => {
+  if (_capitalizeNext && e.inputType === 'insertText' && e.data) {
+    if (/[a-z]/.test(e.data[0])) capitalizeCurrentChar(e.data.length);
+    _capitalizeNext = false;
+  } else if (_capitalizeNext && e.inputType && e.inputType !== 'insertParagraph' && e.inputType !== 'insertLineBreak') {
+    _capitalizeNext = false;
+  }
+  refreshEmpty(editorEl);
+  if (!syncActiveNoteFromEditor()) return;
+  renderAlarmButton();
+  if (document.getElementById('alarms-modal')?.classList.contains('open')) renderAlarmsList();
+  refreshOpenSidebarPage('alarms');
+  renderMentionPopover();
+  scheduleUndoSnapshot();
+  scheduleMentionSync();
+  scheduleSave();
+});
+
+editorEl.addEventListener('blur', () => {
+  setTimeout(hideMentionPopover, 120);
+  const changed = linkifyTextNodes(editorEl);
+  ensureLinkAttrs(editorEl);
+  refreshEmpty(editorEl);
+  if (changed && syncActiveNoteFromEditor()) scheduleSave();
+});
+
+editorEl.addEventListener('keyup', () => renderMentionPopover());
+
+editorEl.addEventListener('click', e => {
+  const li = e.target.closest('ul.checklist > li');
+  if (li && editorEl.contains(li)) {
+    const relX = e.clientX - li.getBoundingClientRect().left;
+    if (relX >= 0 && relX <= 20) {
+      e.preventDefault();
+      const ul = li.closest('ul.checklist');
+      li.classList.toggle('checked');
+      if (li.classList.contains('checked')) {
+        ul.appendChild(li);
+      } else {
+        const firstChecked = ul.querySelector('li.checked');
+        firstChecked ? ul.insertBefore(li, firstChecked) : ul.prepend(li);
+      }
+      if (syncActiveNoteFromEditor()) scheduleSave();
+      return;
+    }
+  }
+  const heading = e.target.closest('h1, h2, h3, h4');
+  if (heading && editorEl.contains(heading)) {
+    const rect = heading.getBoundingClientRect();
+    if (e.clientX - rect.left < 20) {
+      e.preventDefault();
+      heading.toggleAttribute('data-collapsed');
+      recomputeCollapsedSections();
+      saveCollapsedState(activeId);
+      return;
+    }
+  }
+  const link = e.target.closest('a[href]');
+  if (!link) return;
+  e.preventDefault();
+  window.open(link.href, '_blank', 'noopener,noreferrer');
+});
+
+editorEl.addEventListener('keydown', e => {
+  if (handleMentionKeydown(e)) return;
+
+  if (!e.metaKey && !e.ctrlKey && !e.altKey && e.key === ' ' && !e.isComposing) {
+    if (applyMarkdownShortcut()) {
+      e.preventDefault();
+      pushUndo();
+      refreshEmpty(editorEl);
+      if (syncActiveNoteFromEditor()) scheduleSave();
+      return;
+    }
+    if (autoLinkTokenBeforeCaret()) {
+      e.preventDefault();
+      const _sel = window.getSelection();
+      if (_sel && _sel.rangeCount) {
+        const _r = _sel.getRangeAt(0);
+        const _sp = document.createTextNode(' ');
+        _r.insertNode(_sp);
+        _r.setStartAfter(_sp);
+        _r.collapse(true);
+        _sel.removeAllRanges();
+        _sel.addRange(_r);
+      }
+      refreshEmpty(editorEl);
+      if (syncActiveNoteFromEditor()) scheduleSave();
+      return;
+    }
+  }
+
+  if (e.key === 'Backspace' && !e.metaKey && !e.ctrlKey && !e.altKey && !e.isComposing) {
+    const backspaceSel = window.getSelection();
+    if (backspaceSel && backspaceSel.rangeCount && backspaceSel.isCollapsed) {
+      const li = ancestorOfType(['li']);
+      if (li && isEmptyListItem(li)) {
+        e.preventDefault();
+        pushUndo();
+        if (removeEmptyListItem(li)) editorEl.dispatchEvent(new Event('input'));
+        return;
+      }
+
+      if (deletePreviousTabAtCaret()) {
+        e.preventDefault();
+        editorEl.dispatchEvent(new Event('input'));
+        return;
+      }
+    }
+
+    const h = ancestorOfType(['h1','h2','h3','h4']);
+    if (h) {
+      const sel = window.getSelection();
+      if (sel && sel.rangeCount && sel.isCollapsed) {
+        const range = sel.getRangeAt(0);
+        // Check if cursor is at the very start of the heading (no text before it)
+        const checkRange = document.createRange();
+        checkRange.selectNodeContents(h);
+        checkRange.setEnd(range.startContainer, range.startOffset);
+        const textBeforeCursor = checkRange.toString();
+        if (textBeforeCursor.length === 0) {
+          e.preventDefault();
+          pushUndo();
+          const p = document.createElement('p');
+          while (h.firstChild) p.appendChild(h.firstChild);
+          if (!p.textContent && !p.querySelector('br')) p.appendChild(document.createElement('br'));
+          h.replaceWith(p);
+          placeCursorAtStart(p);
+          if (syncActiveNoteFromEditor()) scheduleSave();
+          return;
+        }
+      }
+    }
+  }
+
+  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+    const li = ancestorOfType(['li']);
+    if (li && li.closest('ul.checklist')) {
+      e.preventDefault();
+      const sel = window.getSelection();
+      if (!sel || !sel.rangeCount) return;
+      const range = sel.getRangeAt(0);
+
+      // If this li is empty, exit the checklist (like bullet lists do)
+      const liText = li.textContent.replace(/\u00a0/g, '').trim();
+      if (!liText) {
+        pushUndo();
+        const parentList = li.closest('ul.checklist');
+        li.remove();
+        // If the list is now empty, remove it too
+        if (parentList && !parentList.hasChildNodes()) parentList.remove();
+        // Create a new paragraph after the list (or in its place)
+        const p = document.createElement('p');
+        p.appendChild(document.createElement('br'));
+        if (parentList && parentList.parentNode) {
+          parentList.after(p);
+        } else {
+          getEd().appendChild(p);
+        }
+        const r = document.createRange();
+        r.setStart(p, 0);
+        r.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(r);
+        editorEl.dispatchEvent(new Event('input'));
+        return;
+      }
+
+      pushUndo();
+      // Delete any selected text first
+      if (!range.collapsed) range.deleteContents();
+
+      // Extract content from cursor position to end of the li (split point)
+      const tailRange = document.createRange();
+      tailRange.setStart(range.startContainer, range.startOffset);
+      tailRange.setEnd(li, li.childNodes.length);
+      const tailContent = tailRange.extractContents();
+
+      // Build new li with the extracted trailing content
+      const newLi = document.createElement('li');
+      newLi.appendChild(tailContent);
+      // Ensure new li is focusable when tail was empty
+      if (!newLi.textContent && !newLi.querySelector('br, img')) {
+        newLi.appendChild(document.createElement('br'));
+      }
+      // Ensure original li is also focusable when it became empty
+      if (!li.hasChildNodes()) {
+        li.appendChild(document.createElement('br'));
+      }
+
+      li.after(newLi);
+
+      const r = document.createRange();
+      r.selectNodeContents(newLi);
+      r.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(r);
+      _capitalizeNext = true;
+      editorEl.dispatchEvent(new Event('input'));
+      return;
+    }
+    const h = ancestorOfType(['h1','h2','h3','h4']);
+    if (h) {
+      e.preventDefault();
+      pushUndo();
+      const sel = window.getSelection();
+      const range = sel.getRangeAt(0);
+      if (!range.collapsed) range.deleteContents();
+      // Extract content after cursor into a new paragraph
+      const tailRange = document.createRange();
+      tailRange.setStart(range.startContainer, range.startOffset);
+      tailRange.setEndAfter(h.lastChild || h);
+      const tailContent = tailRange.extractContents();
+      const p = document.createElement('p');
+      p.appendChild(tailContent);
+      if (!p.textContent && !p.querySelector('br, img')) {
+        p.appendChild(document.createElement('br'));
+      }
+      // Ensure heading still has content
+      if (!h.textContent && !h.querySelector('br, img')) {
+        h.appendChild(document.createElement('br'));
+      }
+      // If the heading is collapsed, insert after the whole collapsed section
+      // so new content lands outside the header's domain
+      const isCollapsed = h.hasAttribute('data-collapsed');
+      let insertAfter = h;
+      if (isCollapsed) {
+        const level = parseInt(h.tagName[1]);
+        let sibling = h.nextElementSibling;
+        while (sibling) {
+          const t = sibling.tagName;
+          if (/^H[1-4]$/.test(t) && parseInt(t[1]) <= level) break;
+          insertAfter = sibling;
+          sibling = sibling.nextElementSibling;
+        }
+        p.setAttribute('data-outside-collapse', level.toString());
+      }
+      insertAfter.after(p);
+      const r = document.createRange(); r.setStart(p, 0); r.collapse(true);
+      sel.removeAllRanges(); sel.addRange(r);
+      _capitalizeNext = true;
+      editorEl.dispatchEvent(new Event('input'));
+      return;
+    }
+  }
+  if (e.key === 'Tab') {
+    e.preventDefault();
+    const li = ancestorOfType(['li']);
+    if (li) {
+      if (li.closest('ul.checklist')) {
+        // Use custom DOM-based indent/outdent so the checklist class is preserved
+        e.shiftKey ? checklistOutdent(li) : checklistIndent(li);
+      } else {
+        e.shiftKey ? document.execCommand('outdent') : document.execCommand('indent');
+      }
+      getEd().dispatchEvent(new Event('input'));
+    } else {
+      document.execCommand('insertText', false, '\t');
+      getEd().dispatchEvent(new Event('input'));
+    }
+    return;
+  }
+});
+
+editorEl.addEventListener('paste', e => {
+  e.preventDefault();
+  pushUndo();
+  const html = e.clipboardData.getData('text/html');
+  const text = e.clipboardData.getData('text/plain');
+  if (html) {
+    // Sanitize: strip scripts, event handlers, dangerous elements and protocols
+    const temp = document.createElement('div');
+    temp.innerHTML = html;
+    temp.querySelectorAll('script, style, iframe, object, embed, meta, link, form').forEach(el => el.remove());
+    temp.querySelectorAll('*').forEach(el => {
+      for (const attr of [...el.attributes]) {
+        if (attr.name.startsWith('on') || attr.name === 'srcdoc') {
+          el.removeAttribute(attr.name);
+        }
+      }
+      // Strip dangerous URI protocols from href, src, action, formaction, xlink:href
+      ['href', 'src', 'action', 'formaction', 'xlink:href'].forEach(attrName => {
+        const val = el.getAttribute(attrName);
+        if (val && /^\s*(javascript|vbscript|data):/i.test(val)) {
+          el.removeAttribute(attrName);
+        }
+      });
+    });
+    document.execCommand('insertHTML', false, temp.innerHTML);
+  } else if (text) {
+    document.execCommand('insertText', false, text);
+  }
+  editorEl.dispatchEvent(new Event('input'));
+});
+
+document.getElementById('toolbar').addEventListener('mousedown', e => {
+  const btn = e.target.closest('[data-action]');
+  if (!btn) return;
+  e.preventDefault();
+  pushUndo();
+  ACTIONS[btn.dataset.action]?.();
+});
+document.getElementById('toolbar').addEventListener('touchend', e => {
+  const btn = e.target.closest('[data-action]');
+  if (!btn) return;
+  e.preventDefault();
+  pushUndo();
+  ACTIONS[btn.dataset.action]?.();
+});
+
+document.getElementById('doc-title').addEventListener('input', () => {
+  if (!activeId || !notes[activeId]) return;
+  if (!canEditNote(notes[activeId])) return;
+  notes[activeId].title    = document.getElementById('doc-title').value;
+  notes[activeId].modified = new Date().toISOString();
+  const el = document.querySelector('.sidebar-item.active .item-name');
+  if (el) el.textContent = notes[activeId].title;
+  scheduleSave();
+});
+document.getElementById('doc-title').addEventListener('blur', () => {
+  if (!activeId || !notes[activeId]) return;
+  if (!canEditNote(notes[activeId])) return;
+  const titled = document.getElementById('doc-title').value.trim() || 'Untitled Note';
+  document.getElementById('doc-title').value = titled;
+  notes[activeId].title = titled;
+  const el = document.querySelector('.sidebar-item.active .item-name');
+  if (el) el.textContent = titled;
+  scheduleSave();
+});
+
+let _searchTimer;
+document.getElementById('search-input').addEventListener('input', e => {
+  clearTimeout(_searchTimer);
+  _searchTimer = setTimeout(() => renderSidebar(e.target.value), 150);
+});
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') { closeCtxMenu(); hideMentionPopover(); closeMentionShareModal(false); }
+  const mod = /Mac/.test(navigator.platform) ? e.metaKey : e.ctrlKey;
+  if (!mod) return;
+  if (document.activeElement === editorEl) {
+    if (e.key === 'z' && !e.shiftKey) { e.preventDefault(); performUndo(); return; }
+    if (e.key === 'z' && e.shiftKey)  { e.preventDefault(); performRedo(); return; }
+    if (e.key === 'y')                { e.preventDefault(); performRedo(); return; }
+    if (e.key === 'b') { e.preventDefault(); pushUndo(); cmd('bold');  }
+    if (e.key === 'i') { e.preventDefault(); pushUndo(); cmd('italic'); }
+  }
+  if (e.key === 'n') { e.preventDefault(); openModal(); }
+});
+
+let _sx = 0;
+document.addEventListener('touchstart', e => { _sx = e.touches[0].clientX; }, { passive: true });
+document.addEventListener('touchend',   e => {
+  const dx = e.changedTouches[0].clientX - _sx;
+  if (Math.abs(dx) > 52) { dx > 0 && _sx < 30 ? openDrawer() : closeDrawer(); }
+}, { passive: true });
+
+document.execCommand('defaultParagraphSeparator', false, 'p');
+
+// Sidebar-list fallback drop zone — allows moving notes to "no folder"
+// when the uncategorized section isn't visible (all notes are in folders)
+const _sidebarList = document.getElementById('sidebar-list');
+_sidebarList.addEventListener('dragover', e => {
+  if (!_draggingNoteId || !notes[_draggingNoteId]?.folderId) return;
+  if (e.target.closest('.folder-row') || e.target.closest('.uncat-drop-zone')) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  _sidebarList.classList.add('uncat-drop-zone', 'drag-over');
+});
+_sidebarList.addEventListener('dragleave', e => {
+  if (!_sidebarList.contains(e.relatedTarget)) _sidebarList.classList.remove('drag-over', 'uncat-drop-zone');
+});
+_sidebarList.addEventListener('drop', e => {
+  _sidebarList.classList.remove('drag-over', 'uncat-drop-zone');
+  if (e.target.closest('.folder-row') || e.target.closest('.uncat-drop-zone')) return;
+  const noteId = e.dataTransfer.getData('text/plain');
+  if (noteId && notes[noteId] && notes[noteId].folderId) moveNoteToFolder(noteId, null);
+});
+
+renderSidebar();
+initSettings();
+renderNotificationButton();
+renderAlarmButton();
+renderProfileConnectionUI();
+// Apply persisted sidebar collapsed state (desktop only)
+sidebarMinimized = localStorage.getItem('notas_sidebar_minimized') === '1';
+if (sidebarMinimized && !isMobile()) setSidebarMinimized(true);
+
+/* ── Sidebar Resize (desktop only) ───────────────────── */
+{
+  const SIDEBAR_MAX = 520;
+  const STORAGE_KEY = 'notas_sidebar_w';
+  const sidebar = document.getElementById('sidebar');
+  const handle  = document.getElementById('sidebar-resize');
+
+  const saved = parseInt(localStorage.getItem(STORAGE_KEY) || '');
+  if (saved >= SIDEBAR_ICON_SAFE_WIDTH && saved <= SIDEBAR_MAX) {
+    sidebar.style.width    = saved + 'px';
+    sidebar.style.minWidth = saved + 'px';
+    updateSidebarWidthState(saved);
+  } else {
+    updateSidebarWidthState();
+  }
+
+  let dragging = false, startX = 0, startW = 0;
+
+  function finishSidebarResize() {
+    dragging = false;
+    handle.classList.remove('dragging');
+    sidebar.style.transition = '';
+    document.body.style.cursor     = '';
+    document.body.style.userSelect = '';
+  }
+
+  handle.addEventListener('mousedown', e => {
+    if (window.innerWidth <= 767) return;
+    if (sidebarMinimized) return;
+    dragging = true;
+    startX   = e.clientX;
+    startW   = sidebar.getBoundingClientRect().width;
+    handle.classList.add('dragging');
+    // Disable transition during drag to eliminate lag
+    sidebar.style.transition = 'none';
+    document.body.style.cursor     = 'col-resize';
+    document.body.style.userSelect = 'none';
+    e.preventDefault();
+  });
+
+  document.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    const intendedW = startW + (e.clientX - startX);
+    if (intendedW < SIDEBAR_ICON_SAFE_WIDTH) {
+      localStorage.removeItem(STORAGE_KEY);
+      finishSidebarResize();
+      setSidebarMinimized(true);
+      return;
+    }
+    const w = Math.min(SIDEBAR_MAX, intendedW);
+    sidebar.style.width    = w + 'px';
+    sidebar.style.minWidth = w + 'px';
+    updateSidebarWidthState(w);
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    finishSidebarResize();
+    localStorage.setItem(STORAGE_KEY, Math.round(parseFloat(sidebar.style.width)));
+    updateSidebarWidthState();
+  });
+
+  window.addEventListener('resize', () => updateSidebarWidthState());
+}

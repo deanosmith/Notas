@@ -1,0 +1,154 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isSelf(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    function noteAccessId(noteId, uid) {
+      return noteId + "_" + uid;
+    }
+
+    function noteAccessPath(noteId, uid) {
+      return /databases/$(database)/documents/noteAccess/$(noteAccessId(noteId, uid));
+    }
+
+    function hasNoteAccess(noteId) {
+      return signedIn() && exists(noteAccessPath(noteId, request.auth.uid));
+    }
+
+    function noteAccessRole(noteId) {
+      return get(noteAccessPath(noteId, request.auth.uid)).data.role;
+    }
+
+    function isNoteOwner(noteId) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/notes/$(noteId))
+        && get(/databases/$(database)/documents/notes/$(noteId)).data.owner == request.auth.uid;
+    }
+
+    match /users/{uid} {
+      allow read: if signedIn();
+
+      allow create: if isSelf(uid)
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.emailLower is string;
+
+      allow update: if isSelf(uid)
+        && (!("uid" in resource.data) || request.resource.data.uid == resource.data.uid)
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.emailLower is string;
+
+      allow delete: if false;
+
+      match /friends/{friendUid} {
+        allow read: if isSelf(uid);
+
+        allow create, update: if isSelf(uid)
+          && request.resource.data.uid == friendUid;
+
+        allow delete: if isSelf(uid);
+      }
+    }
+
+    match /profileEmails/{emailId} {
+      allow read: if signedIn();
+      allow create, update: if signedIn()
+        && request.resource.data.uid == request.auth.uid;
+      allow delete: if false;
+    }
+
+    match /friendRequests/{id} {
+      allow read: if signedIn()
+        && (resource.data.fromUid == request.auth.uid || resource.data.toUid == request.auth.uid);
+
+      allow create: if signedIn()
+        && id == request.resource.data.fromUid + "_" + request.resource.data.toUid
+        && request.resource.data.fromUid == request.auth.uid
+        && request.resource.data.toUid != request.auth.uid
+        && request.resource.data.status == "pending";
+
+      allow update: if signedIn()
+        && resource.data.status == "pending"
+        && request.resource.data.fromUid == resource.data.fromUid
+        && request.resource.data.toUid == resource.data.toUid
+        && resource.data.toUid == request.auth.uid
+        && request.resource.data.status in ["accepted", "rejected"];
+
+      allow delete: if signedIn()
+        && (resource.data.fromUid == request.auth.uid || resource.data.toUid == request.auth.uid);
+    }
+
+    match /notes/{noteId} {
+      allow create: if signedIn()
+        && request.resource.data.owner == request.auth.uid;
+
+      allow read: if signedIn()
+        && (
+          resource.data.owner == request.auth.uid
+          || resource.data.public == true
+          || hasNoteAccess(noteId)
+        );
+
+      allow update: if signedIn()
+        && request.resource.data.owner == resource.data.owner
+        && (
+          resource.data.owner == request.auth.uid
+          || (
+            hasNoteAccess(noteId)
+            && noteAccessRole(noteId) == "editor"
+            && request.resource.data.diff(resource.data).changedKeys().hasOnly(["title", "content", "modified"])
+          )
+        );
+
+      allow delete: if signedIn()
+        && resource.data.owner == request.auth.uid;
+    }
+
+    match /folders/{folderId} {
+      allow create: if signedIn()
+        && request.resource.data.owner == request.auth.uid;
+
+      allow read: if signedIn()
+        && (
+          resource.data.owner == request.auth.uid
+          || resource.data.public == true
+        );
+
+      allow update, delete: if signedIn()
+        && resource.data.owner == request.auth.uid;
+    }
+
+    match /noteAccess/{accessId} {
+      allow read: if signedIn()
+        && (
+          resource.data.userUid == request.auth.uid
+          || resource.data.grantedBy == request.auth.uid
+          || isNoteOwner(resource.data.noteId)
+        );
+
+      allow create: if signedIn()
+        && request.resource.data.role in ["viewer", "editor"]
+        && request.resource.data.grantedBy == request.auth.uid
+        && isNoteOwner(request.resource.data.noteId)
+        && accessId == request.resource.data.noteId + "_" + request.resource.data.userUid
+        && request.resource.data.userUid != request.auth.uid;
+
+      allow update: if signedIn()
+        && request.resource.data.role in ["viewer", "editor"]
+        && request.resource.data.noteId == resource.data.noteId
+        && request.resource.data.userUid == resource.data.userUid
+        && request.resource.data.grantedBy == resource.data.grantedBy
+        && isNoteOwner(resource.data.noteId)
+        && accessId == resource.data.noteId + "_" + resource.data.userUid;
+
+      allow delete: if signedIn()
+        && isNoteOwner(resource.data.noteId);
+    }
+  }
+}
