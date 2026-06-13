@@ -53,7 +53,8 @@ jobs:
           done
 
           mkdir -p dist
-          cp index.html notas.png notas.icns notas-icon.png dist/
+          cp index.html styles.css notas.png notas.icns notas-icon.png dist/
+          cp -r js dist/
           touch dist/.nojekyll
 
           {
@@ -71,6 +72,8 @@ jobs:
       - name: Verify Pages artifact
         run: |
           test -s dist/index.html
+          test -s dist/styles.css
+          test -s dist/js/app.js
           test -s dist/notas.png
           test -s dist/notas.icns
           test -s dist/notas-icon.png
