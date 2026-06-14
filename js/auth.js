@@ -42,35 +42,58 @@ function prepareAuthenticatedHome() {
   showEditorView(false);
 }
 
+function showLoadingOverlay() {
+  const loadingEl = document.getElementById('loading-overlay');
+  if (!loadingEl) return;
+  loadingEl.style.display = 'flex';
+  loadingEl.style.opacity = '1';
+}
+
+function hideLoadingOverlay() {
+  const loadingEl = document.getElementById('loading-overlay');
+  if (!loadingEl) return;
+  loadingEl.style.opacity = '0';
+  setTimeout(() => {
+    if (loadingEl.style.opacity === '0') loadingEl.style.display = 'none';
+  }, 300);
+}
+
 /* Auth */
 onAuthStateChanged(auth, async user => {
-  const loadingEl = document.getElementById('loading-overlay');
-  if (loadingEl) { loadingEl.style.opacity = '0'; setTimeout(() => { loadingEl.style.display = 'none'; }, 300); }
   const overlay = document.getElementById('auth-overlay');
   if (user) {
-    userId = user.uid;
-    prepareAuthenticatedHome();
-    overlay.style.display = 'none';
-    updateUserAvatar(user);
-    const signoutRow = document.getElementById('signout-row');
-    if (signoutRow) signoutRow.style.display = '';
-    migrateFromLocalStorage();
-    await ensureProfileDocument(user);
-    linkedProfiles = _readLinkedProfilesFromLocal();
-    removedSharedNoteIds = _readRemovedSharedIdsFromLocal();
-    renderProfileConnectionUI();
-    renderShareProfileList();
-    listenToNotes();
-    listenToFolders();
-    listenToSharedNotes();
-    listenFriends();
-    listenIncomingFriendRequests();
-    listenSentFriendRequests();
-    listenOwnedNoteAccess();
-    listenSharedWithMe();
-    _flushOfflineEdits();
-    if (_sharedNoteId)   handleShareLink(_sharedNoteId);
-    if (_sharedFolderId) importSharedFolder(_sharedFolderId);
+    showLoadingOverlay();
+    try {
+      userId = user.uid;
+      prepareAuthenticatedHome();
+      overlay.style.display = 'none';
+      updateUserAvatar(user);
+      const signoutRow = document.getElementById('signout-row');
+      if (signoutRow) signoutRow.style.display = '';
+      await migrateFromLocalStorage();
+      await ensureProfileDocument(user);
+      linkedProfiles = _readLinkedProfilesFromLocal();
+      removedSharedNoteIds = _readRemovedSharedIdsFromLocal();
+      renderProfileConnectionUI();
+      renderShareProfileList();
+      const initialNotesLoad = listenToNotes();
+      const initialFoldersLoad = listenToFolders();
+      const initialSharedLibraryLoad = listenToSharedNotes();
+      listenFriends();
+      listenIncomingFriendRequests();
+      listenSentFriendRequests();
+      listenOwnedNoteAccess();
+      const initialSharedWithMeLoad = listenSharedWithMe();
+      _flushOfflineEdits();
+      if (_sharedNoteId)   handleShareLink(_sharedNoteId);
+      if (_sharedFolderId) importSharedFolder(_sharedFolderId);
+      await Promise.all([initialNotesLoad, initialFoldersLoad, initialSharedLibraryLoad, initialSharedWithMeLoad]);
+    } catch (err) {
+      console.error('auth state startup:', err);
+      showToast('Could Not Finish Loading Notes', 'error');
+    } finally {
+      hideLoadingOverlay();
+    }
   } else {
     closeTransientSurfaces();
     overlay.style.display = 'flex';
@@ -95,6 +118,7 @@ onAuthStateChanged(auth, async user => {
     directShareUnsubs = [];
     Object.values(sharedNoteUnsubs).forEach(fn => fn());
     sharedNoteUnsubs = {};
+    sharedNoteInitialLoads = {};
     sharedLibraryMeta = {};
     removedSharedNoteIds = {};
     currentProfile = null;
@@ -122,6 +146,7 @@ onAuthStateChanged(auth, async user => {
     renderAlarmButton();
     renderProfileConnectionUI();
     renderProfileLinkRequestsUI();
+    hideLoadingOverlay();
   }
 });
 
