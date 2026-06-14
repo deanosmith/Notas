@@ -1,6 +1,14 @@
 /* Firestore listeners, writes, migration, and offline persistence - extracted from index.original.html. */
 function listenToNotes() {
   if (unsubscribe) unsubscribe();
+  let initialSettled = false;
+  let resolveInitial;
+  const initialLoad = new Promise(resolve => { resolveInitial = resolve; });
+  const settleInitial = () => {
+    if (initialSettled) return;
+    initialSettled = true;
+    resolveInitial();
+  };
 
   // Owned notes
   const q = query(collection(fsDb, 'notes'), where('owner', '==', userId));
@@ -39,6 +47,7 @@ function listenToNotes() {
       else            showEditorView(false);
     }
     setSaveState('saved');
+    settleInitial();
   }, err => {
     console.error('onSnapshot:', err);
     if (err.code === 'permission-denied')
@@ -46,12 +55,22 @@ function listenToNotes() {
     renderSidebar();
     if (!activeId || !notes[activeId]) showEditorView(false);
     setSaveState('error');
+    settleInitial();
   });
+  return initialLoad;
 }
 
 /* Folder Listener */
 function listenToFolders() {
   if (unsubFolders) unsubFolders();
+  let initialSettled = false;
+  let resolveInitial;
+  const initialLoad = new Promise(resolve => { resolveInitial = resolve; });
+  const settleInitial = () => {
+    if (initialSettled) return;
+    initialSettled = true;
+    resolveInitial();
+  };
   const q = query(collection(fsDb, 'folders'), where('owner', '==', userId));
   unsubFolders = onSnapshot(q, snap => {
     snap.docChanges().forEach(ch => {
@@ -83,7 +102,12 @@ function listenToFolders() {
       }
     });
     renderSidebar();
-  }, err => { console.error('onSnapshot folders:', err); });
+    settleInitial();
+  }, err => {
+    console.error('onSnapshot folders:', err);
+    settleInitial();
+  });
+  return initialLoad;
 }
 
 /* Write / Delete */

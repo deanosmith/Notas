@@ -27,7 +27,7 @@
   <div id="app">
     <nav id="app-rail" aria-label="App navigation">
       <div class="rail-stack">
-        <button class="rail-logo active" id="rail-notes-btn" data-sidebar-view="notes" type="button" title="Notes" aria-label="Notes">
+        <button class="rail-logo active" id="rail-notes-btn" data-sidebar-view="notes" type="button" title="Toggle Notes Sidebar" aria-label="Toggle Notes Sidebar">
           <img src="notas-icon.png" alt="" />
         </button>
         <button class="rail-btn rail-primary" id="rail-create-btn" data-sidebar-view="create" type="button" title="Create" aria-label="Create">
@@ -355,7 +355,43 @@
 
   <div id="ctx-menu"></div>
   <div id="mention-popover" class="mention-popover" hidden></div>
-  <input id="folder-color-input" type="color" hidden />
+
+  <div class="modal-overlay" id="folder-color-modal">
+    <div class="modal folder-color-modal">
+      <div class="modal-title"><i class="fa-solid fa-palette" style="margin-right:8px;opacity:.7;"></i>Folder Colour</div>
+      <div class="folder-color-header">
+        <span class="folder-color-preview" id="folder-color-preview"></span>
+        <span class="folder-color-title" id="folder-color-title">Folder</span>
+      </div>
+      <div class="folder-color-swatches">
+        <button class="folder-color-swatch" type="button" data-folder-color-value="theme">
+          <span style="background:var(--accent);"></span>App Theme
+        </button>
+        <button class="folder-color-swatch" type="button" data-folder-color-value="#ffffff">
+          <span style="background:#ffffff;"></span>White
+        </button>
+        <button class="folder-color-swatch" type="button" data-folder-color-value="#111111">
+          <span style="background:#111111;"></span>Black
+        </button>
+        <button class="folder-color-swatch" type="button" data-folder-color-value="#8e8e93">
+          <span style="background:#8e8e93;"></span>Grey
+        </button>
+      </div>
+      <div class="folder-color-picker-panel" id="folder-color-picker-panel">
+        <div class="color-sv" id="folder-color-sv"><span class="color-sv-cursor" id="folder-color-sv-cursor"></span></div>
+        <input class="color-hue" id="folder-color-hue" type="range" min="0" max="360" step="1" aria-label="Folder colour hue" />
+        <div class="color-fields">
+          <label class="color-field">R<input id="folder-color-r" type="number" min="0" max="255" inputmode="numeric" /></label>
+          <label class="color-field">G<input id="folder-color-g" type="number" min="0" max="255" inputmode="numeric" /></label>
+          <label class="color-field">B<input id="folder-color-b" type="number" min="0" max="255" inputmode="numeric" /></label>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="modal-btn" id="folder-color-cancel" type="button">Cancel</button>
+        <button class="modal-btn primary" id="folder-color-save" type="button">Done</button>
+      </div>
+    </div>
+  </div>
 
   <div class="modal-overlay" id="link-modal">
     <div class="modal">

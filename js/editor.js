@@ -1,45 +1,125 @@
 /* Editor helpers, toolbar actions, alarms, and mentions - extracted from index.original.html. */
+function makeUndoSnapshot(ed = getEd()) {
+  if (!ed) return null;
+  return {
+    html: ed.innerHTML,
+    selection: captureEditorSelection(ed),
+    scrollTop: ed.scrollTop || 0
+  };
+}
+
+function sameUndoSnapshot(a, b) {
+  return !!a && !!b && a.html === b.html;
+}
+
+function pushUndoState(stack, snapshot) {
+  if (!snapshot) return;
+  const top = stack[stack.length - 1];
+  if (!sameUndoSnapshot(top, snapshot)) {
+    stack.push({ ...snapshot });
+    if (stack.length > UNDO_LIMIT) stack.shift();
+  }
+}
+
+function refreshUndoSnapshotSelection() {
+  const ed = getEd();
+  if (!ed) return;
+  const current = makeUndoSnapshot(ed);
+  if (!_lastUndoSnapshot || current.html === _lastUndoSnapshot.html) {
+    _lastUndoSnapshot = current;
+  }
+}
+
 function pushUndo() {
   const ed = getEd();
   if (!ed) return;
-  const html = ed.innerHTML;
-  if (html === _lastUndoSnapshot) return;
-  undoStack.push(_lastUndoSnapshot);
-  if (undoStack.length > UNDO_LIMIT) undoStack.shift();
-  redoStack.length = 0;
-  _lastUndoSnapshot = html;
+  clearTimeout(_undoDebounceTimer);
+  const current = makeUndoSnapshot(ed);
+  if (!_lastUndoSnapshot) {
+    _lastUndoSnapshot = current;
+  } else if (current.html !== _lastUndoSnapshot.html) {
+    pushUndoState(undoStack, _lastUndoSnapshot);
+    _lastUndoSnapshot = current;
+    redoStack.length = 0;
+  } else {
+    _lastUndoSnapshot = current;
+  }
+  pushUndoState(undoStack, _lastUndoSnapshot);
+  _undoTransactionOpen = true;
 }
 
 function initUndoSnapshot() {
   const ed = getEd();
-  if (ed) _lastUndoSnapshot = ed.innerHTML;
+  _lastUndoSnapshot = ed ? makeUndoSnapshot(ed) : null;
   undoStack.length = 0;
+  redoStack.length = 0;
+  clearTimeout(_undoDebounceTimer);
+  _undoTransactionOpen = false;
+}
+
+function commitUndoSnapshot() {
+  const ed = getEd();
+  if (!ed) return;
+  const current = makeUndoSnapshot(ed);
+  if (!_lastUndoSnapshot) {
+    _lastUndoSnapshot = current;
+    _undoTransactionOpen = false;
+    return;
+  }
+  if (current.html === _lastUndoSnapshot.html) {
+    _lastUndoSnapshot = current;
+    if (_undoTransactionOpen && sameUndoSnapshot(undoStack[undoStack.length - 1], current)) {
+      undoStack.pop();
+    }
+    _undoTransactionOpen = false;
+    return;
+  }
+  if (_undoTransactionOpen) {
+    _lastUndoSnapshot = current;
+    redoStack.length = 0;
+    _undoTransactionOpen = false;
+    return;
+  }
+  pushUndoState(undoStack, _lastUndoSnapshot);
+  _lastUndoSnapshot = current;
   redoStack.length = 0;
 }
 
-function performUndo() {
-  if (!undoStack.length) return;
+function flushUndoSnapshot() {
+  clearTimeout(_undoDebounceTimer);
+  commitUndoSnapshot();
+}
+
+function restoreUndoSnapshot(snapshot) {
   const ed = getEd();
-  redoStack.push(ed.innerHTML);
-  const prev = undoStack.pop();
-  ed.innerHTML = prev;
-  _lastUndoSnapshot = prev;
+  if (!ed || !snapshot) return;
+  ed.innerHTML = snapshot.html;
   restoreChecklistState(ed);
   restoreAlarmMarks(ed);
   refreshEmpty(ed);
+  restoreEditorSelection(ed, snapshot.selection);
+  ed.scrollTop = Math.min(snapshot.scrollTop || 0, ed.scrollHeight);
+}
+
+function performUndo() {
+  flushUndoSnapshot();
+  if (!undoStack.length) return;
+  const ed = getEd();
+  pushUndoState(redoStack, makeUndoSnapshot(ed));
+  restoreUndoSnapshot(undoStack.pop());
+  _lastUndoSnapshot = makeUndoSnapshot(ed);
+  _undoTransactionOpen = false;
   if (syncActiveNoteFromEditor()) scheduleSave();
 }
 
 function performRedo() {
+  flushUndoSnapshot();
   if (!redoStack.length) return;
   const ed = getEd();
-  undoStack.push(ed.innerHTML);
-  const next = redoStack.pop();
-  ed.innerHTML = next;
-  _lastUndoSnapshot = next;
-  restoreChecklistState(ed);
-  restoreAlarmMarks(ed);
-  refreshEmpty(ed);
+  pushUndoState(undoStack, makeUndoSnapshot(ed));
+  restoreUndoSnapshot(redoStack.pop());
+  _lastUndoSnapshot = makeUndoSnapshot(ed);
+  _undoTransactionOpen = false;
   if (syncActiveNoteFromEditor()) scheduleSave();
 }
 
@@ -47,15 +127,7 @@ function performRedo() {
 function scheduleUndoSnapshot() {
   clearTimeout(_undoDebounceTimer);
   _undoDebounceTimer = setTimeout(() => {
-    const ed = getEd();
-    if (!ed) return;
-    const html = ed.innerHTML;
-    if (html !== _lastUndoSnapshot) {
-      undoStack.push(_lastUndoSnapshot);
-      if (undoStack.length > UNDO_LIMIT) undoStack.shift();
-      _lastUndoSnapshot = html;
-      // Don't clear redoStack for typing snapshots
-    }
+    commitUndoSnapshot();
   }, 600);
 }
 
@@ -223,12 +295,116 @@ function placeCursorAtStart(el) {
   range.selectNodeContents(el); range.collapse(true);
   getEd().focus();
   sel.removeAllRanges(); sel.addRange(range);
+  refreshUndoSnapshotSelection();
 }
 
 function placeCursorAtEnd(el) {
   const range = document.createRange(), sel = window.getSelection();
   range.selectNodeContents(el); range.collapse(false);
   sel.removeAllRanges(); sel.addRange(range); el.focus();
+  refreshUndoSnapshotSelection();
+}
+
+function nodePathFromRoot(root, node) {
+  const path = [];
+  let cur = node;
+  while (cur && cur !== root) {
+    const parent = cur.parentNode;
+    if (!parent) return null;
+    path.unshift([...parent.childNodes].indexOf(cur));
+    cur = parent;
+  }
+  return cur === root ? path : null;
+}
+
+function nodeFromRootPath(root, path) {
+  if (!Array.isArray(path)) return null;
+  let node = root;
+  for (const index of path) {
+    if (!node?.childNodes || index < 0 || index >= node.childNodes.length) return null;
+    node = node.childNodes[index];
+  }
+  return node;
+}
+
+function clampRangeOffset(node, offset) {
+  const max = node.nodeType === Node.TEXT_NODE ? node.textContent.length : node.childNodes.length;
+  return Math.max(0, Math.min(Number(offset) || 0, max));
+}
+
+function captureEditorSelection(root = getEd()) {
+  const sel = window.getSelection();
+  if (!root || !sel || !sel.rangeCount) return null;
+  const range = sel.getRangeAt(0);
+  const startOwner = range.startContainer.nodeType === Node.ELEMENT_NODE ? range.startContainer : range.startContainer.parentElement;
+  const endOwner = range.endContainer.nodeType === Node.ELEMENT_NODE ? range.endContainer : range.endContainer.parentElement;
+  if (!startOwner || !endOwner || !root.contains(startOwner) || !root.contains(endOwner)) return null;
+
+  const beforeStart = range.cloneRange();
+  beforeStart.selectNodeContents(root);
+  beforeStart.setEnd(range.startContainer, range.startOffset);
+
+  const beforeEnd = range.cloneRange();
+  beforeEnd.selectNodeContents(root);
+  beforeEnd.setEnd(range.endContainer, range.endOffset);
+
+  return {
+    startPath: nodePathFromRoot(root, range.startContainer),
+    startOffset: range.startOffset,
+    endPath: nodePathFromRoot(root, range.endContainer),
+    endOffset: range.endOffset,
+    start: beforeStart.toString().length,
+    end: beforeEnd.toString().length,
+    collapsed: range.collapsed
+  };
+}
+
+function rangePointFromTextOffset(root, offset) {
+  const target = Math.max(0, Number(offset) || 0);
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let remaining = target;
+  let lastText = null;
+
+  while (walker.nextNode()) {
+    const node = walker.currentNode;
+    lastText = node;
+    const len = node.textContent.length;
+    if (remaining <= len) return { node, offset: remaining };
+    remaining -= len;
+  }
+
+  if (lastText) return { node: lastText, offset: lastText.textContent.length };
+  return { node: root, offset: root.childNodes.length };
+}
+
+function restoreEditorSelection(root = getEd(), bookmark) {
+  if (!root) return;
+  if (!bookmark) { placeCursorAtEnd(root); return; }
+  const sel = window.getSelection();
+  if (!sel) return;
+  const range = document.createRange();
+  const startNode = nodeFromRootPath(root, bookmark.startPath);
+  const endNode = nodeFromRootPath(root, bookmark.collapsed ? bookmark.startPath : bookmark.endPath);
+  if (startNode && endNode) {
+    try {
+      range.setStart(startNode, clampRangeOffset(startNode, bookmark.startOffset));
+      range.setEnd(endNode, clampRangeOffset(endNode, bookmark.collapsed ? bookmark.startOffset : bookmark.endOffset));
+    } catch (_) {
+      const start = rangePointFromTextOffset(root, bookmark.start);
+      const end = rangePointFromTextOffset(root, bookmark.collapsed ? bookmark.start : bookmark.end);
+      range.setStart(start.node, start.offset);
+      range.setEnd(end.node, end.offset);
+    }
+  } else {
+    const start = rangePointFromTextOffset(root, bookmark.start);
+    const end = rangePointFromTextOffset(root, bookmark.collapsed ? bookmark.start : bookmark.end);
+    range.setStart(start.node, start.offset);
+    range.setEnd(end.node, end.offset);
+  }
+  sel.removeAllRanges();
+  sel.addRange(range);
+  root.focus();
+  refreshUndoSnapshotSelection();
 }
 
 function placeCaretAfterTabDelete(block, textNode, offset) {
@@ -372,6 +548,20 @@ function linkifyTextNodes(root) {
 
   if (changed) ensureLinkAttrs(root);
   return changed;
+}
+
+function hasLinkifiableTextNodes(root) {
+  if (!root) return false;
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      const parent = node.parentNode;
+      if (!parent || parent.closest('a, code, pre, script, style')) return NodeFilter.FILTER_REJECT;
+      return /(https?:\/\/[^\s<]+|\[[^\]]+\]\(https?:\/\/[^\s)]+\))/i.test(node.textContent)
+        ? NodeFilter.FILTER_ACCEPT
+        : NodeFilter.FILTER_REJECT;
+    }
+  });
+  return !!walker.nextNode();
 }
 
 function setSaveState(s) {
@@ -557,6 +747,7 @@ function applyMarkdownShortcut() {
   }
 
   if (/^#{1,3}$/.test(marker)) {
+    pushUndo();
     // Extract content after cursor, remove marker, build heading via DOM
     const tailRange = document.createRange();
     tailRange.setStart(range.startContainer, range.startOffset);
@@ -579,6 +770,7 @@ function applyMarkdownShortcut() {
   }
 
   if (marker === '>') {
+    pushUndo();
     const tail = extractTrailingContent();
     const quote = document.createElement('blockquote');
     if (tail.textContent || tail.childNodes.length > 0) quote.appendChild(tail);
@@ -588,6 +780,7 @@ function applyMarkdownShortcut() {
   }
 
   if (/^[-+*]$/.test(marker)) {
+    pushUndo();
     const tail = extractTrailingContent();
     const list = document.createElement('ul');
     const item = document.createElement('li');
@@ -599,6 +792,7 @@ function applyMarkdownShortcut() {
   }
 
   if (/^\d+[.)]$/.test(marker)) {
+    pushUndo();
     const tail = extractTrailingContent();
     const list = document.createElement('ol');
     const item = document.createElement('li');
@@ -610,6 +804,7 @@ function applyMarkdownShortcut() {
   }
 
   if (/^(-{3,}|\*{3,})$/.test(marker)) {
+    pushUndo();
     const hr = document.createElement('hr');
     const paragraph = createEmptyBlock('p');
     swapBlock(block, [hr, paragraph], paragraph);
@@ -638,6 +833,7 @@ function autoLinkTokenBeforeCaret() {
   const label = markdownMatch ? markdownMatch[2] : href;
   const tokenStart = before.length - token.length;
   const head = before.slice(0, tokenStart);
+  pushUndo();
   const link = document.createElement('a');
   decorateLink(link, href);
   link.textContent = label;
@@ -708,6 +904,7 @@ function _confirmInsertLink() {
     sel.removeAllRanges();
     sel.addRange(_linkSavedRange);
   }
+  pushUndo();
   const sel = window.getSelection();
   if (sel && !sel.isCollapsed) {
     const link = document.createElement('a');
@@ -730,6 +927,7 @@ function _confirmInsertLink() {
     sel.removeAllRanges();
     sel.addRange(range);
   }
+  scheduleUndoSnapshot();
   getEd().dispatchEvent(new Event('input'));
 }
 
@@ -1062,12 +1260,34 @@ function getAlarmItems() {
   return items.sort((a, b) => new Date(a.alarmAt) - new Date(b.alarmAt));
 }
 
+function scheduleAlarmRefresh(items = getAlarmItems()) {
+  clearTimeout(_alarmRefreshTimer);
+  const now = Date.now();
+  const next = items
+    .map(item => new Date(item.alarmAt).getTime())
+    .filter(time => Number.isFinite(time) && time > now)
+    .sort((a, b) => a - b)[0];
+  if (!next) {
+    _alarmRefreshTimer = null;
+    return;
+  }
+  const delay = Math.max(1000, Math.min(next - now + 250, 2147483647));
+  _alarmRefreshTimer = setTimeout(() => {
+    restoreAlarmMarks(getEd());
+    renderAlarmButton();
+    if (document.getElementById('alarms-modal')?.classList.contains('open')) renderAlarmsList();
+    refreshOpenSidebarPage('alarms');
+  }, delay);
+}
+
 function renderAlarmButton() {
   const badge = document.getElementById('alarm-badge');
   if (!badge) return;
-  const count = getAlarmItems().length;
+  const items = getAlarmItems();
+  const count = items.filter(item => item.due).length;
   badge.textContent = count > 99 ? '99+' : String(count);
   badge.hidden = count === 0;
+  scheduleAlarmRefresh(items);
 }
 
 function renderAlarmsList(target = 'alarms-list') {
@@ -1270,6 +1490,7 @@ async function saveNoteAlarm() {
   if (activeId !== _alarmContext.noteId) openNote(_alarmContext.noteId);
   const ed = getEd();
   getEd().focus();
+  pushUndo();
   const mark = _alarmContext.alarmId ? findAlarmMark(ed, _alarmContext.alarmId) : null;
   if (mark) {
     mark.dataset.alarmAt = alarmAt;
@@ -1286,6 +1507,7 @@ async function saveNoteAlarm() {
     renderAlarmButton();
     if (document.getElementById('alarms-modal')?.classList.contains('open')) renderAlarmsList();
     refreshOpenSidebarPage('alarms');
+    scheduleUndoSnapshot();
     scheduleSave();
   }
   closeNoteAlarmModal();
@@ -1297,9 +1519,13 @@ async function removeInlineAlarm(noteId, alarmId) {
   if (activeId === noteId) {
     const mark = findAlarmMark(getEd(), alarmId);
     if (mark) {
+      pushUndo();
       unwrapAlarmMark(mark);
       refreshEmpty(getEd());
-      if (syncActiveNoteFromEditor()) scheduleSave();
+      if (syncActiveNoteFromEditor()) {
+        scheduleUndoSnapshot();
+        scheduleSave();
+      }
     }
   } else {
     const root = document.createElement('div');
@@ -1500,6 +1726,7 @@ function insertMention(profile) {
   hideMentionPopover();
   refreshEmpty(getEd());
   if (syncActiveNoteFromEditor()) {
+    scheduleUndoSnapshot();
     scheduleSave();
     scheduleMentionSync();
   }

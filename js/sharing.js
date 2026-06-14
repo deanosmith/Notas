@@ -1600,7 +1600,7 @@ function removeSharedAccessNote(noteId) {
   if (notes[noteId] && !isOwnedNote(notes[noteId])) {
     delete notes[noteId];
     _removeSharedId(noteId);
-    if (sharedNoteUnsubs[noteId]) { sharedNoteUnsubs[noteId](); delete sharedNoteUnsubs[noteId]; }
+    if (sharedNoteUnsubs[noteId]) { sharedNoteUnsubs[noteId](); delete sharedNoteUnsubs[noteId]; delete sharedNoteInitialLoads[noteId]; }
     if (activeId === noteId) activeId = null;
     renderSidebar();
     if (!activeId) { const ids = sortedIds(); ids.length ? openNote(ids[0]) : showEditorView(false); }
@@ -1631,9 +1631,18 @@ function listenOwnedNoteAccess() {
 
 function listenSharedWithMe() {
   if (unsubSharedWithMe) unsubSharedWithMe();
-  if (!userId) return;
+  if (!userId) return Promise.resolve();
+  let initialSettled = false;
+  let resolveInitial;
+  const initialLoad = new Promise(resolve => { resolveInitial = resolve; });
+  const settleInitial = loads => {
+    if (initialSettled) return;
+    initialSettled = true;
+    Promise.all(loads || []).catch(() => {}).then(resolveInitial);
+  };
   const q = query(collection(fsDb, 'noteAccess'), where('userUid', '==', userId));
   unsubSharedWithMe = onSnapshot(q, snap => {
+    const initialLoads = [];
     snap.docChanges().forEach(ch => {
       const id = ch.doc.id;
       if (ch.type === 'removed') {
@@ -1652,16 +1661,20 @@ function listenSharedWithMe() {
       }
       noteAccessById[id] = access;
       myNoteAccessByNote[access.noteId] = access;
-      loadSharedNoteFromAccess(access);
+      const load = loadSharedNoteFromAccess(access);
+      if (!initialSettled) initialLoads.push(load);
     });
     rebuildNoteAccessGroups();
     updateActiveNoteAccessAvatars();
     renderSidebar();
     renderNotificationButton();
     refreshOpenSidebarPage('notifications');
+    settleInitial(initialLoads);
   }, err => {
     console.warn('shared with me listener:', err);
+    settleInitial();
   });
+  return initialLoad;
 }
 
 function renderShareProfileList() {
@@ -2305,16 +2318,18 @@ function _applySharedLibraryMeta(meta) {
 
 function _syncSharedSubscriptions(ids) {
   const activeIds = new Set(ids);
-  ids.forEach(id => _subscribeSharedNote(id));
+  const loads = ids.map(id => _subscribeSharedNote(id)).filter(Boolean);
   Object.keys(sharedNoteUnsubs).forEach(id => {
     if (activeIds.has(id)) return;
     sharedNoteUnsubs[id]();
     delete sharedNoteUnsubs[id];
+    delete sharedNoteInitialLoads[id];
     if (notes[id] && !isOwnedNote(notes[id])) {
       delete notes[id];
       if (activeId === id) activeId = null;
     }
   });
+  return Promise.all(loads).catch(() => {});
 }
 
 async function _syncSharedLibraryToCloud(meta = sharedLibraryMeta) {
@@ -2858,7 +2873,17 @@ function openNotificationsModal() {
 
 
 function _subscribeSharedNote(noteId) {
-  if (sharedNoteUnsubs[noteId]) return; // already watching
+  if (sharedNoteUnsubs[noteId]) return sharedNoteInitialLoads[noteId] || Promise.resolve(); // already watching
+  let initialSettled = false;
+  let resolveInitial;
+  const initialLoad = new Promise(resolve => { resolveInitial = resolve; });
+  sharedNoteInitialLoads[noteId] = initialLoad;
+  const settleInitial = () => {
+    if (initialSettled) return;
+    initialSettled = true;
+    if (sharedNoteInitialLoads[noteId] === initialLoad) delete sharedNoteInitialLoads[noteId];
+    resolveInitial();
+  };
   const ref = doc(fsDb, 'notes', noteId);
   sharedNoteUnsubs[noteId] = onSnapshot(ref, snap => {
     if (!snap.exists()) {
@@ -2866,15 +2891,16 @@ function _subscribeSharedNote(noteId) {
       if (notes[noteId]?.owner !== userId) {
         delete notes[noteId];
         _removeSharedId(noteId);
-        if (sharedNoteUnsubs[noteId]) { sharedNoteUnsubs[noteId](); delete sharedNoteUnsubs[noteId]; }
+        if (sharedNoteUnsubs[noteId]) { sharedNoteUnsubs[noteId](); delete sharedNoteUnsubs[noteId]; delete sharedNoteInitialLoads[noteId]; }
         if (activeId === noteId) { activeId = null; }
         renderSidebar();
         if (!activeId) { const ids = sortedIds(); ids.length ? openNote(ids[0]) : showEditorView(false); }
       }
+      settleInitial();
       return;
     }
     const d = snap.data();
-    if (d.owner === userId) return; // owned note — handled by the main listener
+    if (d.owner === userId) { settleInitial(); return; } // owned note — handled by the main listener
 
     const sharedWith = d.sharedWith && typeof d.sharedWith === 'object' ? d.sharedWith : {};
     const sharedAccessKeys = Array.isArray(d.sharedAccessKeys) ? d.sharedAccessKeys : [];
@@ -2885,11 +2911,12 @@ function _subscribeSharedNote(noteId) {
     if (!canReadLoadedSharedNote(noteId, d)) {
       delete notes[noteId];
       _removeSharedId(noteId);
-      if (sharedNoteUnsubs[noteId]) { sharedNoteUnsubs[noteId](); delete sharedNoteUnsubs[noteId]; }
+      if (sharedNoteUnsubs[noteId]) { sharedNoteUnsubs[noteId](); delete sharedNoteUnsubs[noteId]; delete sharedNoteInitialLoads[noteId]; }
       if (activeId === noteId) { activeId = null; }
       renderSidebar();
       if (!activeId) { const ids = sortedIds(); ids.length ? openNote(ids[0]) : showEditorView(false); }
       showToast('A shared note is no longer available', 'error');
+      settleInitial();
       return;
     }
 
@@ -2921,27 +2948,39 @@ function _subscribeSharedNote(noteId) {
         openNote(noteId);
       }
     }
+    settleInitial();
   }, err => {
     console.error('shared note listener:', err);
     // Treat permission-denied as access revoked
     if (err.code === 'permission-denied') {
       delete notes[noteId];
       _removeSharedId(noteId);
-      if (sharedNoteUnsubs[noteId]) { sharedNoteUnsubs[noteId](); delete sharedNoteUnsubs[noteId]; }
+      if (sharedNoteUnsubs[noteId]) { sharedNoteUnsubs[noteId](); delete sharedNoteUnsubs[noteId]; delete sharedNoteInitialLoads[noteId]; }
       if (activeId === noteId) { activeId = null; }
       renderSidebar();
       if (!activeId) { const ids = sortedIds(); ids.length ? openNote(ids[0]) : showEditorView(false); }
     }
+    settleInitial();
   });
+  return initialLoad;
 }
 
 // Listen to the user doc for shared note IDs — syncs across devices.
 function listenToSharedNotes() {
   if (unsubUserDoc) unsubUserDoc();
+  let initialSettled = false;
+  let resolveInitial;
+  const initialLoad = new Promise(resolve => { resolveInitial = resolve; });
+  const settleInitial = loads => {
+    if (initialSettled) return;
+    initialSettled = true;
+    Promise.all(loads || []).catch(() => {}).then(resolveInitial);
+  };
+  const localLoads = [];
   const localMeta = _readSharedLibraryFromLocal();
   if (Object.keys(localMeta).length) {
     _applySharedLibraryMeta(_mergeSharedLibraries(sharedLibraryMeta, localMeta));
-    _syncSharedSubscriptions(Object.keys(sharedLibraryMeta));
+    localLoads.push(_syncSharedSubscriptions(Object.keys(sharedLibraryMeta)));
   }
   unsubUserDoc = onSnapshot(_getUserDocRef(), snap => {
     const data = snap.data() || {};
@@ -2952,7 +2991,7 @@ function listenToSharedNotes() {
     const nextMeta = _mergeSharedLibraries(latestLocalMeta, remoteMeta);
     const ids = Object.keys(nextMeta);
     _applySharedLibraryMeta(nextMeta);
-    _syncSharedSubscriptions(ids);
+    const remoteLoad = _syncSharedSubscriptions(ids);
     const hasLocalOnlyIds = Object.keys(latestLocalMeta).some(id => !remoteMeta[id]);
     if (hasLocalOnlyIds) {
       const localOnlyMeta = {};
@@ -2964,16 +3003,20 @@ function listenToSharedNotes() {
     });
     renderSidebar();
     if (!activeId) { const sorted = sortedIds(); sorted.length ? openNote(sorted[0]) : showEditorView(false); }
+    settleInitial([remoteLoad]);
   }, err => {
     console.error('user doc listener:', err);
+    const fallbackLoads = [...localLoads];
     const fallbackMeta = _readSharedLibraryFromLocal();
     if (Object.keys(fallbackMeta).length) {
       _applySharedLibraryMeta(fallbackMeta);
-      _syncSharedSubscriptions(Object.keys(sharedLibraryMeta));
+      fallbackLoads.push(_syncSharedSubscriptions(Object.keys(sharedLibraryMeta)));
       renderSidebar();
       if (!activeId) { const sorted = sortedIds(); sorted.length ? openNote(sorted[0]) : showEditorView(false); }
     }
+    settleInitial(fallbackLoads);
   });
+  return initialLoad;
 }
 
 // Called when the user opens a ?note=<id> link.
@@ -3092,7 +3135,7 @@ async function openDirectSharedNote(noteId) {
 async function removeFromLibrary(noteId, options = {}) {
   const { render = true, selectNext = true, notify = true } = options;
   if (notes[noteId]?.owner === userId) return; // can't remove owned notes this way
-  if (sharedNoteUnsubs[noteId]) { sharedNoteUnsubs[noteId](); delete sharedNoteUnsubs[noteId]; }
+  if (sharedNoteUnsubs[noteId]) { sharedNoteUnsubs[noteId](); delete sharedNoteUnsubs[noteId]; delete sharedNoteInitialLoads[noteId]; }
   delete notes[noteId];
   const cloudSynced = await _removeSharedId(noteId, { removedByUser: true });
   if (activeId === noteId) activeId = null;

@@ -42,7 +42,13 @@ document.getElementById('mob-logo-btn').addEventListener('click',   toggleDrawer
 document.getElementById('sidebar-logo-btn').addEventListener('click', toggleSidebarFromLogo);
 document.getElementById('sidebar').addEventListener('click', () => { if (sidebarMinimized && !isMobile()) setSidebarMinimized(false); });
 document.querySelectorAll('[data-sidebar-view]').forEach(btn => {
-  btn.addEventListener('click', () => setSidebarView(btn.dataset.sidebarView));
+  btn.addEventListener('click', () => {
+    if (btn.id === 'rail-notes-btn' && !isMobile() && sidebarView === 'notes') {
+      setSidebarMinimized(!sidebarMinimized);
+      return;
+    }
+    setSidebarView(btn.dataset.sidebarView);
+  });
 });
 document.getElementById('mob-new-btn').addEventListener('click',    openModal);
 document.getElementById('google-signin-btn').addEventListener('click', signInWithGoogle);
@@ -117,11 +123,6 @@ document.getElementById('link-modal-url').addEventListener('keydown', e => {
 });
 document.getElementById('move-modal-cancel').addEventListener('click', closeMoveModal);
 document.getElementById('move-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeMoveModal(); });
-document.getElementById('folder-color-input').addEventListener('change', e => {
-  const folderId = e.target.dataset.folderId;
-  delete e.target.dataset.folderId;
-  if (folderId) setFolderIconColor(folderId, e.target.value);
-});
 document.getElementById('drawer-overlay').addEventListener('click', closeDrawer);
 document.getElementById('new-note-btn')?.addEventListener('click',   openModal);
 document.getElementById('empty-cta-btn').addEventListener('click',  openModal);
@@ -137,6 +138,7 @@ window.editorEl = document.getElementById('editor');
 const editorEl = window.editorEl;
 
 editorEl.addEventListener('beforeinput', e => {
+  refreshUndoSnapshotSelection();
   if (e.inputType === 'insertParagraph' || e.inputType === 'insertLineBreak') {
     _capitalizeNext = true;
   }
@@ -162,13 +164,23 @@ editorEl.addEventListener('input', e => {
 
 editorEl.addEventListener('blur', () => {
   setTimeout(hideMentionPopover, 120);
+  if (hasLinkifiableTextNodes(editorEl)) pushUndo();
   const changed = linkifyTextNodes(editorEl);
   ensureLinkAttrs(editorEl);
   refreshEmpty(editorEl);
-  if (changed && syncActiveNoteFromEditor()) scheduleSave();
+  if (changed && syncActiveNoteFromEditor()) {
+    scheduleUndoSnapshot();
+    scheduleSave();
+  } else if (_undoTransactionOpen) {
+    scheduleUndoSnapshot();
+  }
 });
 
-editorEl.addEventListener('keyup', () => renderMentionPopover());
+editorEl.addEventListener('keyup', () => {
+  renderMentionPopover();
+  refreshUndoSnapshotSelection();
+});
+editorEl.addEventListener('mouseup', refreshUndoSnapshotSelection);
 
 editorEl.addEventListener('click', e => {
   const li = e.target.closest('ul.checklist > li');
@@ -176,6 +188,7 @@ editorEl.addEventListener('click', e => {
     const relX = e.clientX - li.getBoundingClientRect().left;
     if (relX >= 0 && relX <= 20) {
       e.preventDefault();
+      pushUndo();
       const ul = li.closest('ul.checklist');
       li.classList.toggle('checked');
       if (li.classList.contains('checked')) {
@@ -184,6 +197,7 @@ editorEl.addEventListener('click', e => {
         const firstChecked = ul.querySelector('li.checked');
         firstChecked ? ul.insertBefore(li, firstChecked) : ul.prepend(li);
       }
+      scheduleUndoSnapshot();
       if (syncActiveNoteFromEditor()) scheduleSave();
       return;
     }
@@ -199,6 +213,17 @@ editorEl.addEventListener('click', e => {
       return;
     }
   }
+  const alarmMark = e.target.closest('.note-alarm');
+  if (alarmMark && editorEl.contains(alarmMark)) {
+    const rect = alarmMark.getBoundingClientRect();
+    if (e.clientX - rect.left <= 24 && canEditNote(notes[activeId])) {
+      e.preventDefault();
+      e.stopPropagation();
+      selectAlarmMarkText(alarmMark);
+      openNoteAlarmModal(activeId);
+      return;
+    }
+  }
   const link = e.target.closest('a[href]');
   if (!link) return;
   e.preventDefault();
@@ -211,8 +236,8 @@ editorEl.addEventListener('keydown', e => {
   if (!e.metaKey && !e.ctrlKey && !e.altKey && e.key === ' ' && !e.isComposing) {
     if (applyMarkdownShortcut()) {
       e.preventDefault();
-      pushUndo();
       refreshEmpty(editorEl);
+      scheduleUndoSnapshot();
       if (syncActiveNoteFromEditor()) scheduleSave();
       return;
     }
@@ -229,6 +254,7 @@ editorEl.addEventListener('keydown', e => {
         _sel.addRange(_r);
       }
       refreshEmpty(editorEl);
+      scheduleUndoSnapshot();
       if (syncActiveNoteFromEditor()) scheduleSave();
       return;
     }
@@ -270,7 +296,10 @@ editorEl.addEventListener('keydown', e => {
           if (!p.textContent && !p.querySelector('br')) p.appendChild(document.createElement('br'));
           h.replaceWith(p);
           placeCursorAtStart(p);
-          if (syncActiveNoteFromEditor()) scheduleSave();
+          if (syncActiveNoteFromEditor()) {
+            scheduleUndoSnapshot();
+            scheduleSave();
+          }
           return;
         }
       }
@@ -389,6 +418,7 @@ editorEl.addEventListener('keydown', e => {
   }
   if (e.key === 'Tab') {
     e.preventDefault();
+    pushUndo();
     const li = ancestorOfType(['li']);
     if (li) {
       if (li.closest('ul.checklist')) {
@@ -402,6 +432,7 @@ editorEl.addEventListener('keydown', e => {
       document.execCommand('insertText', false, '\t');
       getEd().dispatchEvent(new Event('input'));
     }
+    scheduleUndoSnapshot();
     return;
   }
 });
@@ -441,15 +472,17 @@ document.getElementById('toolbar').addEventListener('mousedown', e => {
   const btn = e.target.closest('[data-action]');
   if (!btn) return;
   e.preventDefault();
-  pushUndo();
+  if (!['link', 'alarm'].includes(btn.dataset.action)) pushUndo();
   ACTIONS[btn.dataset.action]?.();
+  if (!['link', 'alarm'].includes(btn.dataset.action)) scheduleUndoSnapshot();
 });
 document.getElementById('toolbar').addEventListener('touchend', e => {
   const btn = e.target.closest('[data-action]');
   if (!btn) return;
   e.preventDefault();
-  pushUndo();
+  if (!['link', 'alarm'].includes(btn.dataset.action)) pushUndo();
   ACTIONS[btn.dataset.action]?.();
+  if (!['link', 'alarm'].includes(btn.dataset.action)) scheduleUndoSnapshot();
 });
 
 document.getElementById('doc-title').addEventListener('input', () => {
@@ -479,17 +512,19 @@ document.getElementById('search-input').addEventListener('input', e => {
 });
 
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') { closeCtxMenu(); hideMentionPopover(); closeMentionShareModal(false); }
+  if (e.key === 'Escape') { closeCtxMenu(); hideMentionPopover(); closeMentionShareModal(false); closeFolderColorPicker(); }
   const mod = /Mac/.test(navigator.platform) ? e.metaKey : e.ctrlKey;
   if (!mod) return;
+  const key = e.key.toLowerCase();
   if (document.activeElement === editorEl) {
-    if (e.key === 'z' && !e.shiftKey) { e.preventDefault(); performUndo(); return; }
-    if (e.key === 'z' && e.shiftKey)  { e.preventDefault(); performRedo(); return; }
-    if (e.key === 'y')                { e.preventDefault(); performRedo(); return; }
-    if (e.key === 'b') { e.preventDefault(); pushUndo(); cmd('bold');  }
-    if (e.key === 'i') { e.preventDefault(); pushUndo(); cmd('italic'); }
+    if (key === 'z' && !e.shiftKey) { e.preventDefault(); performUndo(); return; }
+    if (key === 'z' && e.shiftKey)  { e.preventDefault(); performRedo(); return; }
+    if (key === 'y')                { e.preventDefault(); performRedo(); return; }
+    if (key === 'b') { e.preventDefault(); pushUndo(); cmd('bold'); scheduleUndoSnapshot(); }
+    if (key === 'i') { e.preventDefault(); pushUndo(); cmd('italic'); scheduleUndoSnapshot(); }
+    if (key === 's' && e.shiftKey) { e.preventDefault(); pushUndo(); cmd('strikeThrough'); scheduleUndoSnapshot(); }
   }
-  if (e.key === 'n') { e.preventDefault(); openModal(); }
+  if (key === 'n') { e.preventDefault(); openModal(); }
 });
 
 let _sx = 0;
@@ -506,7 +541,10 @@ document.execCommand('defaultParagraphSeparator', false, 'p');
 const _sidebarList = document.getElementById('sidebar-list');
 _sidebarList.addEventListener('dragover', e => {
   if (!_draggingNoteId || !notes[_draggingNoteId]?.folderId) return;
-  if (e.target.closest('.folder-row') || e.target.closest('.uncat-drop-zone')) return;
+  if (e.target.closest('.sidebar-item') || e.target.closest('.folder-row') || e.target.closest('.uncat-drop-zone')) {
+    _sidebarList.classList.remove('drag-over', 'uncat-drop-zone');
+    return;
+  }
   e.preventDefault();
   e.dataTransfer.dropEffect = 'move';
   _sidebarList.classList.add('uncat-drop-zone', 'drag-over');
@@ -516,13 +554,14 @@ _sidebarList.addEventListener('dragleave', e => {
 });
 _sidebarList.addEventListener('drop', e => {
   _sidebarList.classList.remove('drag-over', 'uncat-drop-zone');
-  if (e.target.closest('.folder-row') || e.target.closest('.uncat-drop-zone')) return;
+  if (e.target.closest('.sidebar-item') || e.target.closest('.folder-row') || e.target.closest('.uncat-drop-zone')) return;
   const noteId = e.dataTransfer.getData('text/plain');
   if (noteId && notes[noteId] && notes[noteId].folderId) moveNoteToFolder(noteId, null);
 });
 
 renderSidebar();
 initSettings();
+initFolderColorPicker();
 renderNotificationButton();
 renderAlarmButton();
 renderProfileConnectionUI();

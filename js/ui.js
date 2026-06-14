@@ -285,8 +285,99 @@ function makeSidebarNoteEl(note, { inFolder = false } = {}) {
     el.classList.remove('dragging');
     _draggingNoteId = null;
     document.querySelectorAll('.drag-over').forEach(d => d.classList.remove('drag-over'));
+    document.querySelectorAll('.pin-drop-before,.pin-drop-after').forEach(d => d.classList.remove('pin-drop-before', 'pin-drop-after'));
   });
   return el;
+}
+
+function noteBelongsToPinReorderGroup(note, group) {
+  if (!note || !isPinnedNote(note)) return false;
+  if (group === 'major') return isMajorPinnedNote(note);
+  if (group?.startsWith('folder:')) {
+    const folderId = group.slice('folder:'.length);
+    return note.folderId === folderId && pinScopeForNote(note) === 'minor';
+  }
+  return false;
+}
+
+function pinReorderGroupNotes(group) {
+  return Object.values(notes)
+    .filter(note => noteBelongsToPinReorderGroup(note, group))
+    .sort(compareNotes);
+}
+
+async function persistPinnedOrder(orderedNotes) {
+  const base = Date.now();
+  let cloudSynced = true;
+  await Promise.all(orderedNotes.map(async (note, index) => {
+    const pinnedAt = new Date(base - (index * 1000)).toISOString();
+    const scope = pinScopeForNote(note) || 'major';
+    note.pinnedAt = pinnedAt;
+    note.pinScope = scope;
+    if (isOwnedNote(note)) {
+      await setDoc(doc(fsDb, 'notes', note.id), {
+        pinnedAt: Timestamp.fromDate(new Date(pinnedAt)),
+        pinScope: scope
+      }, { merge: true });
+    } else {
+      const ok = await _setSharedNotePinned(note.id, pinnedAt, scope);
+      if (!ok) cloudSynced = false;
+    }
+  }));
+  renderSidebar();
+  showToast(
+    cloudSynced ? 'Pinned Notes Reordered' : 'Pinned notes reordered locally; cloud sync failed',
+    cloudSynced ? 'success' : 'error'
+  );
+}
+
+async function reorderPinnedNote(draggedId, targetId, position, group) {
+  if (!draggedId || !targetId || draggedId === targetId) return;
+  const dragged = notes[draggedId];
+  const target = notes[targetId];
+  if (!noteBelongsToPinReorderGroup(dragged, group) || !noteBelongsToPinReorderGroup(target, group)) return;
+  const ordered = pinReorderGroupNotes(group);
+  const withoutDragged = ordered.filter(note => note.id !== draggedId);
+  const targetIndex = withoutDragged.findIndex(note => note.id === targetId);
+  if (targetIndex < 0) return;
+  withoutDragged.splice(position === 'after' ? targetIndex + 1 : targetIndex, 0, dragged);
+  if (withoutDragged.every((note, index) => ordered[index]?.id === note.id)) return;
+  try {
+    await persistPinnedOrder(withoutDragged);
+  } catch (err) {
+    console.error('reorder pinned notes:', err);
+    showToast('Could Not Reorder Pinned Notes', 'error');
+    renderSidebar();
+  }
+}
+
+function attachPinnedReorderHandlers(el, note, group) {
+  if (!el || !noteBelongsToPinReorderGroup(note, group)) return;
+  el.dataset.pinReorderGroup = group;
+  el.addEventListener('dragover', e => {
+    if (!_draggingNoteId || _draggingNoteId === note.id) return;
+    if (!noteBelongsToPinReorderGroup(notes[_draggingNoteId], group)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = 'move';
+    const rect = el.getBoundingClientRect();
+    const before = e.clientY < rect.top + rect.height / 2;
+    el.classList.toggle('pin-drop-before', before);
+    el.classList.toggle('pin-drop-after', !before);
+  });
+  el.addEventListener('dragleave', e => {
+    if (el.contains(e.relatedTarget)) return;
+    el.classList.remove('pin-drop-before', 'pin-drop-after');
+  });
+  el.addEventListener('drop', e => {
+    if (!_draggingNoteId || !noteBelongsToPinReorderGroup(notes[_draggingNoteId], group)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const rect = el.getBoundingClientRect();
+    const position = e.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
+    el.classList.remove('pin-drop-before', 'pin-drop-after');
+    reorderPinnedNote(e.dataTransfer.getData('text/plain') || _draggingNoteId, note.id, position, group);
+  });
 }
 
 const SIDEBAR_VIEWS = new Set(['notes', 'create', 'notifications', 'alarms', 'friends']);
@@ -427,7 +518,11 @@ function renderSidebar(filter) {
     lbl.className = 'sidebar-section-label';
     lbl.textContent = 'Pinned';
     pinnedWrap.appendChild(lbl);
-    pinnedLooseNotes.forEach(note => pinnedWrap.appendChild(makeSidebarNoteEl(note)));
+    pinnedLooseNotes.forEach(note => {
+      const el = makeSidebarNoteEl(note);
+      attachPinnedReorderHandlers(el, note, 'major');
+      pinnedWrap.appendChild(el);
+    });
     list.appendChild(pinnedWrap);
   }
 
@@ -471,6 +566,9 @@ function renderSidebar(filter) {
       folderNotes.forEach(n => {
         const el = makeSidebarNoteEl(n, { inFolder: true });
         el.classList.add('folder-note-item');
+        if (isPinnedNote(n) && pinScopeForNote(n) === 'minor') {
+          attachPinnedReorderHandlers(el, n, 'folder:' + folder.id);
+        }
         notesInner.appendChild(el);
       });
     } else {
@@ -518,11 +616,7 @@ function renderSidebar(filter) {
       const colourItem = {
         icon: 'fa-solid fa-palette',
         label: 'Folder Colour',
-        children: FOLDER_COLOR_OPTIONS.map(option => ({
-          color: option.color,
-          label: option.label,
-          action: () => option.action ? option.action(folder.id) : setFolderIconColor(folder.id, option.value)
-        }))
+        action: () => openFolderColorPicker(folder.id)
       };
       const folderItems = isOwnedFolder(folder)
         ? [
@@ -686,14 +780,6 @@ const ACCENT_PALETTES = {
 const DEFAULT_ACCENT = ACCENT_PALETTES.blue.accent;
 let accentColor = localStorage.getItem('notas_accent') || DEFAULT_ACCENT;
 
-const FOLDER_COLOR_OPTIONS = [
-  { label: 'App Theme',    value: FOLDER_ICON_THEME, color: 'var(--accent)' },
-  { label: 'White',        value: '#ffffff',          color: '#ffffff' },
-  { label: 'Black',        value: '#111111',          color: '#111111' },
-  { label: 'Grey',         value: FOLDER_ICON_GREY,   color: FOLDER_ICON_GREY },
-  { label: 'Colour Wheel', action: openFolderColorPicker, color: 'conic-gradient(red, yellow, lime, cyan, blue, magenta, red)' }
-];
-
 function clampColor(n) {
   return Math.max(0, Math.min(255, Math.round(n)));
 }
@@ -808,13 +894,91 @@ function resolveFolderIconColor(value, mode = '') {
   return normalized === FOLDER_ICON_THEME ? 'var(--accent)' : normalized;
 }
 
+let folderPickerHsv = rgbToHsv(hexToRgb(normalizeAccentColor(accentColor)) || hexToRgb(DEFAULT_ACCENT));
+let _folderColorPickerFolderId = null;
+let _folderColorPickerValue = FOLDER_ICON_THEME;
+
 function openFolderColorPicker(folderId) {
   const folder = folders[folderId];
-  const input = document.getElementById('folder-color-input');
-  if (!folder || !input) return;
-  input.value = normalizeManualFolderIconColor(folder.iconColor) || normalizeAccentColor(accentColor);
-  input.dataset.folderId = folderId;
-  input.click();
+  const modal = document.getElementById('folder-color-modal');
+  if (!folder || !modal) return;
+  const normalized = normalizeFolderIconColor(folder.iconColor, folder.iconColorMode) || FOLDER_ICON_THEME;
+  const initialColor = normalized === FOLDER_ICON_THEME ? normalizeAccentColor(accentColor) : normalized;
+  _folderColorPickerFolderId = folderId;
+  _folderColorPickerValue = normalized;
+  folderPickerHsv = rgbToHsv(hexToRgb(initialColor) || hexToRgb(DEFAULT_ACCENT));
+  const title = document.getElementById('folder-color-title');
+  if (title) title.textContent = folder.title || 'Folder';
+  updateFolderColorPickerUI();
+  modal.classList.add('open');
+}
+
+function closeFolderColorPicker() {
+  document.getElementById('folder-color-modal')?.classList.remove('open');
+  _folderColorPickerFolderId = null;
+  _folderColorPickerValue = FOLDER_ICON_THEME;
+}
+
+function folderColorFromPickerHsv() {
+  return rgbToHex(hsvToRgb(folderPickerHsv));
+}
+
+function updateFolderColorPickerUI() {
+  const activeValue = _folderColorPickerValue === FOLDER_ICON_THEME ? normalizeAccentColor(accentColor) : _folderColorPickerValue;
+  const rgb = hexToRgb(normalizeManualFolderIconColor(activeValue) || normalizeAccentColor(accentColor)) || hexToRgb(DEFAULT_ACCENT);
+  folderPickerHsv = rgbToHsv(rgb);
+
+  const panel = document.getElementById('folder-color-picker-panel');
+  const sv = document.getElementById('folder-color-sv');
+  const cursor = document.getElementById('folder-color-sv-cursor');
+  const hue = document.getElementById('folder-color-hue');
+  const rInput = document.getElementById('folder-color-r');
+  const gInput = document.getElementById('folder-color-g');
+  const bInput = document.getElementById('folder-color-b');
+  const preview = document.getElementById('folder-color-preview');
+
+  [panel, sv].forEach(el => el?.style.setProperty('--picker-hue', Math.round(folderPickerHsv.h)));
+  if (cursor) {
+    cursor.style.left = `${folderPickerHsv.s * 100}%`;
+    cursor.style.top = `${(1 - folderPickerHsv.v) * 100}%`;
+  }
+  if (hue) hue.value = Math.round(folderPickerHsv.h);
+  if (rInput) rInput.value = clampColor(rgb.r);
+  if (gInput) gInput.value = clampColor(rgb.g);
+  if (bInput) bInput.value = clampColor(rgb.b);
+  if (preview) preview.style.background = _folderColorPickerValue === FOLDER_ICON_THEME ? 'var(--accent)' : rgbToHex(rgb);
+
+  document.querySelectorAll('[data-folder-color-value]').forEach(btn => {
+    const value = btn.dataset.folderColorValue;
+    btn.classList.toggle('active', value === _folderColorPickerValue);
+  });
+}
+
+function setFolderPickerManualColor(hex) {
+  const manual = normalizeManualFolderIconColor(hex);
+  if (!manual) return;
+  _folderColorPickerValue = manual;
+  folderPickerHsv = rgbToHsv(hexToRgb(manual));
+  updateFolderColorPickerUI();
+}
+
+function setFolderPickerFromRgbInputs() {
+  const r = document.getElementById('folder-color-r');
+  const g = document.getElementById('folder-color-g');
+  const b = document.getElementById('folder-color-b');
+  if (!r || !g || !b) return;
+  setFolderPickerManualColor(rgbToHex({
+    r: clampColor(Number(r.value)),
+    g: clampColor(Number(g.value)),
+    b: clampColor(Number(b.value))
+  }));
+}
+
+function saveFolderColorPicker() {
+  const folderId = _folderColorPickerFolderId;
+  const value = _folderColorPickerValue;
+  closeFolderColorPicker();
+  if (folderId) setFolderIconColor(folderId, value);
 }
 
 function accentPalette(value) {
@@ -1036,6 +1200,51 @@ function initSettings() {
       applyFontSize();
     }
   });
+}
+
+function initFolderColorPicker() {
+  const modal = document.getElementById('folder-color-modal');
+  const sv = document.getElementById('folder-color-sv');
+  const hue = document.getElementById('folder-color-hue');
+  const colorInputs = ['folder-color-r', 'folder-color-g', 'folder-color-b'].map(id => document.getElementById(id)).filter(Boolean);
+
+  function updateFromSaturationValueEvent(e) {
+    if (!sv) return;
+    const rect = sv.getBoundingClientRect();
+    const x = Math.max(0, Math.min(rect.width, e.clientX - rect.left));
+    const y = Math.max(0, Math.min(rect.height, e.clientY - rect.top));
+    folderPickerHsv.s = rect.width ? x / rect.width : 0;
+    folderPickerHsv.v = rect.height ? 1 - (y / rect.height) : 0;
+    setFolderPickerManualColor(folderColorFromPickerHsv());
+  }
+
+  modal?.addEventListener('click', e => {
+    if (e.target === e.currentTarget) closeFolderColorPicker();
+  });
+  document.getElementById('folder-color-cancel')?.addEventListener('click', closeFolderColorPicker);
+  document.getElementById('folder-color-save')?.addEventListener('click', saveFolderColorPicker);
+  document.querySelectorAll('[data-folder-color-value]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      _folderColorPickerValue = normalizeFolderIconColor(btn.dataset.folderColorValue, btn.dataset.folderColorValue === FOLDER_ICON_THEME ? 'theme' : 'manual') || FOLDER_ICON_THEME;
+      updateFolderColorPickerUI();
+    });
+  });
+
+  sv?.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    sv.setPointerCapture(e.pointerId);
+    updateFromSaturationValueEvent(e);
+  });
+  sv?.addEventListener('pointermove', e => {
+    if (e.buttons !== 1) return;
+    updateFromSaturationValueEvent(e);
+  });
+
+  hue?.addEventListener('input', e => {
+    folderPickerHsv.h = Number(e.target.value) || 0;
+    setFolderPickerManualColor(folderColorFromPickerHsv());
+  });
+  colorInputs.forEach(input => input.addEventListener('input', setFolderPickerFromRgbInputs));
 }
 
 const SIDEBAR_WORDMARK_HIDE_WIDTH = 160;
