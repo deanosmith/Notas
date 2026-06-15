@@ -4,8 +4,10 @@ Another note taking app... What makes mine competitive you ask?
 - Real-time saving and sharing
   - _Actually real-time_
 - Google auth and sharing
-- Lightweight, fast and effective
-- Customisable UI
+- Lightweight, fast and customisable UI
+- Collaborative features:
+  - Friend tagging
+  - Reminder setting
 
 ## Desktop Version (Optimisated)
 
