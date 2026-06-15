@@ -145,12 +145,15 @@ editorEl.addEventListener('beforeinput', e => {
 });
 
 editorEl.addEventListener('input', e => {
+  const tableTitleInput = e.target.closest?.('[data-table-title-input]');
+  if (tableTitleInput) tableTitleInput.setAttribute('value', tableTitleInput.value || '');
   if (_capitalizeNext && e.inputType === 'insertText' && e.data) {
     if (/[a-z]/.test(e.data[0])) capitalizeCurrentChar(e.data.length);
     _capitalizeNext = false;
   } else if (_capitalizeNext && e.inputType && e.inputType !== 'insertParagraph' && e.inputType !== 'insertLineBreak') {
     _capitalizeNext = false;
   }
+  decorateTables(editorEl);
   refreshEmpty(editorEl);
   if (!syncActiveNoteFromEditor()) return;
   renderAlarmButton();
@@ -182,7 +185,21 @@ editorEl.addEventListener('keyup', () => {
 });
 editorEl.addEventListener('mouseup', refreshUndoSnapshotSelection);
 
+editorEl.addEventListener('mousedown', e => {
+  const tableBtn = e.target.closest('[data-table-action]');
+  if (!tableBtn || !editorEl.contains(tableBtn)) return;
+  e.preventDefault();
+  e.stopPropagation();
+  handleTableControl(tableBtn);
+});
+
 editorEl.addEventListener('click', e => {
+  const tableBtn = e.target.closest('[data-table-action]');
+  if (tableBtn && editorEl.contains(tableBtn)) {
+    e.preventDefault();
+    e.stopPropagation();
+    return;
+  }
   const li = e.target.closest('ul.checklist > li');
   if (li && editorEl.contains(li)) {
     const relX = e.clientX - li.getBoundingClientRect().left;
@@ -231,9 +248,19 @@ editorEl.addEventListener('click', e => {
 });
 
 editorEl.addEventListener('keydown', e => {
+  if (e.target.closest?.('[data-table-title-input]')) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      e.target.blur();
+    }
+    e.stopPropagation();
+    return;
+  }
   if (handleMentionKeydown(e)) return;
+  const inTable = isSelectionInTable();
 
   if (!e.metaKey && !e.ctrlKey && !e.altKey && e.key === ' ' && !e.isComposing) {
+    if (inTable) return;
     if (applyMarkdownShortcut()) {
       e.preventDefault();
       refreshEmpty(editorEl);
@@ -307,6 +334,12 @@ editorEl.addEventListener('keydown', e => {
   }
 
   if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+    if (inTable) {
+      e.preventDefault();
+      document.execCommand('insertLineBreak');
+      editorEl.dispatchEvent(new Event('input'));
+      return;
+    }
     const li = ancestorOfType(['li']);
     if (li && li.closest('ul.checklist')) {
       e.preventDefault();
@@ -346,7 +379,15 @@ editorEl.addEventListener('keydown', e => {
       // Extract content from cursor position to end of the li (split point)
       const tailRange = document.createRange();
       tailRange.setStart(range.startContainer, range.startOffset);
-      tailRange.setEnd(li, li.childNodes.length);
+      const directNestedListAfterCaret = [...li.children].find(child => {
+        if (child.tagName !== 'UL' && child.tagName !== 'OL') return false;
+        if (!child.classList.contains('checklist')) return false;
+        if (child.contains(range.startContainer)) return false;
+        try { return range.comparePoint(child, 0) > 0; }
+        catch (_) { return true; }
+      });
+      if (directNestedListAfterCaret) tailRange.setEndBefore(directNestedListAfterCaret);
+      else tailRange.setEnd(li, li.childNodes.length);
       const tailContent = tailRange.extractContents();
 
       // Build new li with the extracted trailing content
@@ -362,6 +403,7 @@ editorEl.addEventListener('keydown', e => {
       }
 
       li.after(newLi);
+      normalizeChecklistStructure(editorEl);
 
       const r = document.createRange();
       r.selectNodeContents(newLi);
@@ -418,18 +460,21 @@ editorEl.addEventListener('keydown', e => {
   }
   if (e.key === 'Tab') {
     e.preventDefault();
+    if (inTable) {
+      if (moveTableSelection(e.shiftKey ? -1 : 1)) editorEl.dispatchEvent(new Event('input'));
+      return;
+    }
     pushUndo();
-    const li = ancestorOfType(['li']);
-    if (li) {
-      if (li.closest('ul.checklist')) {
-        // Use custom DOM-based indent/outdent so the checklist class is preserved
-        e.shiftKey ? checklistOutdent(li) : checklistIndent(li);
-      } else {
-        e.shiftKey ? document.execCommand('outdent') : document.execCommand('indent');
+    const checklistLi = currentChecklistItemFromSelection();
+    if (checklistLi) {
+      // Use custom DOM-based indent/outdent so the checklist class is preserved
+      if (e.shiftKey ? checklistOutdent(checklistLi) : checklistIndent(checklistLi)) {
+        getEd().dispatchEvent(new Event('input'));
       }
-      getEd().dispatchEvent(new Event('input'));
     } else {
-      document.execCommand('insertText', false, '\t');
+      const li = ancestorOfType(['li']);
+      if (li) e.shiftKey ? document.execCommand('outdent') : document.execCommand('indent');
+      else document.execCommand('insertText', false, '\t');
       getEd().dispatchEvent(new Event('input'));
     }
     scheduleUndoSnapshot();
@@ -442,6 +487,17 @@ editorEl.addEventListener('paste', e => {
   pushUndo();
   const html = e.clipboardData.getData('text/html');
   const text = e.clipboardData.getData('text/plain');
+  if (isSelectionInTable()) {
+    let plain = text;
+    if (!plain && html) {
+      const temp = document.createElement('div');
+      temp.innerHTML = html;
+      plain = temp.innerText || temp.textContent || '';
+    }
+    document.execCommand('insertText', false, plain);
+    editorEl.dispatchEvent(new Event('input'));
+    return;
+  }
   if (html) {
     // Sanitize: strip scripts, event handlers, dangerous elements and protocols
     const temp = document.createElement('div');
@@ -472,6 +528,10 @@ document.getElementById('toolbar').addEventListener('mousedown', e => {
   const btn = e.target.closest('[data-action]');
   if (!btn) return;
   e.preventDefault();
+  if (shouldBlockTableAction(btn.dataset.action)) {
+    showToast('Tables Support Simple Text Only', 'error');
+    return;
+  }
   if (!['link', 'alarm'].includes(btn.dataset.action)) pushUndo();
   ACTIONS[btn.dataset.action]?.();
   if (!['link', 'alarm'].includes(btn.dataset.action)) scheduleUndoSnapshot();
@@ -480,6 +540,10 @@ document.getElementById('toolbar').addEventListener('touchend', e => {
   const btn = e.target.closest('[data-action]');
   if (!btn) return;
   e.preventDefault();
+  if (shouldBlockTableAction(btn.dataset.action)) {
+    showToast('Tables Support Simple Text Only', 'error');
+    return;
+  }
   if (!['link', 'alarm'].includes(btn.dataset.action)) pushUndo();
   ACTIONS[btn.dataset.action]?.();
   if (!['link', 'alarm'].includes(btn.dataset.action)) scheduleUndoSnapshot();
@@ -522,6 +586,7 @@ document.addEventListener('keydown', e => {
     if (key === 'y')                { e.preventDefault(); performRedo(); return; }
     if (key === 'b') { e.preventDefault(); pushUndo(); cmd('bold'); scheduleUndoSnapshot(); }
     if (key === 'i') { e.preventDefault(); pushUndo(); cmd('italic'); scheduleUndoSnapshot(); }
+    if (key === 'e') { e.preventDefault(); pushUndo(); ACTIONS.code(); scheduleUndoSnapshot(); return; }
     if (key === 's' && e.shiftKey) { e.preventDefault(); pushUndo(); cmd('strikeThrough'); scheduleUndoSnapshot(); }
   }
   if (key === 'n') { e.preventDefault(); openModal(); }

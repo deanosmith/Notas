@@ -36,7 +36,7 @@ function listenToNotes() {
           titleEl.value = d.title || 'Untitled Note';
           ed.innerHTML  = renderMarkdownContent(d.content || '');
           linkifyTextNodes(ed); ensureLinkAttrs(ed);
-          restoreChecklistState(ed); restoreAlarmMarks(ed); refreshEmpty(ed); updateCounts();
+          restoreChecklistState(ed); restoreAlarmMarks(ed); decorateTables(ed); refreshEmpty(ed); updateCounts();
         }
       }
     });
@@ -93,6 +93,7 @@ function listenToFolders() {
         sourceOwnerName: d.sourceOwnerName || '',
         sourceOwnerPhotoURL: d.sourceOwnerPhotoURL || '',
         sourceOwnerPhotoURLCandidates: Array.isArray(d.sourceOwnerPhotoURLCandidates) ? d.sourceOwnerPhotoURLCandidates : [],
+        order:    Number.isFinite(Number(d.order)) ? Number(d.order) : null,
         created:  d.created?.toDate?.()?.toISOString()  || new Date().toISOString(),
         modified: d.modified?.toDate?.()?.toISOString() || new Date().toISOString()
       };
@@ -158,6 +159,7 @@ async function saveFolderDoc(folder) {
       iconColorMode: (normalizeFolderIconColor(folder.iconColor, folder.iconColorMode) || FOLDER_ICON_THEME) === FOLDER_ICON_THEME ? 'theme' : 'manual',
       sharedWith: normalizeSharedWith(folder.sharedWith),
       sharedAccessKeys: normalizeSharedAccessKeys(folder.sharedAccessKeys),
+      order: Number.isFinite(Number(folder.order)) ? Number(folder.order) : nextFolderOrderValue(),
       created:  Timestamp.fromDate(new Date(folder.created)),
       modified: serverTimestamp()
     });

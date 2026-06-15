@@ -77,8 +77,10 @@ function openNote(id) {
   ensureLinkAttrs(ed);
   restoreChecklistState(ed);
   restoreAlarmMarks(ed);
+  decorateTables(ed);
   restoreCollapsedState(id);
-  if (linkified || ed.innerHTML !== (note.content || '')) note.content = ed.innerHTML;
+  const cleanContent = getCleanHTML();
+  if (linkified || cleanContent !== (note.content || '')) note.content = cleanContent;
   refreshEmpty(ed);
   showEditorView(true);
   renderSidebar();
@@ -91,4 +93,3 @@ function openNote(id) {
   if (isMobile()) closeDrawer();
   else if (!sidebarMinimized && window.matchMedia('(orientation: portrait)').matches) setSidebarMinimized(true);
 }
-

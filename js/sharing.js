@@ -2122,6 +2122,7 @@ function _ensureSharedFolderShell(info) {
     sourceOwnerName: info.sourceOwnerName || existing?.sourceOwnerName || '',
     sourceOwnerPhotoURL: sourceOwnerPhotos.photoURL,
     sourceOwnerPhotoURLCandidates: sourceOwnerPhotos.photoURLCandidates,
+    order: Number.isFinite(Number(existing?.order)) ? Number(existing.order) : nextFolderOrderValue(),
     created: existing?.created || now,
     modified: now
   };
@@ -2139,6 +2140,7 @@ function _ensureSharedFolderShell(info) {
     iconColor,
     iconColorMode,
     title,
+    order: folders[id].order,
     modified: serverTimestamp()
   };
   if (!existing) payload.created = Timestamp.fromDate(new Date(now));
@@ -2944,7 +2946,7 @@ function _subscribeSharedNote(noteId) {
         titleEl.value = d.title || 'Untitled Note';
         ed.innerHTML  = renderMarkdownContent(d.content || '');
         linkifyTextNodes(ed); ensureLinkAttrs(ed);
-        restoreChecklistState(ed); restoreAlarmMarks(ed); refreshEmpty(ed); updateCounts();
+        restoreChecklistState(ed); restoreAlarmMarks(ed); decorateTables(ed); refreshEmpty(ed); updateCounts();
         openNote(noteId);
       }
     }
