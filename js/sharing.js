@@ -1749,6 +1749,80 @@ function profileShareDocId(kind, noteId, targetUid) {
   return (kind + '_' + noteId + '_' + targetUid).replace(/[^A-Za-z0-9_-]/g, '_');
 }
 
+function friendReminderDocId(noteId, targetUid) {
+  return ('reminder_' + noteId + '_' + targetUid + '_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7))
+    .replace(/[^A-Za-z0-9_-]/g, '_')
+    .slice(0, 180);
+}
+
+async function sendFriendReminder(noteId, targetUid, reminderAt, reminderText = '') {
+  const note = notes[noteId];
+  const friend = friends[targetUid];
+  const normalizedAt = normalizeAlarmAt(reminderAt);
+  if (!note || !friend?.uid || friend.uid === userId || !normalizedAt) return { ok: false };
+  if (!isOwnedNote(note)) {
+    showToast('Only The Owner Can Set Friend Reminders', 'error');
+    return { ok: false };
+  }
+
+  const shared = await shareNoteWithFriend(noteId, friend, 'editor', {}, { silent: true });
+  if (!shared) return { ok: false };
+
+  const reminderId = friendReminderDocId(noteId, targetUid);
+  const sender = currentProfileLinkPayload();
+  const friendPhotos = profilePhotoFields(friend.photoURL, friend.photoURLCandidates);
+  const cleanText = String(reminderText || '').replace(/\s+/g, ' ').trim() || note.title || 'Reminder';
+  const now = new Date().toISOString();
+  const payload = {
+    id: reminderId,
+    type: 'reminder',
+    noteId,
+    noteTitle: note.title || 'Untitled Note',
+    reminderText: cleanText,
+    reminderAt: normalizedAt,
+    recipientUid: friend.uid,
+    recipientProfileKey: friend.uid,
+    recipientName: friend.displayName || '',
+    recipientEmail: normalizeEmail(friend.email || ''),
+    fromUid: userId,
+    fromName: sender.displayName || 'Someone',
+    fromPhotoURL: sender.photoURL,
+    fromPhotoURLCandidates: sender.photoURLCandidates,
+    fromEmail: sender.email,
+    createdIso: now,
+    created: serverTimestamp()
+  };
+
+  const sentPayload = {
+    ...payload,
+    targetUid: friend.uid,
+    targetName: friend.displayName || 'Friend',
+    targetEmail: normalizeEmail(friend.email || ''),
+    targetPhotoURL: friendPhotos.photoURL,
+    targetPhotoURLCandidates: friendPhotos.photoURLCandidates
+  };
+
+  try {
+    await setDoc(doc(fsDb, 'profileShares', friend.uid, 'items', reminderId), payload, { merge: true });
+  } catch (err) {
+    console.error('send friend reminder:', err);
+    return { ok: false };
+  }
+
+  sentReminders[reminderId] = normalizeSentReminder(reminderId, sentPayload);
+  _writeSentRemindersToLocal();
+
+  let cloudSynced = true;
+  try {
+    await setDoc(_getUserDocRef(), { sentReminders: { [reminderId]: sentPayload } }, { merge: true });
+  } catch (err) {
+    cloudSynced = false;
+    console.error('save sent reminder:', err);
+  }
+
+  return { ok: true, cloudSynced, id: reminderId };
+}
+
 async function writeProfileShare(note, targetUid, kind = 'share', context = {}, options = {}) {
   const target = linkedProfileForUid(targetUid);
   const sender = currentProfileLinkPayload();
@@ -2122,6 +2196,7 @@ function _ensureSharedFolderShell(info) {
     sourceOwnerName: info.sourceOwnerName || existing?.sourceOwnerName || '',
     sourceOwnerPhotoURL: sourceOwnerPhotos.photoURL,
     sourceOwnerPhotoURLCandidates: sourceOwnerPhotos.photoURLCandidates,
+    order: Number.isFinite(Number(existing?.order)) ? Number(existing.order) : nextFolderOrderValue(),
     created: existing?.created || now,
     modified: now
   };
@@ -2139,6 +2214,7 @@ function _ensureSharedFolderShell(info) {
     iconColor,
     iconColorMode,
     title,
+    order: folders[id].order,
     modified: serverTimestamp()
   };
   if (!existing) payload.created = Timestamp.fromDate(new Date(now));
@@ -2450,6 +2526,7 @@ function notificationReadKeyForParts(type, noteId, fromUid) {
 }
 
 function notificationTargetId(notification) {
+  if (notification?.type === 'reminder') return notification.reminderId || notification.id || '';
   return notification?.noteId || notification?.sourceFolderId || notification?.folderId || notification?.id || '';
 }
 
@@ -2493,10 +2570,12 @@ async function persistNotificationReads(keys) {
 function normalizeProfileShareNotification(id, data) {
   const createdDate = data.created?.toDate?.();
   const created = createdDate ? createdDate.toISOString() : (data.createdIso || new Date().toISOString());
-  const type = data.type === 'mention' ? 'mention' : (data.type === 'folder_share' ? 'folder_share' : 'share');
+  const type = data.type === 'reminder'
+    ? 'reminder'
+    : (data.type === 'mention' ? 'mention' : (data.type === 'folder_share' ? 'folder_share' : 'share'));
   const sourceFolderId = data.sourceFolderId || data.folderId || '';
   const sourceFolderTitle = data.sourceFolderTitle || data.folderTitle || 'Shared Folder';
-  const targetId = data.noteId || sourceFolderId || id;
+  const targetId = type === 'reminder' ? (data.reminderId || data.id || id) : (data.noteId || sourceFolderId || id);
   const fromPhotos = profilePhotoFields(data.fromPhotoURL, data.fromPhotoURLCandidates);
   return {
     id,
@@ -2511,6 +2590,9 @@ function normalizeProfileShareNotification(id, data) {
     fromEmail: normalizeEmail(data.fromEmail || ''),
     sourceFolderId,
     sourceFolderTitle,
+    reminderId: data.reminderId || data.id || id,
+    reminderAt: normalizeAlarmAt(data.reminderAt || data.alarmAt),
+    reminderText: data.reminderText || data.text || data.noteTitle || 'Reminder',
     created,
     readKey: notificationReadKeyForParts(type, targetId, data.fromUid || ''),
     read: false,
@@ -2629,8 +2711,11 @@ function listenToProfileShares() {
       notificationsUnavailable = true;
       profileShareNotifications = {};
       renderNotificationButton();
+      renderAlarmButton();
       if (document.getElementById('notifications-modal')?.classList.contains('open')) renderNotificationsList();
+      if (document.getElementById('alarms-modal')?.classList.contains('open')) renderAlarmsList();
       refreshOpenSidebarPage('notifications');
+      refreshOpenSidebarPage('alarms');
     }
   };
 
@@ -2667,7 +2752,10 @@ function listenToProfileShares() {
     });
     renderSidebar();
     renderNotificationButton();
+    renderAlarmButton();
     if (document.getElementById('notifications-modal')?.classList.contains('open')) renderNotificationsList();
+    if (document.getElementById('alarms-modal')?.classList.contains('open')) renderAlarmsList();
+    refreshOpenSidebarPage('alarms');
   };
 
   const unsubs = inboxes.map(ref => onSnapshot(ref, applySnapshot, err => {
@@ -2697,8 +2785,11 @@ function listenToProfileShares() {
     });
     renderSidebar();
     renderNotificationButton();
+    renderAlarmButton();
     if (!activeId) { const sorted = sortedIds(); sorted.length ? openNote(sorted[0]) : showEditorView(false); }
     if (document.getElementById('notifications-modal')?.classList.contains('open')) renderNotificationsList();
+    if (document.getElementById('alarms-modal')?.classList.contains('open')) renderAlarmsList();
+    refreshOpenSidebarPage('alarms');
   }, err => {
     console.warn('direct shared notes listener:', err);
     markSourceFailed();
@@ -2755,6 +2846,7 @@ function notificationText(n) {
   if (n.type === 'profile_link') return n.fromName + ' wants to link profiles';
   if (n.type === 'folder_share') return n.fromName + ' shared folder "' + (n.sourceFolderTitle || 'Shared Folder') + '" with you';
   if (n.type === 'mention') return n.fromName + ' mentioned you in "' + n.noteTitle + '"';
+  if (n.type === 'reminder') return n.fromName + ' set a reminder for "' + (n.reminderText || n.noteTitle || 'Reminder') + '"';
   return n.fromName + ' shared "' + n.noteTitle + '" with you';
 }
 
@@ -2778,7 +2870,7 @@ function renderNotificationsList(target = 'notifications-list') {
     return;
   }
   if (!items.length) {
-    list.innerHTML = '<div class="profile-empty">No notifications yet. Direct shares and @mentions from linked profiles will appear here.</div>';
+    list.innerHTML = '<div class="profile-empty">No notifications yet. Direct shares, reminders, and @mentions from linked profiles will appear here.</div>';
     return;
   }
 
@@ -2944,7 +3036,7 @@ function _subscribeSharedNote(noteId) {
         titleEl.value = d.title || 'Untitled Note';
         ed.innerHTML  = renderMarkdownContent(d.content || '');
         linkifyTextNodes(ed); ensureLinkAttrs(ed);
-        restoreChecklistState(ed); restoreAlarmMarks(ed); refreshEmpty(ed); updateCounts();
+        restoreChecklistState(ed); restoreAlarmMarks(ed); decorateTables(ed); refreshEmpty(ed); updateCounts();
         openNote(noteId);
       }
     }

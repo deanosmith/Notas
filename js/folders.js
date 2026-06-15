@@ -1,13 +1,93 @@
 /* Folder CRUD, moving, and pinning - extracted from index.original.html. */
+function folderOrderValue(folder) {
+  if (Number.isFinite(Number(folder?.order))) return Number(folder.order);
+  const created = new Date(folder?.created || 0).getTime();
+  return Number.isFinite(created) && created > 0 ? created : Number.MAX_SAFE_INTEGER;
+}
+
+function compareFolders(a, b) {
+  const orderDiff = folderOrderValue(a) - folderOrderValue(b);
+  if (orderDiff) return orderDiff;
+  const createdDiff = new Date(a?.created || 0) - new Date(b?.created || 0);
+  if (createdDiff) return createdDiff;
+  return String(a?.title || '').localeCompare(String(b?.title || ''));
+}
+
+function sortedFolders() {
+  return Object.values(folders).sort(compareFolders);
+}
+
+function nextFolderOrderValue() {
+  const ordered = sortedFolders();
+  if (!ordered.length) return 1;
+  const last = ordered[ordered.length - 1];
+  const lastOrder = folderOrderValue(last);
+  return Number.isFinite(lastOrder) && lastOrder < Number.MAX_SAFE_INTEGER ? lastOrder + 1 : ordered.length + 1;
+}
+
 function createFolder(title) {
   const id  = 'folder_' + Date.now();
   const now = new Date().toISOString();
-  const folder = { id, title: title.trim() || 'Untitled Folder', public: false, iconColor: FOLDER_ICON_THEME, iconColorMode: 'theme', sharedWith: {}, sharedAccessKeys: [], created: now, modified: now };
+  const folder = { id, title: title.trim() || 'Untitled Folder', public: false, iconColor: FOLDER_ICON_THEME, iconColorMode: 'theme', sharedWith: {}, sharedAccessKeys: [], order: nextFolderOrderValue(), created: now, modified: now };
   folders[id] = folder;
   expandedFolders.add(id);
   activeFolderId = id;
   renderSidebar();
   saveFolderDoc(folder);
+}
+
+async function renameFolder(folderId, title) {
+  const folder = folders[folderId];
+  const nextTitle = String(title || '').trim() || 'Untitled Folder';
+  if (!folder || !isOwnedFolder(folder) || folder.title === nextTitle) return;
+  const previousTitle = folder.title;
+  folder.title = nextTitle;
+  folder.modified = new Date().toISOString();
+  renderSidebar();
+  try {
+    await setDoc(doc(fsDb, 'folders', folderId), {
+      title: nextTitle,
+      modified: serverTimestamp()
+    }, { merge: true });
+    showToast('Folder Renamed', 'success');
+  } catch (err) {
+    console.error('rename folder:', err);
+    folder.title = previousTitle;
+    renderSidebar();
+    showToast('Could Not Rename Folder', 'error');
+  }
+}
+
+async function reorderFolder(draggedId, targetId, position) {
+  if (!draggedId || !targetId || draggedId === targetId || !folders[draggedId] || !folders[targetId]) return;
+  const ordered = sortedFolders();
+  const withoutDragged = ordered.filter(folder => folder.id !== draggedId);
+  const targetIndex = withoutDragged.findIndex(folder => folder.id === targetId);
+  if (targetIndex < 0) return;
+  withoutDragged.splice(position === 'after' ? targetIndex + 1 : targetIndex, 0, folders[draggedId]);
+  if (withoutDragged.every((folder, index) => ordered[index]?.id === folder.id)) return;
+
+  const previousOrders = new Map(withoutDragged.map(folder => [folder.id, folder.order]));
+  withoutDragged.forEach((folder, index) => {
+    folder.order = index + 1;
+    folder.modified = new Date().toISOString();
+  });
+  renderSidebar();
+
+  try {
+    await Promise.all(withoutDragged.map(folder => setDoc(doc(fsDb, 'folders', folder.id), {
+      order: folder.order,
+      modified: serverTimestamp()
+    }, { merge: true })));
+    showToast('Folders Reordered', 'success');
+  } catch (err) {
+    console.error('reorder folders:', err);
+    previousOrders.forEach((order, id) => {
+      if (folders[id]) folders[id].order = order;
+    });
+    renderSidebar();
+    showToast('Could Not Reorder Folders', 'error');
+  }
 }
 
 async function deleteFolder(id) {
@@ -171,10 +251,10 @@ function openMoveModal(noteId) {
   list.appendChild(noFolderItem);
 
   const moveFolders = Object.values(folders)
-    .filter(folder => !isOwnedNote(note) || isOwnedFolder(folder));
+    .filter(folder => !isOwnedNote(note) || isOwnedFolder(folder))
+    .sort(compareFolders);
 
   moveFolders
-    .sort((a, b) => new Date(a.created) - new Date(b.created))
     .forEach(folder => {
       const isCurrent = note.folderId === folder.id;
       const item = document.createElement('div');

@@ -224,8 +224,8 @@ function makeSidebarNoteEl(note, { inFolder = false } = {}) {
         icon: 'fa-solid fa-thumbtack',
         label: 'Pin',
         children: [
-          { icon: 'fa-solid fa-thumbtack', label: pinScope === 'minor' ? 'Minor Pin Active' : 'Minor Pin', action: () => setNotePinned(note.id, true, 'minor') },
           { icon: 'fa-solid fa-arrow-up', label: pinScope === 'major' ? 'Major Pin Active' : 'Major Pin', action: () => setNotePinned(note.id, true, 'major') },
+          { icon: 'fa-solid fa-thumbtack', label: pinScope === 'minor' ? 'Minor Pin Active' : 'Minor Pin', action: () => setNotePinned(note.id, true, 'minor') },
           ...(isPinned ? ['sep', { icon: 'fa-solid fa-xmark', label: 'Unpin', action: () => setNotePinned(note.id, false) }] : [])
         ]
       }
@@ -286,6 +286,7 @@ function makeSidebarNoteEl(note, { inFolder = false } = {}) {
     _draggingNoteId = null;
     document.querySelectorAll('.drag-over').forEach(d => d.classList.remove('drag-over'));
     document.querySelectorAll('.pin-drop-before,.pin-drop-after').forEach(d => d.classList.remove('pin-drop-before', 'pin-drop-after'));
+    document.querySelectorAll('.folder-drop-before,.folder-drop-after').forEach(d => d.classList.remove('folder-drop-before', 'folder-drop-after'));
   });
   return el;
 }
@@ -380,6 +381,28 @@ function attachPinnedReorderHandlers(el, note, group) {
   });
 }
 
+function attachFolderReorderHandlers(row, folder) {
+  if (!row || !folder) return;
+  row.draggable = true;
+  row.addEventListener('dragstart', e => {
+    if (e.target.closest('button')) {
+      e.preventDefault();
+      return;
+    }
+    _draggingFolderId = folder.id;
+    e.dataTransfer.setData('application/x-notas-folder', folder.id);
+    e.dataTransfer.setData('text/plain', folder.id);
+    e.dataTransfer.effectAllowed = 'move';
+    requestAnimationFrame(() => row.classList.add('folder-dragging'));
+  });
+  row.addEventListener('dragend', () => {
+    row.classList.remove('folder-dragging');
+    _draggingFolderId = null;
+    document.querySelectorAll('.folder-drop-before,.folder-drop-after').forEach(d => d.classList.remove('folder-drop-before', 'folder-drop-after'));
+    document.querySelectorAll('.drag-over').forEach(d => d.classList.remove('drag-over'));
+  });
+}
+
 const SIDEBAR_VIEWS = new Set(['notes', 'create', 'notifications', 'alarms', 'friends']);
 
 function updateRailActiveState() {
@@ -411,7 +434,7 @@ function renderSidebarPage(view) {
   const meta = {
     create:        { icon: 'fa-solid fa-plus',       label: 'Create' },
     notifications: { icon: 'fa-solid fa-bell',       label: 'Notifications' },
-    alarms:        { icon: 'fa-solid fa-clock',      label: 'Alarms' },
+    alarms:        { icon: 'fa-solid fa-clock',      label: 'Reminders' },
     friends:       { icon: 'fa-solid fa-user-group', label: 'Friends' }
   }[view] || { icon: 'fa-solid fa-note-sticky', label: 'Notes' };
 
@@ -498,8 +521,7 @@ function renderSidebar(filter) {
   updateRailActiveState();
   list.innerHTML = '';
 
-  const sortedFolderList = Object.values(folders)
-    .sort((a, b) => new Date(a.created) - new Date(b.created));
+  const sortedFolderList = sortedFolders();
 
   const filteredNotes = sortedIds().map(id => notes[id])
     .filter(n => !filter || noteMatchesFilter(n, filter));
@@ -558,6 +580,7 @@ function renderSidebar(filter) {
       '</div>';
 
     const row = folderEl.querySelector('.folder-row');
+    attachFolderReorderHandlers(row, folder);
     const notesWrap = document.createElement('div');
     notesWrap.className = 'folder-notes' + (isExpanded ? ' expanded' : '');
     const notesInner = document.createElement('div');
@@ -597,15 +620,35 @@ function renderSidebar(filter) {
       notesWrap.classList.toggle('expanded', nextExpanded);
     });
     row.addEventListener('dragover', e => {
+      if (_draggingFolderId) {
+        if (_draggingFolderId === folder.id) return;
+        e.preventDefault();
+        e.stopPropagation();
+        e.dataTransfer.dropEffect = 'move';
+        const rect = row.getBoundingClientRect();
+        const before = e.clientY < rect.top + rect.height / 2;
+        row.classList.toggle('folder-drop-before', before);
+        row.classList.toggle('folder-drop-after', !before);
+        return;
+      }
       if (!_draggingNoteId) return;
       e.preventDefault();
       e.dataTransfer.dropEffect = 'move';
       row.classList.add('drag-over');
     });
     row.addEventListener('dragleave', e => {
-      if (!row.contains(e.relatedTarget)) row.classList.remove('drag-over');
+      if (!row.contains(e.relatedTarget)) row.classList.remove('drag-over', 'folder-drop-before', 'folder-drop-after');
     });
     row.addEventListener('drop', e => {
+      if (_draggingFolderId) {
+        e.preventDefault();
+        e.stopPropagation();
+        const rect = row.getBoundingClientRect();
+        const position = e.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
+        row.classList.remove('folder-drop-before', 'folder-drop-after');
+        reorderFolder(e.dataTransfer.getData('application/x-notas-folder') || _draggingFolderId, folder.id, position);
+        return;
+      }
       e.preventDefault();
       row.classList.remove('drag-over');
       const noteId = e.dataTransfer.getData('text/plain');
@@ -621,6 +664,7 @@ function renderSidebar(filter) {
       const folderItems = isOwnedFolder(folder)
         ? [
             { icon: 'fa-solid fa-plus',                  label: 'New Note in Folder', action: () => { activeFolderId = folder.id; expandedFolders.add(folder.id); openModal(); } },
+            { icon: 'fa-solid fa-pen',                   label: 'Rename Folder',      action: () => openFolderRenameModal(folder.id) },
             { icon: 'fa-solid fa-arrow-up-from-bracket', label: 'Share Folder',       action: () => openShareModal('folder', folder.id) },
             colourItem,
             'sep',
@@ -737,14 +781,54 @@ function confirmCreate() {
 
 /* Folder Modal */
 const openFolderModal = () => {
+  _folderModalMode = 'create';
+  _folderRenameId = null;
+  const title = document.querySelector('#folder-modal .modal-title');
+  const input = document.getElementById('folder-modal-input');
+  const createBtn = document.getElementById('folder-modal-create');
+  if (title) title.innerHTML = '<i class="fa-solid fa-folder-plus" style="margin-right:8px;opacity:.7;"></i>New Folder';
+  if (input) {
+    input.placeholder = 'Folder Name';
+    input.value = '';
+  }
+  if (createBtn) createBtn.textContent = 'Create Folder';
   document.getElementById('folder-modal').classList.add('open');
-  document.getElementById('folder-modal-input').value = '';
-  setTimeout(() => document.getElementById('folder-modal-input').focus(), 120);
+  setTimeout(() => input?.focus(), 120);
 };
-const closeFolderModal = () => document.getElementById('folder-modal').classList.remove('open');
+function openFolderRenameModal(folderId) {
+  const folder = folders[folderId];
+  if (!folder || !isOwnedFolder(folder)) return;
+  _folderModalMode = 'rename';
+  _folderRenameId = folderId;
+  const title = document.querySelector('#folder-modal .modal-title');
+  const input = document.getElementById('folder-modal-input');
+  const createBtn = document.getElementById('folder-modal-create');
+  if (title) title.innerHTML = '<i class="fa-solid fa-pen" style="margin-right:8px;opacity:.7;"></i>Rename Folder';
+  if (input) {
+    input.placeholder = 'Folder Name';
+    input.value = folder.title || '';
+  }
+  if (createBtn) createBtn.textContent = 'Rename Folder';
+  document.getElementById('folder-modal').classList.add('open');
+  setTimeout(() => {
+    input?.focus();
+    input?.select();
+  }, 120);
+};
+const closeFolderModal = () => {
+  document.getElementById('folder-modal').classList.remove('open');
+  _folderModalMode = 'create';
+  _folderRenameId = null;
+};
 function confirmCreateFolder() {
   const t = document.getElementById('folder-modal-input').value.trim();
   if (!t) { document.getElementById('folder-modal-input').focus(); return; }
+  if (_folderModalMode === 'rename' && _folderRenameId) {
+    const folderId = _folderRenameId;
+    closeFolderModal();
+    renameFolder(folderId, t);
+    return;
+  }
   closeFolderModal();
   createFolder(t);
 }

@@ -96,6 +96,7 @@ function restoreUndoSnapshot(snapshot) {
   ed.innerHTML = snapshot.html;
   restoreChecklistState(ed);
   restoreAlarmMarks(ed);
+  decorateTables(ed);
   refreshEmpty(ed);
   restoreEditorSelection(ed, snapshot.selection);
   ed.scrollTop = Math.min(snapshot.scrollTop || 0, ed.scrollHeight);
@@ -172,50 +173,295 @@ function restoreChecklistState(root) {
     const oldCb = li.querySelector('input[type="checkbox"]');
     if (oldCb) { if (oldCb.checked) li.classList.add('checked'); oldCb.remove(); }
   });
+  normalizeChecklistStructure(root);
+}
+
+function listItemOwnContentFragment(li) {
+  const clone = li.cloneNode(true);
+  clone.querySelectorAll(':scope > ul, :scope > ol').forEach(list => list.remove());
+  return clone;
+}
+
+function listItemHasOwnContent(li) {
+  const own = listItemOwnContentFragment(li);
+  if (own.textContent.replace(/\u00a0/g, ' ').replace(/\u200b/g, '').trim()) return true;
+  return !![...own.childNodes].some(node => node.nodeType === Node.ELEMENT_NODE && node.tagName !== 'BR');
+}
+
+function isChecklistPlaceholderNode(node) {
+  if (!node) return false;
+  if (node.nodeType === Node.TEXT_NODE) return !node.textContent.replace(/\u00a0/g, ' ').replace(/\u200b/g, '').trim();
+  return node.nodeType === Node.ELEMENT_NODE && node.tagName === 'BR';
+}
+
+function removePlaceholdersBeforeNestedChecklist(li) {
+  let changed = false;
+  [...li.children].forEach(child => {
+    if (child.tagName !== 'UL' || !child.classList.contains('checklist')) return;
+    let prev = child.previousSibling;
+    while (isChecklistPlaceholderNode(prev)) {
+      const remove = prev;
+      prev = prev.previousSibling;
+      remove.remove();
+      changed = true;
+    }
+  });
+  return changed;
+}
+
+function normalizeChecklistStructure(root) {
+  if (!root) return false;
+  let changed = false;
+
+  root.querySelectorAll('ul.checklist').forEach(list => {
+    [...list.children].forEach(child => {
+      if (child.tagName !== 'UL' || !child.classList.contains('checklist')) return;
+      const previousLi = child.previousElementSibling?.tagName === 'LI' ? child.previousElementSibling : null;
+      if (!previousLi) return;
+      previousLi.appendChild(child);
+      changed = true;
+    });
+  });
+
+  root.querySelectorAll('ul.checklist > li').forEach(li => {
+    if (removePlaceholdersBeforeNestedChecklist(li)) changed = true;
+    if (listItemHasOwnContent(li)) return;
+    const nestedLists = [...li.children].filter(child => child.tagName === 'UL' && child.classList.contains('checklist'));
+    const previousLi = li.previousElementSibling?.tagName === 'LI' ? li.previousElementSibling : null;
+    if (!nestedLists.length || !previousLi) return;
+    nestedLists.forEach(list => previousLi.appendChild(list));
+    li.remove();
+    changed = true;
+  });
+
+  return changed;
+}
+
+function checklistSelectionSnapshot() {
+  const sel = window.getSelection();
+  const range = sel && sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null;
+  let caretLi = null;
+  let caretOffset = 0;
+  if (range?.collapsed) {
+    const owner = range.startContainer.nodeType === Node.ELEMENT_NODE
+      ? range.startContainer
+      : range.startContainer.parentElement;
+    const li = owner?.closest?.('li');
+    if (li?.parentElement?.classList.contains('checklist')) {
+      caretLi = li;
+      const beforeCaret = document.createRange();
+      beforeCaret.selectNodeContents(li);
+      beforeCaret.setEnd(range.startContainer, range.startOffset);
+      caretOffset = beforeCaret.toString().length;
+    }
+  }
+  return {
+    range,
+    collapsed: !!range?.collapsed,
+    caretLi,
+    caretOffset,
+    bookmark: captureEditorSelection(getEd())
+  };
+}
+
+function restoreChecklistSelection(snapshot, fallbackLi = null) {
+  const ed = getEd();
+  if (ed && snapshot?.collapsed) {
+    const targetLi = snapshot.caretLi?.isConnected ? snapshot.caretLi : fallbackLi;
+    if (targetLi?.isConnected) {
+      const point = rangePointFromTextOffset(targetLi, snapshot.caretLi ? snapshot.caretOffset : 0);
+      const range = document.createRange();
+      range.setStart(point.node, point.offset);
+      range.collapse(true);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+      ed.focus();
+      refreshUndoSnapshotSelection();
+      return;
+    }
+  }
+
+  if (ed && snapshot?.bookmark) {
+    restoreEditorSelection(ed, { ...snapshot.bookmark, startPath: null, endPath: null });
+    return;
+  }
+
+  const sel = window.getSelection();
+  const range = snapshot?.range;
+  if (ed && sel && range) {
+    const startOwner = range.startContainer.nodeType === Node.ELEMENT_NODE
+      ? range.startContainer
+      : range.startContainer.parentElement;
+    const endOwner = range.endContainer.nodeType === Node.ELEMENT_NODE
+      ? range.endContainer
+      : range.endContainer.parentElement;
+    if (startOwner && endOwner && ed.contains(startOwner) && ed.contains(endOwner)) {
+      try {
+        sel.removeAllRanges();
+        sel.addRange(range);
+        ed.focus();
+        refreshUndoSnapshotSelection();
+        return;
+      } catch (_) {}
+    }
+  }
+}
+
+function getOrCreateNestedChecklist(li) {
+  let nested = li.querySelector(':scope > ul.checklist');
+  if (!nested) {
+    nested = document.createElement('ul');
+    nested.className = 'checklist';
+    removePlaceholdersBeforeNestedChecklist(li);
+    li.appendChild(nested);
+  }
+  return nested;
+}
+
+function normalizeChecklistCommandItems(items) {
+  const first = items?.find(item => item?.tagName === 'LI' && item.parentElement?.classList.contains('checklist'));
+  const parentList = first?.parentElement;
+  if (!parentList) return [];
+  const selected = new Set(items.filter(item => item?.parentElement === parentList));
+  return [...parentList.children].filter(child => child.tagName === 'LI' && selected.has(child));
+}
+
+function checklistItemsForCommand(li) {
+  if (!li || li.tagName !== 'LI' || !li.parentElement?.classList.contains('checklist')) return [];
+  const sel = window.getSelection();
+  const ed = getEd();
+  if (!sel || !sel.rangeCount || sel.isCollapsed || !ed) return [li];
+
+  const range = sel.getRangeAt(0);
+  const owner = range.commonAncestorContainer.nodeType === Node.ELEMENT_NODE
+    ? range.commonAncestorContainer
+    : range.commonAncestorContainer.parentElement;
+  if (!owner || !ed.contains(owner)) return [li];
+
+  const parentList = li.parentElement;
+  const items = [...parentList.children].filter(item => {
+    if (item.tagName !== 'LI') return false;
+    try { return range.intersectsNode(item); }
+    catch (_) { return false; }
+  });
+  return items.length ? items : [li];
+}
+
+function checklistLiFromCollapsedElementRange(range) {
+  const container = range?.startContainer;
+  if (!container || container.nodeType !== Node.ELEMENT_NODE) return null;
+  if (container.tagName === 'LI' && container.parentElement?.classList.contains('checklist')) return container;
+
+  if (container.tagName === 'UL' && container.classList.contains('checklist')) {
+    const children = [...container.children].filter(child => child.tagName === 'LI');
+    if (!children.length) return null;
+
+    const childAtOffset = container.childNodes[range.startOffset];
+    const childBeforeOffset = container.childNodes[Math.max(0, range.startOffset - 1)];
+    if (childAtOffset?.tagName === 'LI') return childAtOffset;
+    if (childBeforeOffset?.tagName === 'LI') return childBeforeOffset;
+
+    const nodeIndex = node => [...container.childNodes].indexOf(node);
+    return children.find(child => nodeIndex(child) >= range.startOffset) || children[children.length - 1];
+  }
+
+  const childAtOffset = container.childNodes[range.startOffset];
+  const childBeforeOffset = container.childNodes[Math.max(0, range.startOffset - 1)];
+  const list = [childAtOffset, childBeforeOffset].find(node =>
+    node?.nodeType === Node.ELEMENT_NODE &&
+    node.tagName === 'UL' &&
+    node.classList.contains('checklist')
+  );
+  return list?.querySelector(':scope > li') || null;
+}
+
+function currentChecklistItemFromSelection() {
+  const li = ancestorOfType(['li']);
+  if (li && li.closest('ul.checklist')) return li;
+
+  const sel = window.getSelection();
+  const ed = getEd();
+  if (!sel || !sel.rangeCount || !ed) return null;
+  const range = sel.getRangeAt(0);
+  if (sel.isCollapsed) return checklistLiFromCollapsedElementRange(range);
+
+  const owner = range.commonAncestorContainer.nodeType === Node.ELEMENT_NODE
+    ? range.commonAncestorContainer
+    : range.commonAncestorContainer.parentElement;
+  if (!owner || !ed.contains(owner)) return null;
+
+  const candidates = [...ed.querySelectorAll('ul.checklist > li')].filter(item => {
+    try { return range.intersectsNode(item); }
+    catch (_) { return false; }
+  });
+  return candidates.find(item => !candidates.some(other => other !== item && item.contains(other))) || null;
+}
+
+function checklistIndentItems(items) {
+  const commandItems = normalizeChecklistCommandItems(items);
+  if (!commandItems.length) return false;
+
+  let anchor = commandItems[0].previousElementSibling;
+  let itemsToMove = commandItems;
+  if (!anchor && commandItems.length > 1) {
+    anchor = commandItems[0];
+    itemsToMove = commandItems.slice(1);
+  }
+  if (!anchor || !itemsToMove.length) return false;
+
+  const snapshot = checklistSelectionSnapshot();
+  const nested = getOrCreateNestedChecklist(anchor);
+  itemsToMove.forEach(item => nested.appendChild(item));
+  normalizeChecklistStructure(anchor.closest('ul.checklist') || getEd());
+  restoreChecklistSelection(snapshot, itemsToMove[0]);
+  return true;
+}
+
+function checklistOutdentItems(items) {
+  const commandItems = normalizeChecklistCommandItems(items);
+  if (!commandItems.length) return false;
+
+  const parentList = commandItems[0].parentElement;
+  const parentLi = parentList.parentElement;
+  if (!parentLi || parentLi.tagName !== 'LI') return false;
+  const grandParent = parentLi.parentElement;
+  if (!grandParent) return false;
+
+  const snapshot = checklistSelectionSnapshot();
+  const lastMoved = commandItems[commandItems.length - 1];
+  const followingSiblings = [];
+  let next = lastMoved.nextElementSibling;
+  while (next) {
+    followingSiblings.push(next);
+    next = next.nextElementSibling;
+  }
+
+  const insertBefore = parentLi.nextSibling;
+  commandItems.forEach(item => grandParent.insertBefore(item, insertBefore));
+
+  if (followingSiblings.length) {
+    const nested = getOrCreateNestedChecklist(lastMoved);
+    followingSiblings.forEach(sibling => nested.appendChild(sibling));
+  }
+
+  if (!parentList.querySelector(':scope > li')) parentList.remove();
+  normalizeChecklistStructure(grandParent);
+  restoreChecklistSelection(snapshot, commandItems[0]);
+  return true;
 }
 
 // Custom indent for a checklist li: move it into a nested ul.checklist under its
 // previous sibling. Relies on pure DOM manipulation — not execCommand — so the
 // checklist class is never lost.
 function checklistIndent(li) {
-  const prev = li.previousElementSibling;
-  if (!prev) return; // first item — nothing to nest under
-
-  // Save the live selection (text nodes travel with the li, so the range stays valid)
-  const sel = window.getSelection();
-  const savedRange = sel && sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null;
-
-  // Append to an existing nested checklist, or create one
-  let nested = prev.querySelector(':scope > ul.checklist');
-  if (!nested) {
-    nested = document.createElement('ul');
-    nested.className = 'checklist';
-    prev.appendChild(nested);
-  }
-  nested.appendChild(li);
-
-  if (savedRange) { sel.removeAllRanges(); sel.addRange(savedRange); }
+  return checklistIndentItems(checklistItemsForCommand(li));
 }
 
 // Custom outdent for a checklist li: move it to after its parent li in the
 // grandparent checklist. Siblings that come after it stay as a sub-list.
 function checklistOutdent(li) {
-  const parentList = li.parentElement;                       // nested ul.checklist
-  if (!parentList || !parentList.classList.contains('checklist')) return;
-  const parentLi = parentList.parentElement;                 // containing li
-  if (!parentLi || parentLi.tagName !== 'LI') return;        // already at top level
-  const grandParent = parentLi.parentElement;
-  if (!grandParent) return;
-
-  const sel = window.getSelection();
-  const savedRange = sel && sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null;
-
-  grandParent.insertBefore(li, parentLi.nextSibling);
-
-  // Remove the nested list if it is now empty
-  if (!parentList.hasChildNodes()) parentList.remove();
-
-  if (savedRange) { sel.removeAllRanges(); sel.addRange(savedRange); }
+  return checklistOutdentItems(checklistItemsForCommand(li));
 }
 
 // Extract a single li from its parent list into a new <ul> with the given class.
@@ -640,6 +886,9 @@ function getCleanHTML() {
     el.classList.remove('alarm-due');
     if (!el.classList.length) el.removeAttribute('class');
   });
+  normalizeChecklistStructure(clone);
+  stripTableEditorChrome(clone);
+  sanitizeEditorTables(clone);
   clone.querySelectorAll('[style]').forEach(el => { el.style.display = ''; if (!el.getAttribute('style')) el.removeAttribute('style'); });
   return clone.innerHTML;
 }
@@ -853,31 +1102,474 @@ function autoLinkTokenBeforeCaret() {
   return true;
 }
 
+function getEditorSelectionRange() {
+  const sel = window.getSelection();
+  const ed = getEd();
+  if (sel && sel.rangeCount) {
+    const range = sel.getRangeAt(0);
+    const owner = range.commonAncestorContainer.nodeType === Node.ELEMENT_NODE
+      ? range.commonAncestorContainer
+      : range.commonAncestorContainer.parentElement;
+    if (owner && ed.contains(owner)) return range;
+  }
+  ed.focus();
+  return null;
+}
+
+function currentTableCellFromSelection() {
+  const cell = ancestorOfType(['td', 'th']);
+  return cell && getEd().contains(cell) ? cell : null;
+}
+
+function isSelectionInTable() {
+  return !!currentTableCellFromSelection();
+}
+
+function closestInlineCodeFromSelection() {
+  const sel = window.getSelection();
+  if (!sel || !sel.rangeCount) return null;
+  let node = sel.getRangeAt(0).startContainer;
+  if (node.nodeType === Node.TEXT_NODE) node = node.parentElement;
+  const code = node?.closest?.('code');
+  return code && !code.closest('pre') && getEd().contains(code) ? code : null;
+}
+
+function unwrapInlineCode(code) {
+  const parent = code?.parentNode;
+  if (!parent) return;
+  const first = code.firstChild;
+  const last = code.lastChild;
+  while (code.firstChild) parent.insertBefore(code.firstChild, code);
+  code.remove();
+  parent.normalize?.();
+  const range = document.createRange();
+  if (first?.isConnected && last?.isConnected) {
+    range.setStartBefore(first);
+    range.setEndAfter(last);
+  } else {
+    range.selectNodeContents(parent);
+    range.collapse(false);
+  }
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+}
+
+function expandRangeToCurrentWord(range) {
+  if (!range.collapsed || range.startContainer.nodeType !== Node.TEXT_NODE) return false;
+  const node = range.startContainer;
+  const text = node.textContent;
+  let start = range.startOffset;
+  let end = range.startOffset;
+  while (start > 0 && !/\s/.test(text[start - 1])) start--;
+  while (end < text.length && !/\s/.test(text[end])) end++;
+  if (start === end) return false;
+  range.setStart(node, start);
+  range.setEnd(node, end);
+  return true;
+}
+
+function unwrapNestedInlineCode(root) {
+  root.querySelectorAll?.('code').forEach(code => {
+    if (code.closest('pre')) return;
+    const parent = code.parentNode;
+    while (code.firstChild) parent.insertBefore(code.firstChild, code);
+    code.remove();
+  });
+}
+
 function insertInlineCode() {
   const sel = window.getSelection();
-  if (!sel || !sel.rangeCount) { getEd().focus(); return; }
-  const range = sel.getRangeAt(0);
+  const existingCode = closestInlineCodeFromSelection();
+  if (existingCode) {
+    unwrapInlineCode(existingCode);
+    getEd().dispatchEvent(new Event('input'));
+    return;
+  }
+  if (ancestorOfType(['pre'])) {
+    insertCodeBlock();
+    return;
+  }
+
+  const range = getEditorSelectionRange();
+  if (!range) return;
+  if (!range.collapsed && range.toString().includes('\n')) {
+    insertCodeBlock();
+    return;
+  }
+
+  if (range.collapsed) expandRangeToCurrentWord(range);
   const code  = document.createElement('code');
-  code.appendChild(range.collapsed ? document.createTextNode('Code') : range.extractContents());
+  if (range.collapsed) {
+    code.textContent = 'Code';
+  } else {
+    const fragment = range.extractContents();
+    unwrapNestedInlineCode(fragment);
+    code.appendChild(fragment);
+  }
   range.insertNode(code);
   const r2 = document.createRange(); r2.selectNodeContents(code);
   sel.removeAllRanges(); sel.addRange(r2);
   getEd().dispatchEvent(new Event('input'));
 }
 
-function insertCodeBlock() {
-  const sel = window.getSelection();
-  if (!sel || !sel.rangeCount) { getEd().focus(); return; }
-  const range = sel.getRangeAt(0);
-  const pre = document.createElement('pre'), code = document.createElement('code');
-  code.textContent = range.toString() || 'Code Block';
+function createCodeBlockElement(text = '') {
+  const pre = document.createElement('pre');
+  const code = document.createElement('code');
+  code.textContent = text || 'Code Block';
   pre.appendChild(code);
-  if (!range.collapsed) range.deleteContents();
-  range.insertNode(pre);
-  const p = document.createElement('p'); p.innerHTML = '<br>'; pre.after(p);
-  const r2 = document.createRange(); r2.setStart(p, 0); r2.collapse(true);
+  return { pre, code };
+}
+
+function insertCodeBlock() {
+  if (isSelectionInTable()) {
+    showToast('Tables Support Simple Text Only', 'error');
+    return;
+  }
+  const existingPre = ancestorOfType(['pre']);
+  if (existingPre) {
+    const p = document.createElement('p');
+    p.textContent = existingPre.textContent || '';
+    if (!p.textContent) p.appendChild(document.createElement('br'));
+    existingPre.replaceWith(p);
+    placeCursorAtEnd(p);
+    getEd().dispatchEvent(new Event('input'));
+    return;
+  }
+
+  const range = getEditorSelectionRange();
+  if (!range) return;
+  const sel = window.getSelection();
+  const block = currentBlockFromSelection();
+  const selectedText = range.collapsed ? '' : range.toString();
+  const { pre, code } = createCodeBlockElement(selectedText || (block && block !== getEd() && block.tagName !== 'LI' ? block.textContent.trim() : ''));
+
+  if (range.collapsed && block && block !== getEd() && !['LI', 'TD', 'TH'].includes(block.tagName)) {
+    block.replaceWith(pre);
+  } else {
+    if (!range.collapsed) range.deleteContents();
+    range.insertNode(pre);
+  }
+
+  if (!pre.nextElementSibling || pre.nextElementSibling.tagName !== 'P') {
+    const p = document.createElement('p');
+    p.appendChild(document.createElement('br'));
+    pre.after(p);
+  }
+  const r2 = document.createRange();
+  r2.selectNodeContents(code);
   sel.removeAllRanges(); sel.addRange(r2);
   getEd().dispatchEvent(new Event('input'));
+}
+
+function tableCaptionText(table) {
+  return table?.caption?.textContent?.trim() || '';
+}
+
+function setTableCaptionText(table, text) {
+  if (!table) return;
+  const value = String(text || '').trim();
+  if (!value) {
+    table.caption?.remove();
+    return;
+  }
+  const caption = table.caption || table.createCaption();
+  caption.textContent = value;
+}
+
+function createTableControls(title = '') {
+  const controls = document.createElement('div');
+  controls.className = 'table-controls';
+  controls.setAttribute('contenteditable', 'false');
+  controls.innerHTML =
+    '<input class="table-title-input" data-table-title-input type="text" placeholder="Table header" value="' + esc(title) + '" aria-label="Table header" />' +
+    '<div class="table-axis-controls table-row-controls" aria-label="Row controls">' +
+      '<button class="table-btn" data-table-action="add-row" type="button" title="Add Row" aria-label="Add Row"><i class="fa-solid fa-plus"></i></button>' +
+      '<button class="table-btn" data-table-action="remove-row" type="button" title="Remove Row" aria-label="Remove Row"><i class="fa-solid fa-minus"></i></button>' +
+    '</div>' +
+    '<div class="table-axis-controls table-column-controls" aria-label="Column controls">' +
+      '<button class="table-btn" data-table-action="add-column" type="button" title="Add Column" aria-label="Add Column"><i class="fa-solid fa-plus"></i></button>' +
+      '<button class="table-btn" data-table-action="remove-column" type="button" title="Remove Column" aria-label="Remove Column"><i class="fa-solid fa-minus"></i></button>' +
+    '</div>';
+  return controls;
+}
+
+function cellPlainTextFragment(text) {
+  const frag = document.createDocumentFragment();
+  String(text || '').split(/\r?\n/).forEach((line, index) => {
+    if (index) frag.appendChild(document.createElement('br'));
+    frag.appendChild(document.createTextNode(line));
+  });
+  return frag;
+}
+
+function replaceElementWithPlainText(el) {
+  const frag = cellPlainTextFragment(el.textContent || '');
+  el.replaceWith(frag);
+}
+
+function replaceListWithPlainText(list) {
+  const lines = [...list.querySelectorAll('li')]
+    .map(li => li.textContent.replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+  const frag = cellPlainTextFragment(lines.length ? lines.join('\n') : list.textContent || '');
+  list.replaceWith(frag);
+}
+
+function sanitizeTableCell(cell) {
+  if (!cell) return false;
+  let changed = false;
+  cell.querySelectorAll('.table-controls').forEach(el => { el.remove(); changed = true; });
+  cell.querySelectorAll('table').forEach(table => { replaceElementWithPlainText(table); changed = true; });
+  cell.querySelectorAll('ul, ol').forEach(list => { replaceListWithPlainText(list); changed = true; });
+  cell.querySelectorAll('pre').forEach(pre => { replaceElementWithPlainText(pre); changed = true; });
+  cell.querySelectorAll('h1,h2,h3,h4,blockquote').forEach(block => {
+    const frag = document.createDocumentFragment();
+    while (block.firstChild) frag.appendChild(block.firstChild);
+    block.replaceWith(frag);
+    changed = true;
+  });
+  if (!cell.childNodes.length) {
+    cell.appendChild(document.createElement('br'));
+    changed = true;
+  }
+  return changed;
+}
+
+function sanitizeEditorTables(root = getEd()) {
+  if (!root) return false;
+  let changed = false;
+  root.querySelectorAll('td, th').forEach(cell => {
+    if (sanitizeTableCell(cell)) changed = true;
+  });
+  return changed;
+}
+
+function createTableCell() {
+  const td = document.createElement('td');
+  td.appendChild(document.createElement('br'));
+  return td;
+}
+
+function ensureTableShape(table) {
+  let changed = false;
+  if (!table.tBodies.length) {
+    const tbody = document.createElement('tbody');
+    [...table.rows].forEach(row => tbody.appendChild(row));
+    table.appendChild(tbody);
+    changed = true;
+  }
+  if (!table.rows.length) {
+    const row = table.tBodies[0].insertRow();
+    row.appendChild(createTableCell());
+    changed = true;
+  }
+  const maxCols = Math.max(1, ...[...table.rows].map(row => row.cells.length));
+  [...table.rows].forEach(row => {
+    while (row.cells.length < maxCols) {
+      row.appendChild(createTableCell());
+      changed = true;
+    }
+    [...row.cells].forEach(cell => {
+      if (cell.tagName !== 'TD' && cell.tagName !== 'TH') return;
+      if (sanitizeTableCell(cell)) changed = true;
+    });
+  });
+  return changed;
+}
+
+function decorateTables(root = getEd()) {
+  if (!root) return false;
+  let changed = sanitizeEditorTables(root);
+  const editable = root.isContentEditable || root.getAttribute?.('contenteditable') === 'true';
+  root.querySelectorAll('table').forEach(table => {
+    if (table.closest('.table-controls')) return;
+    if (ensureTableShape(table)) changed = true;
+    let wrap = table.closest('.note-table-wrap');
+    if (!wrap) {
+      wrap = document.createElement('div');
+      wrap.className = 'note-table-wrap';
+      table.before(wrap);
+      wrap.appendChild(table);
+      changed = true;
+    }
+    wrap.dataset.noteTableReady = '1';
+    if (!editable) {
+      wrap.classList.remove('has-table-controls');
+      const controls = wrap.querySelector(':scope > .table-controls');
+      if (controls) {
+        controls.remove();
+        changed = true;
+      }
+      return;
+    }
+    wrap.classList.add('has-table-controls');
+    if (!wrap.querySelector(':scope > .table-controls')) {
+      wrap.insertBefore(createTableControls(tableCaptionText(table)), table);
+      changed = true;
+    }
+  });
+  return changed;
+}
+
+function stripTableEditorChrome(root) {
+  root.querySelectorAll('.note-table-wrap').forEach(wrap => {
+    const table = wrap.querySelector(':scope > table');
+    const titleInput = wrap.querySelector(':scope > .table-controls [data-table-title-input]');
+    if (table && titleInput) setTableCaptionText(table, titleInput.value || titleInput.getAttribute('value') || '');
+  });
+  root.querySelectorAll('.table-controls').forEach(el => el.remove());
+  root.querySelectorAll('.note-table-wrap').forEach(wrap => {
+    wrap.classList.remove('has-table-controls');
+    const table = wrap.querySelector(':scope > table');
+    if (table) {
+      wrap.replaceWith(table);
+      return;
+    }
+    const frag = document.createDocumentFragment();
+    while (wrap.firstChild) frag.appendChild(wrap.firstChild);
+    wrap.replaceWith(frag);
+  });
+  root.querySelectorAll('[data-note-table-ready]').forEach(el => el.removeAttribute('data-note-table-ready'));
+}
+
+function createNoteTable(rows = 2, cols = 2) {
+  const table = document.createElement('table');
+  const tbody = document.createElement('tbody');
+  for (let r = 0; r < rows; r++) {
+    const tr = document.createElement('tr');
+    for (let c = 0; c < cols; c++) tr.appendChild(createTableCell());
+    tbody.appendChild(tr);
+  }
+  table.appendChild(tbody);
+  return table;
+}
+
+function insertTable() {
+  if (isSelectionInTable()) {
+    showToast('Tables Cannot Be Nested', 'error');
+    return;
+  }
+  const range = getEditorSelectionRange();
+  if (!range) return;
+  const table = createNoteTable();
+  const wrap = document.createElement('div');
+  wrap.className = 'note-table-wrap';
+  wrap.dataset.noteTableReady = '1';
+  wrap.classList.add('has-table-controls');
+  wrap.appendChild(createTableControls());
+  wrap.appendChild(table);
+  const block = currentBlockFromSelection();
+  if (range.collapsed && block && block !== getEd() && !['LI', 'TD', 'TH', 'PRE'].includes(block.tagName)) {
+    if (block.textContent.replace(/\u00a0/g, ' ').trim() || block.querySelector('img, table, ul, ol')) block.after(wrap);
+    else block.replaceWith(wrap);
+  } else {
+    if (!range.collapsed) range.deleteContents();
+    range.insertNode(wrap);
+  }
+  const p = document.createElement('p');
+  p.appendChild(document.createElement('br'));
+  wrap.after(p);
+  placeCursorAtStart(table.rows[0].cells[0]);
+  getEd().dispatchEvent(new Event('input'));
+}
+
+function tableForButton(btn) {
+  return btn?.closest('.note-table-wrap')?.querySelector('table') || null;
+}
+
+function selectedCellInTable(table) {
+  const cell = currentTableCellFromSelection();
+  return cell && table?.contains(cell) ? cell : null;
+}
+
+function tableColumnCount(table) {
+  return Math.max(1, ...[...table.rows].map(row => row.cells.length));
+}
+
+function placeCursorInTableCell(cell) {
+  if (!cell) return;
+  if (!cell.childNodes.length) cell.appendChild(document.createElement('br'));
+  placeCursorAtStart(cell);
+}
+
+function addTableRow(table) {
+  const selectedCell = selectedCellInTable(table);
+  const insertIndex = selectedCell ? selectedCell.parentElement.rowIndex + 1 : table.rows.length;
+  const cols = tableColumnCount(table);
+  const row = table.tBodies[0].insertRow(Math.min(insertIndex, table.tBodies[0].rows.length));
+  for (let i = 0; i < cols; i++) row.appendChild(createTableCell());
+  placeCursorInTableCell(row.cells[Math.min(selectedCell?.cellIndex || 0, cols - 1)]);
+}
+
+function removeTableRow(table) {
+  if (table.rows.length <= 1) {
+    showToast('Keep At Least One Row', 'error');
+    return;
+  }
+  const selectedCell = selectedCellInTable(table);
+  const rowIndex = selectedCell ? selectedCell.parentElement.rowIndex : table.rows.length - 1;
+  const nextIndex = Math.max(0, Math.min(rowIndex, table.rows.length - 2));
+  const colIndex = selectedCell?.cellIndex || 0;
+  table.deleteRow(rowIndex);
+  placeCursorInTableCell(table.rows[nextIndex]?.cells[Math.min(colIndex, table.rows[nextIndex].cells.length - 1)]);
+}
+
+function addTableColumn(table) {
+  const selectedCell = selectedCellInTable(table);
+  const insertIndex = selectedCell ? selectedCell.cellIndex + 1 : tableColumnCount(table);
+  [...table.rows].forEach(row => {
+    row.insertBefore(createTableCell(), row.cells[insertIndex] || null);
+  });
+  const targetRow = selectedCell?.parentElement || table.rows[0];
+  placeCursorInTableCell(targetRow?.cells[Math.min(insertIndex, targetRow.cells.length - 1)]);
+}
+
+function removeTableColumn(table) {
+  const cols = tableColumnCount(table);
+  if (cols <= 1) {
+    showToast('Keep At Least One Column', 'error');
+    return;
+  }
+  const selectedCell = selectedCellInTable(table);
+  const colIndex = selectedCell ? selectedCell.cellIndex : cols - 1;
+  [...table.rows].forEach(row => row.cells[colIndex]?.remove());
+  const targetRow = selectedCell?.parentElement?.isConnected ? selectedCell.parentElement : table.rows[0];
+  placeCursorInTableCell(targetRow?.cells[Math.max(0, Math.min(colIndex, targetRow.cells.length - 1))]);
+}
+
+function handleTableControl(btn) {
+  if (!activeId || !canEditNote(notes[activeId])) return;
+  const table = tableForButton(btn);
+  if (!table) return;
+  pushUndo();
+  const action = btn.dataset.tableAction;
+  if (action === 'add-row') addTableRow(table);
+  if (action === 'remove-row') removeTableRow(table);
+  if (action === 'add-column') addTableColumn(table);
+  if (action === 'remove-column') removeTableColumn(table);
+  ensureTableShape(table);
+  decorateTables(getEd());
+  getEd().dispatchEvent(new Event('input'));
+  scheduleUndoSnapshot();
+}
+
+function moveTableSelection(delta) {
+  const cell = currentTableCellFromSelection();
+  const table = cell?.closest('table');
+  if (!cell || !table) return false;
+  const cells = [...table.querySelectorAll('td, th')];
+  const currentIndex = cells.indexOf(cell);
+  if (currentIndex < 0) return false;
+  let nextIndex = currentIndex + delta;
+  if (nextIndex >= cells.length) {
+    pushUndo();
+    addTableRow(table);
+    return true;
+  }
+  nextIndex = Math.max(0, nextIndex);
+  placeCursorInTableCell(cells[nextIndex]);
+  return true;
 }
 
 let _linkSavedRange = null;
@@ -1024,6 +1716,12 @@ function applyBlockFormatToBlocks(blocks, format) {
   getEd().dispatchEvent(new Event('input'));
 }
 
+const TABLE_ALLOWED_ACTIONS = new Set(['bold', 'italic', 'strikethrough', 'code', 'link']);
+
+function shouldBlockTableAction(action) {
+  return isSelectionInTable() && !TABLE_ALLOWED_ACTIONS.has(action);
+}
+
 const ACTIONS = {
   bold:          () => cmd('bold'),
   italic:        () => cmd('italic'),
@@ -1097,24 +1795,23 @@ const ACTIONS = {
   quote:         () => toggleBlock('blockquote'),
   code:          insertInlineCode,
   codeblock:     insertCodeBlock,
+  table:         insertTable,
   link:          insertLink,
   alarm:         () => openNoteAlarmModal(activeId),
   hr:            () => { cmd('insertHorizontalRule'); getEd().focus(); },
   indentLeft:    () => {
-    const li = ancestorOfType(['li']);
-    if (li && li.closest('ul.checklist')) {
-      checklistOutdent(li);
-      getEd().dispatchEvent(new Event('input'));
+    const checklistLi = currentChecklistItemFromSelection();
+    if (checklistLi) {
+      if (checklistOutdent(checklistLi)) getEd().dispatchEvent(new Event('input'));
     } else {
       document.execCommand('outdent');
     }
     getEd().focus();
   },
   indentRight:   () => {
-    const li = ancestorOfType(['li']);
-    if (li && li.closest('ul.checklist')) {
-      checklistIndent(li);
-      getEd().dispatchEvent(new Event('input'));
+    const checklistLi = currentChecklistItemFromSelection();
+    if (checklistLi) {
+      if (checklistIndent(checklistLi)) getEd().dispatchEvent(new Event('input'));
     } else {
       document.execCommand('indent');
     }
@@ -1128,7 +1825,7 @@ function makeAlarmId() {
 
 function formatAlarmDateTime(iso) {
   const date = new Date(iso);
-  if (!Number.isFinite(date.getTime())) return 'Invalid alarm';
+  if (!Number.isFinite(date.getTime())) return 'Invalid reminder';
   return date.toLocaleString([], {
     weekday: 'short',
     month: 'short',
@@ -1139,7 +1836,7 @@ function formatAlarmDateTime(iso) {
 }
 
 function alarmTextFromMark(mark) {
-  return (mark?.textContent || '').replace(/\u200b/g, ' ').replace(/\s+/g, ' ').trim() || 'Alarm';
+  return (mark?.textContent || '').replace(/\u200b/g, ' ').replace(/\s+/g, ' ').trim() || 'Reminder';
 }
 
 function createAlarmMark(alarmAt, alarmId = makeAlarmId()) {
@@ -1167,7 +1864,7 @@ function updateAlarmMarkDisplay(mark) {
   mark.dataset.alarmAt = alarmAt;
   mark.classList.add('note-alarm');
   mark.classList.toggle('alarm-due', new Date(alarmAt).getTime() <= Date.now());
-  mark.title = 'Alarm: ' + formatAlarmDateTime(alarmAt);
+  mark.title = 'Reminder: ' + formatAlarmDateTime(alarmAt);
   return true;
 }
 
@@ -1229,6 +1926,7 @@ function alarmItemsFromNote(note) {
       if (!alarmAt) return null;
       return {
         kind: 'inline',
+        direction: 'mine',
         noteId: note.id,
         alarmId: mark.dataset.alarmId || note.id + '_alarm_' + index,
         alarmAt,
@@ -1249,12 +1947,45 @@ function getAlarmItems() {
     if (!alarmAt || !note) return;
     items.push({
       kind: 'legacy',
+      direction: 'mine',
       noteId,
       alarmId: '',
       alarmAt,
       title: note.title || 'Untitled Note',
       text: note.title || 'Untitled Note',
       due: new Date(alarmAt).getTime() <= Date.now()
+    });
+  });
+  Object.values(profileShareNotifications || {}).forEach(reminder => {
+    if (reminder.type !== 'reminder') return;
+    const alarmAt = normalizeAlarmAt(reminder.reminderAt || reminder.alarmAt);
+    if (!alarmAt) return;
+    items.push({
+      kind: 'received',
+      direction: 'received',
+      noteId: reminder.noteId || '',
+      alarmId: reminder.id,
+      alarmAt,
+      title: reminder.noteTitle || 'Untitled Note',
+      text: reminder.reminderText || reminder.noteTitle || 'Reminder',
+      fromName: reminder.fromName || 'Someone',
+      due: new Date(alarmAt).getTime() <= Date.now()
+    });
+  });
+  Object.values(sentReminders || {}).forEach(reminder => {
+    const normalized = normalizeSentReminder(reminder?.id, reminder);
+    if (!normalized) return;
+    items.push({
+      kind: 'sent',
+      direction: 'sent',
+      noteId: normalized.noteId,
+      alarmId: normalized.id,
+      alarmAt: normalized.reminderAt,
+      title: normalized.noteTitle || 'Untitled Note',
+      text: normalized.reminderText || normalized.noteTitle || 'Reminder',
+      targetUid: normalized.targetUid,
+      targetName: normalized.targetName || 'Friend',
+      due: new Date(normalized.reminderAt).getTime() <= Date.now()
     });
   });
   return items.sort((a, b) => new Date(a.alarmAt) - new Date(b.alarmAt));
@@ -1284,10 +2015,42 @@ function renderAlarmButton() {
   const badge = document.getElementById('alarm-badge');
   if (!badge) return;
   const items = getAlarmItems();
-  const count = items.filter(item => item.due).length;
+  const count = items.filter(item => item.due && item.direction !== 'sent').length;
   badge.textContent = count > 99 ? '99+' : String(count);
   badge.hidden = count === 0;
   scheduleAlarmRefresh(items);
+}
+
+function reminderSectionLabel(direction) {
+  if (direction === 'received') return 'From Friends';
+  if (direction === 'sent') return 'Sent';
+  return 'Mine';
+}
+
+function reminderItemMeta(item) {
+  const meta = [];
+  if (item.direction === 'received') meta.push('From ' + (item.fromName || 'Someone'));
+  if (item.direction === 'sent') meta.push('To ' + (item.targetName || 'Friend'));
+  if (item.title) meta.push(item.title);
+  return meta.join(' · ');
+}
+
+function reminderItemIcon(item) {
+  if (item.direction === 'sent') return 'fa-solid fa-paper-plane';
+  if (item.direction === 'received') return 'fa-solid fa-user-clock';
+  return 'fa-solid fa-clock';
+}
+
+function renderReminderItem(item) {
+  return '<div class="profile-row alarm-row' + (item.due ? ' due' : '') + '" data-alarm-note-id="' + esc(item.noteId) + '" data-alarm-id="' + esc(item.alarmId) + '" data-alarm-kind="' + esc(item.kind) + '">' +
+    '<span class="alarm-icon"><i class="' + reminderItemIcon(item) + '"></i></span>' +
+    '<div class="profile-main">' +
+      '<div class="alarm-text">' + esc(item.text) + '</div>' +
+      '<div class="alarm-note-title">' + esc(reminderItemMeta(item)) + '</div>' +
+      '<div class="notification-time">' + esc(formatAlarmDateTime(item.alarmAt)) + (item.due ? ' · Due' : '') + '</div>' +
+    '</div>' +
+    '<button class="modal-btn" data-clear-alarm-note="' + esc(item.noteId) + '" data-clear-alarm-id="' + esc(item.alarmId) + '" data-clear-alarm-kind="' + esc(item.kind) + '" type="button" title="Clear Reminder" aria-label="Clear Reminder"><i class="fa-solid fa-xmark"></i></button>' +
+  '</div>';
 }
 
 function renderAlarmsList(target = 'alarms-list') {
@@ -1295,21 +2058,18 @@ function renderAlarmsList(target = 'alarms-list') {
   if (!list) return;
   const items = getAlarmItems();
   if (!items.length) {
-    list.innerHTML = '<div class="profile-empty">No alarms set.</div>';
+    list.innerHTML = '<div class="profile-empty">No reminders set.</div>';
     return;
   }
 
-  list.innerHTML = items.map(item =>
-    '<div class="profile-row alarm-row' + (item.due ? ' due' : '') + '" data-alarm-note-id="' + esc(item.noteId) + '" data-alarm-id="' + esc(item.alarmId) + '" data-alarm-kind="' + esc(item.kind) + '">' +
-      '<span class="alarm-icon"><i class="fa-solid fa-clock"></i></span>' +
-      '<div class="profile-main">' +
-        '<div class="alarm-text">' + esc(item.text) + '</div>' +
-        '<div class="alarm-note-title">' + esc(item.title) + '</div>' +
-        '<div class="notification-time">' + esc(formatAlarmDateTime(item.alarmAt)) + (item.due ? ' · Due' : '') + '</div>' +
-      '</div>' +
-      '<button class="modal-btn" data-clear-alarm-note="' + esc(item.noteId) + '" data-clear-alarm-id="' + esc(item.alarmId) + '" data-clear-alarm-kind="' + esc(item.kind) + '" type="button" title="Clear"><i class="fa-solid fa-xmark"></i></button>' +
-    '</div>'
-  ).join('');
+  list.innerHTML = ['mine', 'received', 'sent'].map(direction => {
+    const sectionItems = items.filter(item => item.direction === direction);
+    if (!sectionItems.length) return '';
+    return '<div class="reminder-section">' +
+      '<div class="sidebar-section-label">' + reminderSectionLabel(direction) + '</div>' +
+      sectionItems.map(renderReminderItem).join('') +
+    '</div>';
+  }).join('');
 
   list.querySelectorAll('[data-alarm-note-id]').forEach(row => {
     row.addEventListener('click', e => {
@@ -1325,9 +2085,10 @@ function renderAlarmsList(target = 'alarms-list') {
   });
 }
 
-function openAlarmFromList(noteId, alarmId, kind) {
+async function openAlarmFromList(noteId, alarmId, kind) {
   document.getElementById('alarms-modal')?.classList.remove('open');
   if (!notes[noteId]) {
+    if (kind === 'received' && noteId && typeof openDirectSharedNote === 'function' && await openDirectSharedNote(noteId)) return;
     showToast('That Note Is Not Available', 'error');
     return;
   }
@@ -1397,7 +2158,42 @@ function updateAlarmSummary() {
     document.getElementById('alarm-date-input')?.value,
     document.getElementById('alarm-time-input')?.value
   );
-  if (summary) summary.textContent = alarmAt ? formatAlarmDateTime(alarmAt) : '';
+  if (summary) {
+    const targetUid = selectedAlarmRecipientUid();
+    const prefix = targetUid ? ('For ' + alarmRecipientName(targetUid) + ': ') : '';
+    summary.textContent = alarmAt ? prefix + formatAlarmDateTime(alarmAt) : '';
+  }
+}
+
+function selectedAlarmRecipientUid() {
+  const value = document.getElementById('alarm-recipient-select')?.value || 'me';
+  return value && value !== 'me' ? value : '';
+}
+
+function alarmRecipientName(uid) {
+  if (!uid) return 'Me';
+  const friend = friends[uid] || linkedProfiles[uid];
+  return friend?.displayName || friend?.email || 'Friend';
+}
+
+function canSendFriendReminderForNote(note) {
+  return !!(note && (!note.owner || note.owner === userId));
+}
+
+function populateAlarmRecipientOptions(note, selectedUid = '') {
+  const select = document.getElementById('alarm-recipient-select');
+  if (!select) return;
+  const friendOptions = canSendFriendReminderForNote(note) ? friendArray() : [];
+  select.innerHTML = '<option value="me">Me</option>' + friendOptions.map(friend =>
+    '<option value="' + esc(friend.uid) + '">' + esc(friend.displayName || friend.email || 'Friend') + '</option>'
+  ).join('');
+  select.value = selectedUid && friendOptions.some(friend => friend.uid === selectedUid) ? selectedUid : 'me';
+}
+
+function updateAlarmRecipientState() {
+  const clearBtn = document.getElementById('alarm-clear');
+  if (!clearBtn || !_alarmContext) return;
+  clearBtn.style.display = _alarmContext.alarmId && !selectedAlarmRecipientUid() ? '' : 'none';
 }
 
 function getEditorRangeOrEnd() {
@@ -1430,19 +2226,25 @@ function openNoteAlarmModal(noteId = activeId) {
   const timeInput = document.getElementById('alarm-time-input');
   const targetText = document.getElementById('alarm-target-text');
   const clearBtn = document.getElementById('alarm-clear');
+  const selectedText = existingMark
+    ? alarmTextFromMark(existingMark)
+    : (range.collapsed ? 'New reminder text' : (range.toString().replace(/\s+/g, ' ').trim() || 'Selected text'));
 
   _alarmNoteId = noteId;
   _alarmContext = {
     noteId,
     range,
     alarmId: existingMark?.dataset.alarmId || '',
+    targetText: selectedText,
     mode: existingMark ? 'update' : (range.collapsed ? 'insert' : 'wrap')
   };
 
   dateInput.value = parts.date;
   timeInput.value = parts.time;
-  targetText.textContent = existingMark ? alarmTextFromMark(existingMark) : (range.collapsed ? 'New alarm text' : (range.toString().replace(/\s+/g, ' ').trim() || 'Selected text'));
+  targetText.textContent = selectedText;
+  populateAlarmRecipientOptions(notes[noteId]);
   clearBtn.style.display = existingMark ? '' : 'none';
+  updateAlarmRecipientState();
   updateAlarmSummary();
   document.getElementById('note-alarm-modal')?.classList.add('open');
   setTimeout(() => timeInput.focus(), 120);
@@ -1465,7 +2267,7 @@ function restoreAlarmContextRange() {
 function applyAlarmToRange(range, alarmAt) {
   const mark = createAlarmMark(alarmAt, _alarmContext?.alarmId || makeAlarmId());
   if (range.collapsed) {
-    mark.textContent = 'Alarm';
+    mark.textContent = 'Reminder';
     range.insertNode(mark);
     selectAlarmMarkText(mark);
     return mark;
@@ -1485,6 +2287,32 @@ async function saveNoteAlarm() {
   );
   if (!alarmAt) {
     showToast('Enter A Time Or Date', 'error');
+    return;
+  }
+  const targetUid = selectedAlarmRecipientUid();
+  if (targetUid) {
+    if (typeof sendFriendReminder !== 'function') {
+      showToast('Could Not Send Reminder', 'error');
+      return;
+    }
+    const result = await sendFriendReminder(
+      _alarmContext.noteId,
+      targetUid,
+      alarmAt,
+      _alarmContext.targetText || document.getElementById('alarm-target-text')?.textContent || 'Reminder'
+    );
+    if (!result?.ok) {
+      showToast('Could Not Send Reminder', 'error');
+      return;
+    }
+    renderAlarmButton();
+    if (document.getElementById('alarms-modal')?.classList.contains('open')) renderAlarmsList();
+    refreshOpenSidebarPage('alarms');
+    closeNoteAlarmModal();
+    showToast(
+      result.cloudSynced ? 'Reminder Sent To ' + alarmRecipientName(targetUid) : 'Reminder sent; Sent list cloud sync failed',
+      result.cloudSynced ? 'success' : 'error'
+    );
     return;
   }
   if (activeId !== _alarmContext.noteId) openNote(_alarmContext.noteId);
@@ -1511,7 +2339,7 @@ async function saveNoteAlarm() {
     scheduleSave();
   }
   closeNoteAlarmModal();
-  showToast('Alarm Set', 'success');
+  showToast('Reminder Set', 'success');
 }
 
 async function removeInlineAlarm(noteId, alarmId) {
@@ -1552,18 +2380,63 @@ async function clearLegacyNoteAlarm(noteId) {
   refreshOpenSidebarPage('alarms');
   try {
     await setDoc(_getUserDocRef(), { noteAlarms: { [noteId]: null } }, { merge: true });
-    showToast('Alarm Cleared', 'success');
+    showToast('Reminder Cleared', 'success');
   } catch (err) {
     console.error('clear note alarm:', err);
-    showToast('Alarm cleared locally; cloud sync failed', 'error');
+    showToast('Reminder cleared locally; cloud sync failed', 'error');
+  }
+}
+
+async function clearSentReminder(reminderId) {
+  if (!reminderId) return;
+  const reminder = sentReminders[reminderId];
+  delete sentReminders[reminderId];
+  _writeSentRemindersToLocal();
+  renderAlarmButton();
+  if (document.getElementById('alarms-modal')?.classList.contains('open')) renderAlarmsList();
+  refreshOpenSidebarPage('alarms');
+  try {
+    await setDoc(_getUserDocRef(), { sentReminders: { [reminderId]: null } }, { merge: true });
+    if (reminder?.targetUid) {
+      await deleteDoc(doc(fsDb, 'profileShares', reminder.targetUid, 'items', reminderId)).catch(err => {
+        console.warn('delete delivered reminder:', err);
+      });
+    }
+    showToast('Reminder Cleared', 'success');
+  } catch (err) {
+    console.error('clear sent reminder:', err);
+    showToast('Reminder cleared locally; cloud sync failed', 'error');
+  }
+}
+
+async function clearReceivedReminder(reminderId) {
+  if (!reminderId) return;
+  delete profileShareNotifications[reminderId];
+  renderAlarmButton();
+  if (document.getElementById('alarms-modal')?.classList.contains('open')) renderAlarmsList();
+  refreshOpenSidebarPage('alarms');
+  try {
+    await deleteDoc(doc(fsDb, 'profileShares', userId, 'items', reminderId));
+    showToast('Reminder Cleared', 'success');
+  } catch (err) {
+    console.error('clear received reminder:', err);
+    showToast('Reminder cleared locally; cloud sync failed', 'error');
   }
 }
 
 async function clearNoteAlarm(noteId = _alarmContext?.noteId || _alarmNoteId, alarmId = _alarmContext?.alarmId || '', kind = '') {
+  if (kind === 'sent') {
+    await clearSentReminder(alarmId);
+    return;
+  }
+  if (kind === 'received') {
+    await clearReceivedReminder(alarmId);
+    return;
+  }
   if (alarmId || kind === 'inline') {
     await removeInlineAlarm(noteId, alarmId);
     if (_alarmContext?.noteId === noteId) closeNoteAlarmModal();
-    showToast('Alarm Cleared', 'success');
+    showToast('Reminder Cleared', 'success');
     return;
   }
   if (_alarmContext?.mode && _alarmContext.mode !== 'update') {
@@ -1573,7 +2446,7 @@ async function clearNoteAlarm(noteId = _alarmContext?.noteId || _alarmNoteId, al
   if (_alarmContext?.alarmId) {
     await removeInlineAlarm(_alarmContext.noteId, _alarmContext.alarmId);
     closeNoteAlarmModal();
-    showToast('Alarm Cleared', 'success');
+    showToast('Reminder Cleared', 'success');
     return;
   }
   await clearLegacyNoteAlarm(noteId);

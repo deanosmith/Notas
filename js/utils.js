@@ -24,6 +24,10 @@ function _noteAlarmsStorageKey() {
   return 'notas_note_alarms_' + userId;
 }
 
+function _sentRemindersStorageKey() {
+  return 'notas_sent_reminders_' + userId;
+}
+
 function _readLinkedProfilesFromLocal() {
   if (!userId) return {};
   try {
@@ -135,6 +139,88 @@ function _mergeNoteAlarms(...states) {
       const alarmAt = normalizeAlarmAt(state[id]);
       if (!alarmAt) return;
       if (!out[id] || new Date(alarmAt) > new Date(out[id])) out[id] = alarmAt;
+    });
+  });
+  return out;
+}
+
+function normalizeSentReminder(id, data = {}) {
+  if (!data || typeof data !== 'object') return null;
+  const reminderAt = normalizeAlarmAt(data.reminderAt || data.alarmAt);
+  if (!reminderAt) return null;
+  const createdDate = data.created?.toDate?.() || (data.createdIso ? new Date(data.createdIso) : null);
+  const created = createdDate instanceof Date && Number.isFinite(createdDate.getTime())
+    ? createdDate.toISOString()
+    : new Date().toISOString();
+  const targetPhotos = profilePhotoFields(data.targetPhotoURL, data.targetPhotoURLCandidates);
+  return {
+    id: data.id || id,
+    type: 'sent_reminder',
+    noteId: data.noteId || '',
+    noteTitle: data.noteTitle || 'Untitled Note',
+    reminderText: data.reminderText || data.text || data.noteTitle || 'Reminder',
+    reminderAt,
+    targetUid: data.targetUid || data.recipientUid || '',
+    targetName: data.targetName || data.recipientName || 'Friend',
+    targetEmail: normalizeEmail(data.targetEmail || data.recipientEmail || ''),
+    targetPhotoURL: targetPhotos.photoURL,
+    targetPhotoURLCandidates: targetPhotos.photoURLCandidates,
+    created
+  };
+}
+
+function _readSentRemindersFromLocal() {
+  if (!userId) return {};
+  try {
+    const raw = localStorage.getItem(_sentRemindersStorageKey());
+    const parsed = raw ? JSON.parse(raw) : {};
+    const out = {};
+    Object.keys(parsed || {}).forEach(id => {
+      const reminder = normalizeSentReminder(id, parsed[id]);
+      if (reminder) out[reminder.id] = reminder;
+    });
+    return out;
+  } catch (err) {
+    console.error('read sent reminders local:', err);
+    return {};
+  }
+}
+
+function _writeSentRemindersToLocal() {
+  if (!userId) return;
+  try {
+    const entries = Object.values(sentReminders || {})
+      .map(reminder => normalizeSentReminder(reminder?.id, reminder))
+      .filter(Boolean)
+      .sort((a, b) => new Date(a.reminderAt) - new Date(b.reminderAt));
+    if (entries.length) localStorage.setItem(_sentRemindersStorageKey(), JSON.stringify(entries.reduce((acc, reminder) => {
+      acc[reminder.id] = reminder;
+      return acc;
+    }, {})));
+    else localStorage.removeItem(_sentRemindersStorageKey());
+  } catch (err) {
+    console.error('write sent reminders local:', err);
+  }
+}
+
+function _readSentReminders(data) {
+  const raw = data?.sentReminders && typeof data.sentReminders === 'object' ? data.sentReminders : {};
+  const out = {};
+  Object.keys(raw).forEach(id => {
+    const reminder = normalizeSentReminder(id, raw[id]);
+    if (reminder) out[reminder.id] = reminder;
+  });
+  return out;
+}
+
+function _mergeSentReminders(...states) {
+  const out = {};
+  states.forEach(state => {
+    Object.values(state || {}).forEach(reminder => {
+      const normalized = normalizeSentReminder(reminder?.id, reminder);
+      if (!normalized) return;
+      const existing = out[normalized.id];
+      if (!existing || new Date(normalized.created) >= new Date(existing.created)) out[normalized.id] = normalized;
     });
   });
   return out;
@@ -441,6 +527,18 @@ function applyUserProfileData(data) {
     setDoc(_getUserDocRef(), { noteAlarms: localOnlyAlarms }, { merge: true })
       .catch(err => console.error('sync local note alarms:', err));
   }
+  const remoteSentReminders = _readSentReminders(data);
+  const localSentReminders = _readSentRemindersFromLocal();
+  sentReminders = _mergeSentReminders(remoteSentReminders, localSentReminders);
+  _writeSentRemindersToLocal();
+  const localOnlySentReminders = {};
+  Object.keys(localSentReminders).forEach(id => {
+    if (!remoteSentReminders[id]) localOnlySentReminders[id] = localSentReminders[id];
+  });
+  if (Object.keys(localOnlySentReminders).length) {
+    setDoc(_getUserDocRef(), { sentReminders: localOnlySentReminders }, { merge: true })
+      .catch(err => console.error('sync local sent reminders:', err));
+  }
   renderProfileConnectionUI();
   renderProfileLinkRequestsUI();
   renderShareProfileList();
@@ -572,4 +670,3 @@ function ensureOwnedDirectShareReadable(noteId) {
   setDoc(doc(fsDb, 'notes', noteId), { public: note.public }, { merge: true })
     .catch(err => console.error('repair direct share access:', err));
 }
-

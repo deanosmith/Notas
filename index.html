@@ -38,7 +38,7 @@
           <i class="fa-solid fa-bell"></i>
           <span class="notification-badge" id="notification-badge" hidden>0</span>
         </button>
-        <button class="rail-btn" id="alarm-btn" data-sidebar-view="alarms" type="button" title="Alarms" aria-label="Alarms">
+        <button class="rail-btn" id="alarm-btn" data-sidebar-view="alarms" type="button" title="Reminders" aria-label="Reminders">
           <i class="fa-solid fa-clock"></i>
           <span class="notification-badge" id="alarm-badge" hidden>0</span>
         </button>
@@ -85,9 +85,9 @@
           <div class="toolbar" id="toolbar">
             <div class="toolbar-group">
               <button class="tb-btn" data-action="h1"            title="Heading 1">H1</button>
-              <button class="tb-btn" data-action="bold"          title="Bold"><b>B</b></button>
-              <button class="tb-btn" data-action="italic"        title="Italic"><i>I</i></button>
-              <button class="tb-btn" data-action="strikethrough" title="Strikethrough"><s>S</s></button>
+              <button class="tb-btn" data-action="bold"          title="Bold (Cmd+B)"><b>B</b></button>
+              <button class="tb-btn" data-action="italic"        title="Italic (Cmd+I)"><i>I</i></button>
+              <button class="tb-btn" data-action="strikethrough" title="Strikethrough (Cmd+Shift+S)"><s>S</s></button>
             </div>
             <div class="toolbar-sep"></div>
             <div class="toolbar-group">
@@ -97,12 +97,18 @@
             </div>
             <div class="toolbar-sep"></div>
             <div class="toolbar-group">
-              <button class="tb-btn" data-action="indentLeft"  title="Outdent"><i class="fa-solid fa-outdent"></i></button>
-              <button class="tb-btn" data-action="indentRight" title="Indent"><i class="fa-solid fa-indent"></i></button>
+              <button class="tb-btn" data-action="indentLeft"  title="Outdent (Shift+Tab)"><i class="fa-solid fa-outdent"></i></button>
+              <button class="tb-btn" data-action="indentRight" title="Indent (Tab)"><i class="fa-solid fa-indent"></i></button>
             </div>
             <div class="toolbar-sep"></div>
             <div class="toolbar-group">
-              <button class="tb-btn" data-action="alarm" title="Set Alarm"><i class="fa-solid fa-clock"></i></button>
+              <button class="tb-btn" data-action="table"     title="Table"><i class="fa-solid fa-table"></i></button>
+              <button class="tb-btn" data-action="code"      title="Inline Code (Cmd+E)"><i class="fa-solid fa-code"></i></button>
+              <button class="tb-btn" data-action="codeblock" title="Code Block"><i class="fa-solid fa-terminal"></i></button>
+            </div>
+            <div class="toolbar-sep"></div>
+            <div class="toolbar-group">
+              <button class="tb-btn" data-action="alarm" title="Set Reminder"><i class="fa-solid fa-clock"></i></button>
             </div>
           </div>
         </div>
@@ -269,7 +275,7 @@
 
   <div class="modal-overlay" id="alarms-modal">
     <div class="modal wide">
-      <div class="modal-title"><i class="fa-solid fa-clock" style="margin-right:8px;opacity:.7;"></i>Alarms</div>
+      <div class="modal-title"><i class="fa-solid fa-clock" style="margin-right:8px;opacity:.7;"></i>Reminders</div>
       <div class="notifications-list" id="alarms-list"></div>
       <div class="modal-actions">
         <button class="modal-btn primary" id="alarms-close">Done</button>
@@ -279,20 +285,25 @@
 
   <div class="modal-overlay" id="note-alarm-modal">
     <div class="modal">
-      <div class="modal-title"><i class="fa-solid fa-clock" style="margin-right:8px;opacity:.7;"></i>Set Alarm</div>
+      <div class="modal-title"><i class="fa-solid fa-clock" style="margin-right:8px;opacity:.7;"></i>Set Reminder</div>
       <div class="alarm-target-card">
-        <span class="alarm-target-label">Alarm Text</span>
-        <span class="alarm-target-text" id="alarm-target-text">New alarm text</span>
+        <span class="alarm-target-label">Reminder Text</span>
+        <span class="alarm-target-text" id="alarm-target-text">New reminder text</span>
       </div>
       <div class="alarm-picker-grid">
+        <label class="alarm-field">Remind
+          <select class="settings-select" id="alarm-recipient-select" aria-label="Reminder recipient">
+            <option value="me">Me</option>
+          </select>
+        </label>
         <div class="alarm-presets" id="alarm-date-presets">
           <button class="alarm-preset" type="button" data-alarm-date-preset="today">Today</button>
           <button class="alarm-preset" type="button" data-alarm-date-preset="tomorrow">Tomorrow</button>
           <button class="alarm-preset" type="button" data-alarm-date-preset="next-week">Next Week</button>
         </div>
         <div class="alarm-fields">
-          <label class="alarm-field">Date<input class="modal-input" id="alarm-date-input" type="date" aria-label="Alarm date" /></label>
-          <label class="alarm-field">Time<input class="modal-input" id="alarm-time-input" type="time" aria-label="Alarm time" /></label>
+          <label class="alarm-field">Date<input class="modal-input" id="alarm-date-input" type="date" aria-label="Reminder date" /></label>
+          <label class="alarm-field">Time<input class="modal-input" id="alarm-time-input" type="time" aria-label="Reminder time" /></label>
         </div>
         <div class="alarm-presets" id="alarm-time-presets">
           <button class="alarm-preset" type="button" data-alarm-time-preset="09:00">Morning</button>

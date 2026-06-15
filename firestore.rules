@@ -32,6 +32,12 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/notes/$(noteId)).data.owner == request.auth.uid;
     }
 
+    function ownsProfileEmail(emailId) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/profileEmails/$(emailId))
+        && get(/databases/$(database)/documents/profileEmails/$(emailId)).data.uid == request.auth.uid;
+    }
+
     match /users/{uid} {
       allow read: if signedIn();
 
@@ -82,6 +88,36 @@ service cloud.firestore {
 
       allow delete: if signedIn()
         && (resource.data.fromUid == request.auth.uid || resource.data.toUid == request.auth.uid);
+    }
+
+    match /profileShares/{uid}/items/{itemId} {
+      allow read: if isSelf(uid);
+
+      allow create, update: if signedIn()
+        && request.resource.data.fromUid == request.auth.uid
+        && (
+          request.resource.data.recipientUid == uid
+          || request.resource.data.toUid == uid
+        );
+
+      allow delete: if signedIn()
+        && (
+          request.auth.uid == uid
+          || resource.data.fromUid == request.auth.uid
+        );
+    }
+
+    match /profileEmailShares/{emailId}/items/{itemId} {
+      allow read: if ownsProfileEmail(emailId);
+
+      allow create, update: if signedIn()
+        && request.resource.data.fromUid == request.auth.uid;
+
+      allow delete: if signedIn()
+        && (
+          ownsProfileEmail(emailId)
+          || resource.data.fromUid == request.auth.uid
+        );
     }
 
     match /notes/{noteId} {
