@@ -20,6 +20,7 @@ let profileLinkRequests = {};
 let profileLinkRequestSources = {};
 let readNotifications = {};
 let noteAlarms = {};
+let sentReminders = {};
 let profileShareNotifications = {};
 let notificationsUnavailable = false;
 let saveTimer     = null;

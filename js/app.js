@@ -72,6 +72,10 @@ document.getElementById('note-alarm-modal').addEventListener('click', e => { if 
   });
   document.getElementById(id).addEventListener('input', updateAlarmSummary);
 });
+document.getElementById('alarm-recipient-select')?.addEventListener('change', () => {
+  updateAlarmRecipientState();
+  updateAlarmSummary();
+});
 document.querySelectorAll('[data-alarm-date-preset]').forEach(btn => {
   btn.addEventListener('click', () => {
     const date = new Date();

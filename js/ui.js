@@ -224,8 +224,8 @@ function makeSidebarNoteEl(note, { inFolder = false } = {}) {
         icon: 'fa-solid fa-thumbtack',
         label: 'Pin',
         children: [
-          { icon: 'fa-solid fa-thumbtack', label: pinScope === 'minor' ? 'Minor Pin Active' : 'Minor Pin', action: () => setNotePinned(note.id, true, 'minor') },
           { icon: 'fa-solid fa-arrow-up', label: pinScope === 'major' ? 'Major Pin Active' : 'Major Pin', action: () => setNotePinned(note.id, true, 'major') },
+          { icon: 'fa-solid fa-thumbtack', label: pinScope === 'minor' ? 'Minor Pin Active' : 'Minor Pin', action: () => setNotePinned(note.id, true, 'minor') },
           ...(isPinned ? ['sep', { icon: 'fa-solid fa-xmark', label: 'Unpin', action: () => setNotePinned(note.id, false) }] : [])
         ]
       }
@@ -434,7 +434,7 @@ function renderSidebarPage(view) {
   const meta = {
     create:        { icon: 'fa-solid fa-plus',       label: 'Create' },
     notifications: { icon: 'fa-solid fa-bell',       label: 'Notifications' },
-    alarms:        { icon: 'fa-solid fa-clock',      label: 'Alarms' },
+    alarms:        { icon: 'fa-solid fa-clock',      label: 'Reminders' },
     friends:       { icon: 'fa-solid fa-user-group', label: 'Friends' }
   }[view] || { icon: 'fa-solid fa-note-sticky', label: 'Notes' };
 

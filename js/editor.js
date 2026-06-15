@@ -1283,13 +1283,14 @@ function createTableControls(title = '') {
   controls.setAttribute('contenteditable', 'false');
   controls.innerHTML =
     '<input class="table-title-input" data-table-title-input type="text" placeholder="Table header" value="' + esc(title) + '" aria-label="Table header" />' +
-    '<span class="table-control-label">Rows</span>' +
-    '<button class="table-btn" data-table-action="add-row" type="button" title="Add Row" aria-label="Add Row"><i class="fa-solid fa-plus"></i></button>' +
-    '<button class="table-btn" data-table-action="remove-row" type="button" title="Remove Row" aria-label="Remove Row"><i class="fa-solid fa-minus"></i></button>' +
-    '<span class="table-control-sep" aria-hidden="true"></span>' +
-    '<span class="table-control-label">Columns</span>' +
-    '<button class="table-btn" data-table-action="add-column" type="button" title="Add Column" aria-label="Add Column"><i class="fa-solid fa-plus"></i></button>' +
-    '<button class="table-btn" data-table-action="remove-column" type="button" title="Remove Column" aria-label="Remove Column"><i class="fa-solid fa-minus"></i></button>';
+    '<div class="table-axis-controls table-row-controls" aria-label="Row controls">' +
+      '<button class="table-btn" data-table-action="add-row" type="button" title="Add Row" aria-label="Add Row"><i class="fa-solid fa-plus"></i></button>' +
+      '<button class="table-btn" data-table-action="remove-row" type="button" title="Remove Row" aria-label="Remove Row"><i class="fa-solid fa-minus"></i></button>' +
+    '</div>' +
+    '<div class="table-axis-controls table-column-controls" aria-label="Column controls">' +
+      '<button class="table-btn" data-table-action="add-column" type="button" title="Add Column" aria-label="Add Column"><i class="fa-solid fa-plus"></i></button>' +
+      '<button class="table-btn" data-table-action="remove-column" type="button" title="Remove Column" aria-label="Remove Column"><i class="fa-solid fa-minus"></i></button>' +
+    '</div>';
   return controls;
 }
 
@@ -1824,7 +1825,7 @@ function makeAlarmId() {
 
 function formatAlarmDateTime(iso) {
   const date = new Date(iso);
-  if (!Number.isFinite(date.getTime())) return 'Invalid alarm';
+  if (!Number.isFinite(date.getTime())) return 'Invalid reminder';
   return date.toLocaleString([], {
     weekday: 'short',
     month: 'short',
@@ -1835,7 +1836,7 @@ function formatAlarmDateTime(iso) {
 }
 
 function alarmTextFromMark(mark) {
-  return (mark?.textContent || '').replace(/\u200b/g, ' ').replace(/\s+/g, ' ').trim() || 'Alarm';
+  return (mark?.textContent || '').replace(/\u200b/g, ' ').replace(/\s+/g, ' ').trim() || 'Reminder';
 }
 
 function createAlarmMark(alarmAt, alarmId = makeAlarmId()) {
@@ -1863,7 +1864,7 @@ function updateAlarmMarkDisplay(mark) {
   mark.dataset.alarmAt = alarmAt;
   mark.classList.add('note-alarm');
   mark.classList.toggle('alarm-due', new Date(alarmAt).getTime() <= Date.now());
-  mark.title = 'Alarm: ' + formatAlarmDateTime(alarmAt);
+  mark.title = 'Reminder: ' + formatAlarmDateTime(alarmAt);
   return true;
 }
 
@@ -1925,6 +1926,7 @@ function alarmItemsFromNote(note) {
       if (!alarmAt) return null;
       return {
         kind: 'inline',
+        direction: 'mine',
         noteId: note.id,
         alarmId: mark.dataset.alarmId || note.id + '_alarm_' + index,
         alarmAt,
@@ -1945,12 +1947,45 @@ function getAlarmItems() {
     if (!alarmAt || !note) return;
     items.push({
       kind: 'legacy',
+      direction: 'mine',
       noteId,
       alarmId: '',
       alarmAt,
       title: note.title || 'Untitled Note',
       text: note.title || 'Untitled Note',
       due: new Date(alarmAt).getTime() <= Date.now()
+    });
+  });
+  Object.values(profileShareNotifications || {}).forEach(reminder => {
+    if (reminder.type !== 'reminder') return;
+    const alarmAt = normalizeAlarmAt(reminder.reminderAt || reminder.alarmAt);
+    if (!alarmAt) return;
+    items.push({
+      kind: 'received',
+      direction: 'received',
+      noteId: reminder.noteId || '',
+      alarmId: reminder.id,
+      alarmAt,
+      title: reminder.noteTitle || 'Untitled Note',
+      text: reminder.reminderText || reminder.noteTitle || 'Reminder',
+      fromName: reminder.fromName || 'Someone',
+      due: new Date(alarmAt).getTime() <= Date.now()
+    });
+  });
+  Object.values(sentReminders || {}).forEach(reminder => {
+    const normalized = normalizeSentReminder(reminder?.id, reminder);
+    if (!normalized) return;
+    items.push({
+      kind: 'sent',
+      direction: 'sent',
+      noteId: normalized.noteId,
+      alarmId: normalized.id,
+      alarmAt: normalized.reminderAt,
+      title: normalized.noteTitle || 'Untitled Note',
+      text: normalized.reminderText || normalized.noteTitle || 'Reminder',
+      targetUid: normalized.targetUid,
+      targetName: normalized.targetName || 'Friend',
+      due: new Date(normalized.reminderAt).getTime() <= Date.now()
     });
   });
   return items.sort((a, b) => new Date(a.alarmAt) - new Date(b.alarmAt));
@@ -1980,10 +2015,42 @@ function renderAlarmButton() {
   const badge = document.getElementById('alarm-badge');
   if (!badge) return;
   const items = getAlarmItems();
-  const count = items.filter(item => item.due).length;
+  const count = items.filter(item => item.due && item.direction !== 'sent').length;
   badge.textContent = count > 99 ? '99+' : String(count);
   badge.hidden = count === 0;
   scheduleAlarmRefresh(items);
+}
+
+function reminderSectionLabel(direction) {
+  if (direction === 'received') return 'From Friends';
+  if (direction === 'sent') return 'Sent';
+  return 'Mine';
+}
+
+function reminderItemMeta(item) {
+  const meta = [];
+  if (item.direction === 'received') meta.push('From ' + (item.fromName || 'Someone'));
+  if (item.direction === 'sent') meta.push('To ' + (item.targetName || 'Friend'));
+  if (item.title) meta.push(item.title);
+  return meta.join(' · ');
+}
+
+function reminderItemIcon(item) {
+  if (item.direction === 'sent') return 'fa-solid fa-paper-plane';
+  if (item.direction === 'received') return 'fa-solid fa-user-clock';
+  return 'fa-solid fa-clock';
+}
+
+function renderReminderItem(item) {
+  return '<div class="profile-row alarm-row' + (item.due ? ' due' : '') + '" data-alarm-note-id="' + esc(item.noteId) + '" data-alarm-id="' + esc(item.alarmId) + '" data-alarm-kind="' + esc(item.kind) + '">' +
+    '<span class="alarm-icon"><i class="' + reminderItemIcon(item) + '"></i></span>' +
+    '<div class="profile-main">' +
+      '<div class="alarm-text">' + esc(item.text) + '</div>' +
+      '<div class="alarm-note-title">' + esc(reminderItemMeta(item)) + '</div>' +
+      '<div class="notification-time">' + esc(formatAlarmDateTime(item.alarmAt)) + (item.due ? ' · Due' : '') + '</div>' +
+    '</div>' +
+    '<button class="modal-btn" data-clear-alarm-note="' + esc(item.noteId) + '" data-clear-alarm-id="' + esc(item.alarmId) + '" data-clear-alarm-kind="' + esc(item.kind) + '" type="button" title="Clear Reminder" aria-label="Clear Reminder"><i class="fa-solid fa-xmark"></i></button>' +
+  '</div>';
 }
 
 function renderAlarmsList(target = 'alarms-list') {
@@ -1991,21 +2058,18 @@ function renderAlarmsList(target = 'alarms-list') {
   if (!list) return;
   const items = getAlarmItems();
   if (!items.length) {
-    list.innerHTML = '<div class="profile-empty">No alarms set.</div>';
+    list.innerHTML = '<div class="profile-empty">No reminders set.</div>';
     return;
   }
 
-  list.innerHTML = items.map(item =>
-    '<div class="profile-row alarm-row' + (item.due ? ' due' : '') + '" data-alarm-note-id="' + esc(item.noteId) + '" data-alarm-id="' + esc(item.alarmId) + '" data-alarm-kind="' + esc(item.kind) + '">' +
-      '<span class="alarm-icon"><i class="fa-solid fa-clock"></i></span>' +
-      '<div class="profile-main">' +
-        '<div class="alarm-text">' + esc(item.text) + '</div>' +
-        '<div class="alarm-note-title">' + esc(item.title) + '</div>' +
-        '<div class="notification-time">' + esc(formatAlarmDateTime(item.alarmAt)) + (item.due ? ' · Due' : '') + '</div>' +
-      '</div>' +
-      '<button class="modal-btn" data-clear-alarm-note="' + esc(item.noteId) + '" data-clear-alarm-id="' + esc(item.alarmId) + '" data-clear-alarm-kind="' + esc(item.kind) + '" type="button" title="Clear"><i class="fa-solid fa-xmark"></i></button>' +
-    '</div>'
-  ).join('');
+  list.innerHTML = ['mine', 'received', 'sent'].map(direction => {
+    const sectionItems = items.filter(item => item.direction === direction);
+    if (!sectionItems.length) return '';
+    return '<div class="reminder-section">' +
+      '<div class="sidebar-section-label">' + reminderSectionLabel(direction) + '</div>' +
+      sectionItems.map(renderReminderItem).join('') +
+    '</div>';
+  }).join('');
 
   list.querySelectorAll('[data-alarm-note-id]').forEach(row => {
     row.addEventListener('click', e => {
@@ -2021,9 +2085,10 @@ function renderAlarmsList(target = 'alarms-list') {
   });
 }
 
-function openAlarmFromList(noteId, alarmId, kind) {
+async function openAlarmFromList(noteId, alarmId, kind) {
   document.getElementById('alarms-modal')?.classList.remove('open');
   if (!notes[noteId]) {
+    if (kind === 'received' && noteId && typeof openDirectSharedNote === 'function' && await openDirectSharedNote(noteId)) return;
     showToast('That Note Is Not Available', 'error');
     return;
   }
@@ -2093,7 +2158,42 @@ function updateAlarmSummary() {
     document.getElementById('alarm-date-input')?.value,
     document.getElementById('alarm-time-input')?.value
   );
-  if (summary) summary.textContent = alarmAt ? formatAlarmDateTime(alarmAt) : '';
+  if (summary) {
+    const targetUid = selectedAlarmRecipientUid();
+    const prefix = targetUid ? ('For ' + alarmRecipientName(targetUid) + ': ') : '';
+    summary.textContent = alarmAt ? prefix + formatAlarmDateTime(alarmAt) : '';
+  }
+}
+
+function selectedAlarmRecipientUid() {
+  const value = document.getElementById('alarm-recipient-select')?.value || 'me';
+  return value && value !== 'me' ? value : '';
+}
+
+function alarmRecipientName(uid) {
+  if (!uid) return 'Me';
+  const friend = friends[uid] || linkedProfiles[uid];
+  return friend?.displayName || friend?.email || 'Friend';
+}
+
+function canSendFriendReminderForNote(note) {
+  return !!(note && (!note.owner || note.owner === userId));
+}
+
+function populateAlarmRecipientOptions(note, selectedUid = '') {
+  const select = document.getElementById('alarm-recipient-select');
+  if (!select) return;
+  const friendOptions = canSendFriendReminderForNote(note) ? friendArray() : [];
+  select.innerHTML = '<option value="me">Me</option>' + friendOptions.map(friend =>
+    '<option value="' + esc(friend.uid) + '">' + esc(friend.displayName || friend.email || 'Friend') + '</option>'
+  ).join('');
+  select.value = selectedUid && friendOptions.some(friend => friend.uid === selectedUid) ? selectedUid : 'me';
+}
+
+function updateAlarmRecipientState() {
+  const clearBtn = document.getElementById('alarm-clear');
+  if (!clearBtn || !_alarmContext) return;
+  clearBtn.style.display = _alarmContext.alarmId && !selectedAlarmRecipientUid() ? '' : 'none';
 }
 
 function getEditorRangeOrEnd() {
@@ -2126,19 +2226,25 @@ function openNoteAlarmModal(noteId = activeId) {
   const timeInput = document.getElementById('alarm-time-input');
   const targetText = document.getElementById('alarm-target-text');
   const clearBtn = document.getElementById('alarm-clear');
+  const selectedText = existingMark
+    ? alarmTextFromMark(existingMark)
+    : (range.collapsed ? 'New reminder text' : (range.toString().replace(/\s+/g, ' ').trim() || 'Selected text'));
 
   _alarmNoteId = noteId;
   _alarmContext = {
     noteId,
     range,
     alarmId: existingMark?.dataset.alarmId || '',
+    targetText: selectedText,
     mode: existingMark ? 'update' : (range.collapsed ? 'insert' : 'wrap')
   };
 
   dateInput.value = parts.date;
   timeInput.value = parts.time;
-  targetText.textContent = existingMark ? alarmTextFromMark(existingMark) : (range.collapsed ? 'New alarm text' : (range.toString().replace(/\s+/g, ' ').trim() || 'Selected text'));
+  targetText.textContent = selectedText;
+  populateAlarmRecipientOptions(notes[noteId]);
   clearBtn.style.display = existingMark ? '' : 'none';
+  updateAlarmRecipientState();
   updateAlarmSummary();
   document.getElementById('note-alarm-modal')?.classList.add('open');
   setTimeout(() => timeInput.focus(), 120);
@@ -2161,7 +2267,7 @@ function restoreAlarmContextRange() {
 function applyAlarmToRange(range, alarmAt) {
   const mark = createAlarmMark(alarmAt, _alarmContext?.alarmId || makeAlarmId());
   if (range.collapsed) {
-    mark.textContent = 'Alarm';
+    mark.textContent = 'Reminder';
     range.insertNode(mark);
     selectAlarmMarkText(mark);
     return mark;
@@ -2181,6 +2287,32 @@ async function saveNoteAlarm() {
   );
   if (!alarmAt) {
     showToast('Enter A Time Or Date', 'error');
+    return;
+  }
+  const targetUid = selectedAlarmRecipientUid();
+  if (targetUid) {
+    if (typeof sendFriendReminder !== 'function') {
+      showToast('Could Not Send Reminder', 'error');
+      return;
+    }
+    const result = await sendFriendReminder(
+      _alarmContext.noteId,
+      targetUid,
+      alarmAt,
+      _alarmContext.targetText || document.getElementById('alarm-target-text')?.textContent || 'Reminder'
+    );
+    if (!result?.ok) {
+      showToast('Could Not Send Reminder', 'error');
+      return;
+    }
+    renderAlarmButton();
+    if (document.getElementById('alarms-modal')?.classList.contains('open')) renderAlarmsList();
+    refreshOpenSidebarPage('alarms');
+    closeNoteAlarmModal();
+    showToast(
+      result.cloudSynced ? 'Reminder Sent To ' + alarmRecipientName(targetUid) : 'Reminder sent; Sent list cloud sync failed',
+      result.cloudSynced ? 'success' : 'error'
+    );
     return;
   }
   if (activeId !== _alarmContext.noteId) openNote(_alarmContext.noteId);
@@ -2207,7 +2339,7 @@ async function saveNoteAlarm() {
     scheduleSave();
   }
   closeNoteAlarmModal();
-  showToast('Alarm Set', 'success');
+  showToast('Reminder Set', 'success');
 }
 
 async function removeInlineAlarm(noteId, alarmId) {
@@ -2248,18 +2380,63 @@ async function clearLegacyNoteAlarm(noteId) {
   refreshOpenSidebarPage('alarms');
   try {
     await setDoc(_getUserDocRef(), { noteAlarms: { [noteId]: null } }, { merge: true });
-    showToast('Alarm Cleared', 'success');
+    showToast('Reminder Cleared', 'success');
   } catch (err) {
     console.error('clear note alarm:', err);
-    showToast('Alarm cleared locally; cloud sync failed', 'error');
+    showToast('Reminder cleared locally; cloud sync failed', 'error');
+  }
+}
+
+async function clearSentReminder(reminderId) {
+  if (!reminderId) return;
+  const reminder = sentReminders[reminderId];
+  delete sentReminders[reminderId];
+  _writeSentRemindersToLocal();
+  renderAlarmButton();
+  if (document.getElementById('alarms-modal')?.classList.contains('open')) renderAlarmsList();
+  refreshOpenSidebarPage('alarms');
+  try {
+    await setDoc(_getUserDocRef(), { sentReminders: { [reminderId]: null } }, { merge: true });
+    if (reminder?.targetUid) {
+      await deleteDoc(doc(fsDb, 'profileShares', reminder.targetUid, 'items', reminderId)).catch(err => {
+        console.warn('delete delivered reminder:', err);
+      });
+    }
+    showToast('Reminder Cleared', 'success');
+  } catch (err) {
+    console.error('clear sent reminder:', err);
+    showToast('Reminder cleared locally; cloud sync failed', 'error');
+  }
+}
+
+async function clearReceivedReminder(reminderId) {
+  if (!reminderId) return;
+  delete profileShareNotifications[reminderId];
+  renderAlarmButton();
+  if (document.getElementById('alarms-modal')?.classList.contains('open')) renderAlarmsList();
+  refreshOpenSidebarPage('alarms');
+  try {
+    await deleteDoc(doc(fsDb, 'profileShares', userId, 'items', reminderId));
+    showToast('Reminder Cleared', 'success');
+  } catch (err) {
+    console.error('clear received reminder:', err);
+    showToast('Reminder cleared locally; cloud sync failed', 'error');
   }
 }
 
 async function clearNoteAlarm(noteId = _alarmContext?.noteId || _alarmNoteId, alarmId = _alarmContext?.alarmId || '', kind = '') {
+  if (kind === 'sent') {
+    await clearSentReminder(alarmId);
+    return;
+  }
+  if (kind === 'received') {
+    await clearReceivedReminder(alarmId);
+    return;
+  }
   if (alarmId || kind === 'inline') {
     await removeInlineAlarm(noteId, alarmId);
     if (_alarmContext?.noteId === noteId) closeNoteAlarmModal();
-    showToast('Alarm Cleared', 'success');
+    showToast('Reminder Cleared', 'success');
     return;
   }
   if (_alarmContext?.mode && _alarmContext.mode !== 'update') {
@@ -2269,7 +2446,7 @@ async function clearNoteAlarm(noteId = _alarmContext?.noteId || _alarmNoteId, al
   if (_alarmContext?.alarmId) {
     await removeInlineAlarm(_alarmContext.noteId, _alarmContext.alarmId);
     closeNoteAlarmModal();
-    showToast('Alarm Cleared', 'success');
+    showToast('Reminder Cleared', 'success');
     return;
   }
   await clearLegacyNoteAlarm(noteId);

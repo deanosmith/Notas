@@ -82,6 +82,8 @@ onAuthStateChanged(auth, async user => {
       listenFriends();
       listenIncomingFriendRequests();
       listenSentFriendRequests();
+      listenToProfileLinkRequests();
+      listenToProfileShares();
       listenOwnedNoteAccess();
       const initialSharedWithMeLoad = listenSharedWithMe();
       _flushOfflineEdits();
@@ -133,6 +135,7 @@ onAuthStateChanged(auth, async user => {
     profileLinkRequestSources = {};
     readNotifications = {};
     noteAlarms = {};
+    sentReminders = {};
     profileShareNotifications = {};
     notificationsUnavailable = false;
     _processingProfileLinkResponses = new Set();
