@@ -16,10 +16,22 @@ const sectionScripts = [
   './auth.js'
 ];
 
+// When deployed, index.html loads this module as `app.js?v=<build-id>` so each
+// release busts the browser cache. Carry that build id onto every dynamically
+// injected section script so they all refresh together instead of being served
+// stale from cache. In local dev there is no query string, so nothing is added.
+const buildVersion = new URL(import.meta.url).searchParams.get('v');
+
+function sectionScriptUrl(src) {
+  const url = new URL(src, import.meta.url);
+  if (buildVersion) url.searchParams.set('v', buildVersion);
+  return url.href;
+}
+
 function loadSectionScript(src) {
   return new Promise((resolve, reject) => {
     const script = document.createElement('script');
-    script.src = new URL(src, import.meta.url).href;
+    script.src = sectionScriptUrl(src);
     script.async = false;
     script.onload = resolve;
     script.onerror = () => reject(new Error('Failed to load ' + src));
@@ -73,6 +85,7 @@ document.getElementById('note-alarm-modal').addEventListener('click', e => { if 
   document.getElementById(id).addEventListener('input', updateAlarmSummary);
 });
 document.getElementById('alarm-recipient-select')?.addEventListener('change', () => {
+  updateAlarmRecipientOptionState();
   updateAlarmRecipientState();
   updateAlarmSummary();
 });
@@ -157,6 +170,7 @@ editorEl.addEventListener('input', e => {
   } else if (_capitalizeNext && e.inputType && e.inputType !== 'insertParagraph' && e.inputType !== 'insertLineBreak') {
     _capitalizeNext = false;
   }
+  cleanupLiveInlineCodeBoundaries(editorEl, e);
   decorateTables(editorEl);
   refreshEmpty(editorEl);
   if (!syncActiveNoteFromEditor()) return;
@@ -188,6 +202,12 @@ editorEl.addEventListener('keyup', () => {
   refreshUndoSnapshotSelection();
 });
 editorEl.addEventListener('mouseup', refreshUndoSnapshotSelection);
+
+editorEl.addEventListener('pointerdown', e => {
+  const resizeHandle = e.target.closest?.('[data-table-resize]');
+  if (!resizeHandle || !editorEl.contains(resizeHandle)) return;
+  startTableColumnResize(e, resizeHandle);
+});
 
 editorEl.addEventListener('mousedown', e => {
   const tableBtn = e.target.closest('[data-table-action]');
@@ -700,5 +720,8 @@ if (sidebarMinimized && !isMobile()) setSidebarMinimized(true);
     updateSidebarWidthState();
   });
 
-  window.addEventListener('resize', () => updateSidebarWidthState());
+  window.addEventListener('resize', () => {
+    updateSidebarWidthState();
+    refreshTableResizeHandles(editorEl);
+  });
 }

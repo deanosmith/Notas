@@ -34,8 +34,8 @@
           <i class="fa-solid fa-plus"></i>
         </button>
         <div class="rail-divider" aria-hidden="true"></div>
-        <button class="rail-btn notification-btn" id="notifications-btn" data-sidebar-view="notifications" type="button" title="Notifications" aria-label="Notifications">
-          <i class="fa-solid fa-bell"></i>
+        <button class="rail-btn notification-btn" id="notifications-btn" data-sidebar-view="notifications" type="button" title="Mentions" aria-label="Mentions">
+          <i class="fa-solid fa-at"></i>
           <span class="notification-badge" id="notification-badge" hidden>0</span>
         </button>
         <button class="rail-btn" id="alarm-btn" data-sidebar-view="alarms" type="button" title="Reminders" aria-label="Reminders">
@@ -45,8 +45,12 @@
         <button class="rail-btn" id="rail-friends-btn" data-sidebar-view="friends" type="button" title="Friends" aria-label="Friends">
           <i class="fa-solid fa-user-group"></i>
         </button>
+        <button class="rail-btn" id="rail-trash-btn" data-sidebar-view="trash" type="button" title="Trash" aria-label="Trash">
+          <i class="fa-solid fa-trash"></i>
+        </button>
       </div>
       <div class="rail-stack">
+        <img id="user-avatar" class="rail-avatar" alt="" />
         <button class="rail-btn" id="profile-settings-btn" type="button" title="Settings" aria-label="Settings">
           <i class="fa-solid fa-gear"></i>
         </button>
@@ -264,7 +268,7 @@
 
   <div class="modal-overlay" id="notifications-modal">
     <div class="modal wide">
-      <div class="modal-title"><i class="fa-solid fa-bell" style="margin-right:8px;opacity:.7;"></i>Notifications</div>
+      <div class="modal-title"><i class="fa-solid fa-at" style="margin-right:8px;opacity:.7;"></i>Mentions</div>
       <div class="notifications-list" id="notifications-list"></div>
       <div class="modal-actions">
         <button class="modal-btn" id="notifications-mark-read">Mark All Read</button>
@@ -291,11 +295,13 @@
         <span class="alarm-target-text" id="alarm-target-text">New reminder text</span>
       </div>
       <div class="alarm-picker-grid">
-        <label class="alarm-field">Remind
-          <select class="settings-select" id="alarm-recipient-select" aria-label="Reminder recipient">
+        <div class="alarm-field alarm-recipient-field">
+          <span>Remind</span>
+          <select class="settings-select visually-hidden" id="alarm-recipient-select" aria-label="Reminder recipient">
             <option value="me">Me</option>
           </select>
-        </label>
+          <div class="alarm-recipient-options" id="alarm-recipient-options" role="radiogroup" aria-label="Reminder recipient"></div>
+        </div>
         <div class="alarm-presets" id="alarm-date-presets">
           <button class="alarm-preset" type="button" data-alarm-date-preset="today">Today</button>
           <button class="alarm-preset" type="button" data-alarm-date-preset="tomorrow">Tomorrow</button>

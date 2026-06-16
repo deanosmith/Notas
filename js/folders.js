@@ -28,7 +28,7 @@ function nextFolderOrderValue() {
 function createFolder(title) {
   const id  = 'folder_' + Date.now();
   const now = new Date().toISOString();
-  const folder = { id, title: title.trim() || 'Untitled Folder', public: false, iconColor: FOLDER_ICON_THEME, iconColorMode: 'theme', sharedWith: {}, sharedAccessKeys: [], order: nextFolderOrderValue(), created: now, modified: now };
+  const folder = { id, title: title.trim() || 'Untitled Folder', public: false, iconColor: DEFAULT_FOLDER_ICON_COLOR, iconColorMode: 'manual', sharedWith: {}, sharedAccessKeys: [], order: nextFolderOrderValue(), created: now, modified: now };
   folders[id] = folder;
   expandedFolders.add(id);
   activeFolderId = id;
@@ -215,7 +215,7 @@ async function setFolderIconColor(folderId, color) {
   const folder = folders[folderId];
   const iconColor = normalizeFolderIconColor(color, color === FOLDER_ICON_THEME ? 'theme' : 'manual');
   if (!folder || !iconColor) return;
-  const previous = normalizeFolderIconColor(folder.iconColor, folder.iconColorMode) || FOLDER_ICON_THEME;
+  const previous = normalizeFolderIconColor(folder.iconColor, folder.iconColorMode) || DEFAULT_FOLDER_ICON_COLOR;
   const previousMode = folder.iconColorMode || (previous === FOLDER_ICON_THEME ? 'theme' : 'manual');
   folder.iconColor = iconColor;
   folder.iconColorMode = iconColor === FOLDER_ICON_THEME ? 'theme' : 'manual';

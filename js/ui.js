@@ -1,22 +1,27 @@
 /* Rendering, modals, sidebar, drawer, and settings UI - extracted from index.original.html. */
 function openDeleteModal(type, id) {
-  const item = type === 'note' ? notes[id] : folders[id];
+  const item = type === 'note' || type === 'trash-note' ? notes[id] : folders[id];
   const name = item?.title;
   if (!name) return;
-  const isOwned = type === 'note' ? isOwnedNote(item) : isOwnedFolder(item);
+  const isPermanentTrashDelete = type === 'trash-note';
+  const isOwned = isPermanentTrashDelete ? true : (type === 'note' ? isOwnedNote(item) : isOwnedFolder(item));
   _deletePending = { type, id, mode: isOwned ? 'delete' : 'remove' };
 
   const titleEl = document.getElementById('delete-modal-title');
   const bodyEl = document.getElementById('delete-modal-body');
   const confirmBtn = document.getElementById('delete-modal-confirm');
 
-  titleEl.textContent = isOwned
+  titleEl.textContent = isPermanentTrashDelete
+    ? 'Delete Forever?'
+    : isOwned
     ? (type === 'note' ? 'Delete Note?' : 'Delete Folder?')
     : (type === 'note' ? 'Remove Shared Note?' : 'Remove Shared Folder?');
   bodyEl.className = 'delete-message' + (isOwned ? '' : ' remove');
-  const copy = isOwned
+  const copy = isPermanentTrashDelete
+    ? 'Permanently deletes this note now. This cannot be undone.'
+    : isOwned
     ? (type === 'note'
-      ? 'Permanently deletes this note for everyone. This cannot be undone.'
+      ? 'Moves this note to Trash for 30 days. You can restore it before it is permanently deleted.'
       : 'Deletes the folder. Notes inside move to Notes.')
     : (type === 'note'
       ? 'Removes it from your library only. The owner keeps the note.'
@@ -24,8 +29,10 @@ function openDeleteModal(type, id) {
   bodyEl.innerHTML =
     '<strong class="delete-target">' + esc(name) + '</strong>' +
     '<div class="delete-copy">' + esc(copy) + '</div>';
-  confirmBtn.innerHTML = isOwned
-    ? '<i class="fa-solid fa-trash" style="margin-right:6px;"></i>Delete'
+  confirmBtn.innerHTML = isPermanentTrashDelete
+    ? '<i class="fa-solid fa-trash" style="margin-right:6px;"></i>Delete Forever'
+    : isOwned
+    ? '<i class="fa-solid fa-trash" style="margin-right:6px;"></i>Move To Trash'
     : '<i class="fa-solid fa-xmark" style="margin-right:6px;"></i>Remove';
   document.getElementById('delete-modal').classList.add('open');
 }
@@ -35,10 +42,13 @@ function closeDeleteModal() {
 }
 async function confirmDelete() {
   if (!_deletePending) return;
-  const { type, id } = _deletePending;
+  const pending = _deletePending;
+  const { type, id } = pending;
   closeDeleteModal();
   if (type === 'note') await _execDeleteNote(id);
+  else if (type === 'trash-note') permanentlyDeleteTrashedNote(id);
   else if (type === 'profile') await removeLinkedProfile(id);
+  else if (type === 'table') confirmTableDelete(pending.table);
   else await _execDeleteFolder(id);
 }
 
@@ -235,7 +245,7 @@ function makeSidebarNoteEl(note, { inFolder = false } = {}) {
         action: () => setNotePinned(note.id, !isPinnedNote(note), 'major')
       };
   const snippet  = note.content.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 65) || 'Empty Note';
-  const accessAvatars = renderAccessAvatars(accessProfilesForNote(note), isOwned ? 'Shared with' : 'Shared by');
+  const accessAvatars = inFolder ? '' : renderAccessAvatars(accessProfilesForNote(note), isOwned ? 'Shared with' : 'Shared by');
   const noteFolder = note.folderId ? folders[note.folderId] : null;
   const noteFolderColor = noteFolder ? resolveFolderIconColor(noteFolder.iconColor, noteFolder.iconColorMode) : '';
   const el       = document.createElement('div');
@@ -403,7 +413,7 @@ function attachFolderReorderHandlers(row, folder) {
   });
 }
 
-const SIDEBAR_VIEWS = new Set(['notes', 'create', 'notifications', 'alarms', 'friends']);
+const SIDEBAR_VIEWS = new Set(['notes', 'create', 'notifications', 'alarms', 'friends', 'trash']);
 
 function updateRailActiveState() {
   document.querySelectorAll('[data-sidebar-view]').forEach(btn => {
@@ -417,6 +427,11 @@ function setSidebarView(view) {
   sidebarView = SIDEBAR_VIEWS.has(view) ? view : 'notes';
   if (sidebarMinimized && !isMobile()) setSidebarMinimized(false);
   if (isMobile()) openDrawer();
+  if (sidebarView !== 'trash' && activeId && isTrashedNote(notes[activeId])) {
+    const ids = sortedIds();
+    activeId = ids.length ? ids[0] : null;
+    activeId ? openNote(activeId) : showEditorView(false);
+  }
   renderSidebar();
 }
 
@@ -433,9 +448,10 @@ function renderSidebarPage(view) {
 
   const meta = {
     create:        { icon: 'fa-solid fa-plus',       label: 'Create' },
-    notifications: { icon: 'fa-solid fa-bell',       label: 'Notifications' },
+    notifications: { icon: 'fa-solid fa-at',         label: 'Mentions' },
     alarms:        { icon: 'fa-solid fa-clock',      label: 'Reminders' },
-    friends:       { icon: 'fa-solid fa-user-group', label: 'Friends' }
+    friends:       { icon: 'fa-solid fa-user-group', label: 'Friends' },
+    trash:         { icon: 'fa-solid fa-trash',      label: 'Trash' }
   }[view] || { icon: 'fa-solid fa-note-sticky', label: 'Notes' };
 
   list.innerHTML =
@@ -498,6 +514,40 @@ function renderSidebarPage(view) {
     document.getElementById('sidebar-connect-profile-btn')?.addEventListener('click', () => connectProfileByEmail('sidebar-connect-profile-email-input'));
     document.getElementById('sidebar-connect-profile-email-input')?.addEventListener('keydown', e => {
       if (e.key === 'Enter') connectProfileByEmail('sidebar-connect-profile-email-input');
+    });
+    return;
+  }
+
+  if (view === 'trash') {
+    const trashIds = trashSortedIds();
+    content.innerHTML = trashIds.length
+      ? '<div class="trash-list" id="sidebar-trash-list"></div>'
+      : '<div class="sidebar-page-empty">Deleted notes stay here for 30 days.</div>';
+    const trashList = document.getElementById('sidebar-trash-list');
+    if (!trashList) return;
+    trashList.innerHTML = trashIds.map(id => {
+      const note = notes[id];
+      const days = trashDaysRemaining(note);
+      const sub = days > 1 ? 'Deletes in ' + days + ' days' : days === 1 ? 'Deletes tomorrow' : 'Deletes soon';
+      return '<div class="trash-row" data-trash-note-id="' + esc(id) + '">' +
+        '<button class="trash-main" data-open-trash-note="' + esc(id) + '" type="button">' +
+          '<div class="trash-title">' + esc(note.title || 'Untitled Note') + '</div>' +
+          '<div class="trash-sub">' + esc(sub) + '</div>' +
+        '</button>' +
+        '<div class="trash-actions">' +
+          '<button class="trash-action-btn" data-restore-note="' + esc(id) + '" type="button" title="Restore" aria-label="Restore"><i class="fa-solid fa-rotate-left"></i></button>' +
+          '<button class="trash-action-btn danger" data-delete-trash-note="' + esc(id) + '" type="button" title="Delete Forever" aria-label="Delete Forever"><i class="fa-solid fa-trash"></i></button>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+    trashList.querySelectorAll('[data-open-trash-note]').forEach(btn => {
+      btn.addEventListener('click', () => openNote(btn.dataset.openTrashNote));
+    });
+    trashList.querySelectorAll('[data-restore-note]').forEach(btn => {
+      btn.addEventListener('click', () => restoreTrashedNote(btn.dataset.restoreNote));
+    });
+    trashList.querySelectorAll('[data-delete-trash-note]').forEach(btn => {
+      btn.addEventListener('click', () => openDeleteModal('trash-note', btn.dataset.deleteTrashNote));
     });
   }
 }
@@ -974,19 +1024,19 @@ function normalizeFolderIconColor(value, mode = '') {
 }
 
 function resolveFolderIconColor(value, mode = '') {
-  const normalized = normalizeFolderIconColor(value, mode) || FOLDER_ICON_THEME;
+  const normalized = normalizeFolderIconColor(value, mode) || DEFAULT_FOLDER_ICON_COLOR;
   return normalized === FOLDER_ICON_THEME ? 'var(--accent)' : normalized;
 }
 
-let folderPickerHsv = rgbToHsv(hexToRgb(normalizeAccentColor(accentColor)) || hexToRgb(DEFAULT_ACCENT));
+let folderPickerHsv = rgbToHsv(hexToRgb(DEFAULT_FOLDER_ICON_COLOR) || hexToRgb(DEFAULT_ACCENT));
 let _folderColorPickerFolderId = null;
-let _folderColorPickerValue = FOLDER_ICON_THEME;
+let _folderColorPickerValue = DEFAULT_FOLDER_ICON_COLOR;
 
 function openFolderColorPicker(folderId) {
   const folder = folders[folderId];
   const modal = document.getElementById('folder-color-modal');
   if (!folder || !modal) return;
-  const normalized = normalizeFolderIconColor(folder.iconColor, folder.iconColorMode) || FOLDER_ICON_THEME;
+  const normalized = normalizeFolderIconColor(folder.iconColor, folder.iconColorMode) || DEFAULT_FOLDER_ICON_COLOR;
   const initialColor = normalized === FOLDER_ICON_THEME ? normalizeAccentColor(accentColor) : normalized;
   _folderColorPickerFolderId = folderId;
   _folderColorPickerValue = normalized;
@@ -1000,7 +1050,7 @@ function openFolderColorPicker(folderId) {
 function closeFolderColorPicker() {
   document.getElementById('folder-color-modal')?.classList.remove('open');
   _folderColorPickerFolderId = null;
-  _folderColorPickerValue = FOLDER_ICON_THEME;
+  _folderColorPickerValue = DEFAULT_FOLDER_ICON_COLOR;
 }
 
 function folderColorFromPickerHsv() {
@@ -1309,7 +1359,7 @@ function initFolderColorPicker() {
   document.getElementById('folder-color-save')?.addEventListener('click', saveFolderColorPicker);
   document.querySelectorAll('[data-folder-color-value]').forEach(btn => {
     btn.addEventListener('click', () => {
-      _folderColorPickerValue = normalizeFolderIconColor(btn.dataset.folderColorValue, btn.dataset.folderColorValue === FOLDER_ICON_THEME ? 'theme' : 'manual') || FOLDER_ICON_THEME;
+      _folderColorPickerValue = normalizeFolderIconColor(btn.dataset.folderColorValue, btn.dataset.folderColorValue === FOLDER_ICON_THEME ? 'theme' : 'manual') || DEFAULT_FOLDER_ICON_COLOR;
       updateFolderColorPickerUI();
     });
   });

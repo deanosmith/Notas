@@ -643,6 +643,33 @@ function normalizePinnedAt(value) {
   return '';
 }
 
+function normalizeNoteTimestamp(value) {
+  if (!value) return '';
+  const date = value?.toDate?.() || new Date(value);
+  return date instanceof Date && Number.isFinite(date.getTime()) ? date.toISOString() : '';
+}
+
+function trashExpiryFromDeletedAt(deletedAt) {
+  const deletedTime = new Date(deletedAt || 0).getTime();
+  if (!Number.isFinite(deletedTime)) return '';
+  return new Date(deletedTime + TRASH_RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString();
+}
+
+function isTrashedNote(note) {
+  return !!note?.deletedAt;
+}
+
+function trashDaysRemaining(note) {
+  const expiresAt = note?.trashExpiresAt || trashExpiryFromDeletedAt(note?.deletedAt);
+  const expiresTime = new Date(expiresAt || 0).getTime();
+  if (!Number.isFinite(expiresTime)) return TRASH_RETENTION_DAYS;
+  return Math.max(0, Math.ceil((expiresTime - Date.now()) / (24 * 60 * 60 * 1000)));
+}
+
+function isTrashExpired(note) {
+  return isTrashedNote(note) && trashDaysRemaining(note) <= 0;
+}
+
 function hydrateNoteShareState(data, base = {}) {
   const sharedWith = normalizeSharedWith(data?.sharedWith);
   const sharedAccessKeys = normalizeSharedAccessKeys(data?.sharedAccessKeys);
@@ -650,6 +677,8 @@ function hydrateNoteShareState(data, base = {}) {
   const linkPublic = noteLinkPublicFromData(data);
   const pinnedAt = normalizePinnedAt(_hasOwn(base, 'pinnedAt') ? base.pinnedAt : data?.pinnedAt);
   const pinScope = pinnedAt ? ((_hasOwn(base, 'pinScope') ? base.pinScope : data?.pinScope) === 'minor' ? 'minor' : 'major') : '';
+  const deletedAt = normalizeNoteTimestamp(_hasOwn(base, 'deletedAt') ? base.deletedAt : data?.deletedAt);
+  const trashExpiresAt = normalizeNoteTimestamp(_hasOwn(base, 'trashExpiresAt') ? base.trashExpiresAt : data?.trashExpiresAt) || trashExpiryFromDeletedAt(deletedAt);
   return {
     ...base,
     public: !!data?.public,
@@ -659,6 +688,8 @@ function hydrateNoteShareState(data, base = {}) {
     sharedAccessKeys,
     pinnedAt,
     pinScope,
+    deletedAt,
+    trashExpiresAt,
     mentionedUids: Array.isArray(data?.mentionedUids) ? data.mentionedUids : []
   };
 }

@@ -48,14 +48,79 @@ async function _execDeleteNote(id) {
   const note = notes[id];
   if (!note) return;
   if (!isOwnedNote(note)) { await removeFromLibrary(id); return; }
-  delete notes[id];
+  await moveNoteToTrash(id);
+}
+
+async function moveNoteToTrash(id) {
+  const note = notes[id];
+  if (!note || !isOwnedNote(note)) return;
+  if (activeId === id && canEditNote(note)) syncActiveNoteFromEditor();
+  const deletedAt = new Date();
+  const trashExpiresAt = new Date(deletedAt.getTime() + TRASH_RETENTION_DAYS * 24 * 60 * 60 * 1000);
+  note.deletedAt = deletedAt.toISOString();
+  note.trashExpiresAt = trashExpiresAt.toISOString();
+  note.pinnedAt = '';
+  note.pinScope = '';
   if (activeId === id) {
     const ids = sortedIds();
     activeId = ids.length ? ids[0] : null;
   }
   renderSidebar();
   activeId ? openNote(activeId) : showEditorView(false);
+  try {
+    await trashDocNote(note, deletedAt, trashExpiresAt);
+    showToast('Moved To Trash', 'success');
+  } catch (err) {
+    console.error('move note to trash:', err);
+    showToast('Could Not Move Note To Trash', 'error');
+  }
+}
+
+async function restoreTrashedNote(id) {
+  const note = notes[id];
+  if (!note || !isOwnedNote(note) || !isTrashedNote(note)) return;
+  note.deletedAt = '';
+  note.trashExpiresAt = '';
+  try {
+    await restoreDocNote(id);
+    setSidebarView('notes');
+    openNote(id);
+    showToast('Note Restored', 'success');
+  } catch (err) {
+    console.error('restore note:', err);
+    showToast('Could Not Restore Note', 'error');
+    renderSidebar();
+  }
+}
+
+function permanentlyDeleteTrashedNote(id) {
+  const note = notes[id];
+  if (!note || !isOwnedNote(note)) return;
+  delete notes[id];
+  if (activeId === id) {
+    const ids = sortedIds();
+    activeId = ids.length ? ids[0] : null;
+    activeId ? openNote(activeId) : showEditorView(false);
+  }
+  renderSidebar();
   deleteDocNote(id);
+  showToast('Note Permanently Deleted', 'success');
+}
+
+function purgeExpiredTrashNotes() {
+  const expired = Object.values(notes).filter(note => isOwnedNote(note) && isTrashExpired(note));
+  if (!expired.length) return;
+  expired.forEach(note => {
+    delete notes[note.id];
+    deleteDocNote(note.id);
+    if (activeId === note.id) activeId = null;
+  });
+  if (!activeId) {
+    const ids = sortedIds();
+    activeId = ids.length ? ids[0] : null;
+    activeId ? openNote(activeId) : showEditorView(false);
+  }
+  renderSidebar();
 }
 
 function openNote(id) {
@@ -69,7 +134,7 @@ function openNote(id) {
   titleEl.value    = note.title;
   titleEl.readOnly = !isEditable;
   document.getElementById('toolbar').style.display   = isEditable ? '' : 'none';
-  document.getElementById('share-btn').style.display = isOwned ? '' : 'none';
+  document.getElementById('share-btn').style.display = isOwned && !isTrashedNote(note) ? '' : 'none';
   const ed = document.getElementById('editor');
   ed.contentEditable = isEditable ? 'true' : 'false';
   ed.innerHTML = renderMarkdownContent(note.content || '');

@@ -57,6 +57,15 @@ jobs:
           cp -r js dist/
           touch dist/.nojekyll
 
+          # Cache-bust the entry assets so a new release is never served stale
+          # from the browser/CDN cache. app.js propagates this build id to every
+          # section script it injects (see js/app.js).
+          VERSION="${GITHUB_SHA:0:12}"
+          sed -i \
+            -e "s#href=\"./styles.css\"#href=\"./styles.css?v=${VERSION}\"#" \
+            -e "s#src=\"./js/app.js\"#src=\"./js/app.js?v=${VERSION}\"#" \
+            dist/index.html
+
           {
             echo "window.__env = {"
             echo "  FIREBASE_API_KEY:             '${FIREBASE_API_KEY}',"
@@ -79,6 +88,8 @@ jobs:
           test -s dist/notas-icon.png
           test -s dist/firebase-config.local.js
           ! grep -E "__FIREBASE_[A-Z_]+__" dist/firebase-config.local.js
+          grep -q 'js/app.js?v=' dist/index.html
+          grep -q 'styles.css?v=' dist/index.html
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
