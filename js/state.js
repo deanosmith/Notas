@@ -48,6 +48,7 @@ let _alarmContext   = null;
 let _alarmRefreshTimer = null;
 const FOLDER_ICON_THEME = 'theme';
 const FOLDER_ICON_GREY = '#8e8e93';
+const DEFAULT_FOLDER_ICON_COLOR = FOLDER_ICON_GREY;
 let _capitalizeNext = false;
 let _draggingNoteId = null;
 let _draggingFolderId = null;
@@ -64,6 +65,7 @@ let _processingProfileLinkResponses = new Set();
 let _processingAcceptedFriendRequests = new Set();
 let _sendingFriendRequests = new Set();
 let declinedMentionShares = new Set();
+const TRASH_RETENTION_DAYS = 30;
 
 /* ── Custom Undo/Redo System ─────────────────────────── */
 const undoStack = [];

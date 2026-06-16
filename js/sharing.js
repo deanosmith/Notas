@@ -97,6 +97,7 @@ function friendDocPayload(profile) {
     email: normalized.email || '',
     emailLower: normalized.emailLower || normalizeEmail(normalized.email || ''),
     photoURL: normalized.photoURL || '',
+    photoURLCandidates: normalized.photoURLCandidates || [],
     created: serverTimestamp()
   };
 }
@@ -108,7 +109,8 @@ function currentFriendProfile() {
     displayName: profile.displayName || '',
     email: profile.email || '',
     emailLower: normalizeEmail(profile.email || ''),
-    photoURL: profile.photoURL || ''
+    photoURL: profile.photoURL || '',
+    photoURLCandidates: profile.photoURLCandidates || []
   };
 }
 
@@ -121,6 +123,8 @@ function friendRequestDocId(fromUid, toUid) {
 }
 
 function normalizeFriendRequest(id, data = {}) {
+  const fromPhotos = profilePhotoFields(data.fromPhotoURL, data.fromPhotoURLCandidates);
+  const toPhotos = profilePhotoFields(data.toPhotoURL, data.toPhotoURLCandidates);
   return {
     id,
     fromUid: data.fromUid || '',
@@ -129,8 +133,10 @@ function normalizeFriendRequest(id, data = {}) {
     toEmail: normalizeEmail(data.toEmail || ''),
     fromDisplayName: data.fromDisplayName || data.fromName || 'Notas User',
     toDisplayName: data.toDisplayName || data.toName || 'Notas User',
-    fromPhotoURL: data.fromPhotoURL || '',
-    toPhotoURL: data.toPhotoURL || '',
+    fromPhotoURL: fromPhotos.photoURL,
+    fromPhotoURLCandidates: fromPhotos.photoURLCandidates,
+    toPhotoURL: toPhotos.photoURL,
+    toPhotoURLCandidates: toPhotos.photoURLCandidates,
     status: data.status || 'pending',
     created: isoFromTimestamp(data.created) || data.createdIso || new Date().toISOString(),
     modified: isoFromTimestamp(data.modified) || data.modifiedIso || isoFromTimestamp(data.created) || data.createdIso || new Date().toISOString(),
@@ -146,7 +152,8 @@ function profileFromFriendRequest(request) {
     displayName: request.fromDisplayName,
     email: request.fromEmail,
     emailLower: request.fromEmail,
-    photoURL: request.fromPhotoURL
+    photoURL: request.fromPhotoURL,
+    photoURLCandidates: request.fromPhotoURLCandidates
   });
 }
 
@@ -157,7 +164,8 @@ function profileToFriendRequest(request) {
     displayName: request.toDisplayName,
     email: request.toEmail,
     emailLower: request.toEmail,
-    photoURL: request.toPhotoURL
+    photoURL: request.toPhotoURL,
+    photoURLCandidates: request.toPhotoURLCandidates
   });
 }
 
@@ -278,7 +286,9 @@ async function sendFriendRequest(toUser) {
       fromDisplayName: sender.displayName || '',
       toDisplayName: target.displayName || '',
       fromPhotoURL: sender.photoURL || '',
+      fromPhotoURLCandidates: sender.photoURLCandidates || [],
       toPhotoURL: target.photoURL || '',
+      toPhotoURLCandidates: target.photoURLCandidates || [],
       status: 'pending',
       createdIso: nowIso,
       modifiedIso: nowIso,
@@ -1340,7 +1350,7 @@ function normalizeNoteAccess(id, data = {}) {
   const primaryFolderId = data.sourceFolderId || Object.keys(folderShares)[0] || '';
   const primaryFolderShare = primaryFolderId ? folderShares[primaryFolderId] : null;
   const fromPhotos = profilePhotoFields(data.fromPhotoURL, data.fromPhotoURLCandidates);
-  return {
+  const normalized = {
     id,
     noteId: data.noteId || '',
     userUid: data.userUid || '',
@@ -1363,6 +1373,45 @@ function normalizeNoteAccess(id, data = {}) {
     created: isoFromTimestamp(data.created) || new Date().toISOString(),
     modified: isoFromTimestamp(data.modified) || new Date().toISOString()
   };
+  normalized.reminders = normalizeAccessReminders(data.reminders, normalized);
+  return normalized;
+}
+
+function normalizeAccessReminder(id, data = {}, access = {}) {
+  if (!data || typeof data !== 'object') return null;
+  const reminderAt = normalizeAlarmAt(data.reminderAt || data.alarmAt);
+  if (!reminderAt) return null;
+  const reminderId = data.id || data.reminderId || id;
+  const fromUid = data.fromUid || access.fromUid || access.grantedBy || '';
+  const fromPhotos = profilePhotoFields(data.fromPhotoURL, data.fromPhotoURLCandidates, access.fromPhotoURL, access.fromPhotoURLCandidates);
+  return {
+    id: reminderId,
+    type: 'reminder',
+    noteId: data.noteId || access.noteId || '',
+    noteTitle: data.noteTitle || notes[data.noteId || access.noteId]?.title || 'Untitled Note',
+    reminderId,
+    reminderAt,
+    reminderText: data.reminderText || data.text || data.noteTitle || 'Reminder',
+    recipientUid: data.recipientUid || access.userUid || '',
+    fromUid,
+    fromName: data.fromName || access.fromName || 'Someone',
+    fromPhotoURL: fromPhotos.photoURL,
+    fromPhotoURLCandidates: fromPhotos.photoURLCandidates,
+    fromEmail: normalizeEmail(data.fromEmail || access.fromEmail || ''),
+    created: isoFromTimestamp(data.created) || data.createdIso || access.modified || access.created || new Date().toISOString(),
+    readKey: notificationReadKeyForParts('reminder', reminderId, fromUid),
+    read: false,
+    source: 'access'
+  };
+}
+
+function normalizeAccessReminders(raw, access = {}) {
+  const out = {};
+  Object.keys(raw && typeof raw === 'object' ? raw : {}).forEach(id => {
+    const reminder = normalizeAccessReminder(id, raw[id], access);
+    if (reminder?.id) out[reminder.id] = reminder;
+  });
+  return out;
 }
 
 function rebuildNoteAccessGroups() {
@@ -1411,11 +1460,13 @@ function directAccessRoleForNote(noteId) {
 
 function canEditNote(note) {
   if (!note) return false;
+  if (isTrashedNote(note)) return false;
   if (isOwnedNote(note)) return true;
   return directAccessRoleForNote(note.id) === 'editor' || note.directAccessRole === 'editor';
 }
 
 function canReadLoadedSharedNote(noteId, data) {
+  if (data?.deletedAt) return data.owner === userId;
   const sharedWith = normalizeSharedWith(data?.sharedWith);
   const sharedAccessKeys = normalizeSharedAccessKeys(data?.sharedAccessKeys);
   return !!(
@@ -1555,6 +1606,7 @@ async function revokeNoteAccess(noteId, targetUid) {
 
 function applySharedNoteFromData(noteId, data, access = directAccessForNote(noteId) || {}) {
   if (!data || data.owner === userId) return false;
+  if (data.deletedAt) return false;
   const folderId = _applySharedFolderFromData(noteId, access) || _getSharedNoteFolder(noteId);
   notes[noteId] = hydrateNoteShareState(data, {
     id: noteId,
@@ -1647,6 +1699,9 @@ function listenSharedWithMe() {
       const id = ch.doc.id;
       if (ch.type === 'removed') {
         const old = noteAccessById[id];
+        Object.values(old?.reminders || {}).forEach(reminder => {
+          if (profileShareNotifications[reminder.id]?.source === 'access') delete profileShareNotifications[reminder.id];
+        });
         if (old?.noteId) removeSharedAccessNote(old.noteId);
         return;
       }
@@ -1661,6 +1716,7 @@ function listenSharedWithMe() {
       }
       noteAccessById[id] = access;
       myNoteAccessByNote[access.noteId] = access;
+      applyAccessReminderNotifications(access);
       const load = loadSharedNoteFromAccess(access);
       if (!initialSettled) initialLoads.push(load);
     });
@@ -1668,7 +1724,10 @@ function listenSharedWithMe() {
     updateActiveNoteAccessAvatars();
     renderSidebar();
     renderNotificationButton();
+    renderAlarmButton();
+    if (document.getElementById('alarms-modal')?.classList.contains('open')) renderAlarmsList();
     refreshOpenSidebarPage('notifications');
+    refreshOpenSidebarPage('alarms');
     settleInitial(initialLoads);
   }, err => {
     console.warn('shared with me listener:', err);
@@ -1755,18 +1814,72 @@ function friendReminderDocId(noteId, targetUid) {
     .slice(0, 180);
 }
 
+async function prepareNoteForFriendReminder(note) {
+  if (!note || !isOwnedNote(note)) return false;
+  if (activeId === note.id && canEditNote(note)) syncActiveNoteFromEditor();
+  if (!note.owner) note.owner = userId;
+  return await saveDoc(note);
+}
+
+function friendReminderInboxWrites(friend, reminderId, payload) {
+  const writes = [];
+  if (friend?.uid) writes.push(setDoc(doc(fsDb, 'profileShares', friend.uid, 'items', reminderId), payload, { merge: true }));
+  const email = normalizeEmail(friend?.email || payload.recipientEmail || '');
+  if (email) writes.push(setDoc(doc(fsDb, 'profileEmailShares', emailProfileDocId(email), 'items', reminderId), payload, { merge: true }));
+  return writes;
+}
+
+function friendReminderAccessPayload(payload) {
+  return {
+    id: payload.id,
+    type: 'reminder',
+    noteId: payload.noteId,
+    noteTitle: payload.noteTitle || 'Untitled Note',
+    reminderText: payload.reminderText || payload.noteTitle || 'Reminder',
+    reminderAt: payload.reminderAt,
+    recipientUid: payload.recipientUid || '',
+    recipientProfileKey: payload.recipientProfileKey || payload.recipientUid || '',
+    recipientName: payload.recipientName || '',
+    recipientEmail: normalizeEmail(payload.recipientEmail || ''),
+    fromUid: payload.fromUid || '',
+    fromName: payload.fromName || 'Someone',
+    fromPhotoURL: payload.fromPhotoURL || '',
+    fromPhotoURLCandidates: payload.fromPhotoURLCandidates || [],
+    fromEmail: normalizeEmail(payload.fromEmail || ''),
+    createdIso: payload.createdIso || new Date().toISOString(),
+    created: serverTimestamp()
+  };
+}
+
+function writeFriendReminderAccessFallback(noteId, friend, reminderId, payload) {
+  if (!noteId || !friend?.uid || !reminderId) return Promise.reject(new Error('Missing reminder access target'));
+  return setDoc(doc(fsDb, 'noteAccess', noteAccessDocId(noteId, friend.uid)), {
+    reminders: { [reminderId]: friendReminderAccessPayload(payload) },
+    modified: serverTimestamp()
+  }, { merge: true });
+}
+
 async function sendFriendReminder(noteId, targetUid, reminderAt, reminderText = '') {
   const note = notes[noteId];
   const friend = friends[targetUid];
   const normalizedAt = normalizeAlarmAt(reminderAt);
-  if (!note || !friend?.uid || friend.uid === userId || !normalizedAt) return { ok: false };
+  if (!note || !friend?.uid || friend.uid === userId || !normalizedAt) return { ok: false, reason: 'invalid' };
   if (!isOwnedNote(note)) {
     showToast('Only The Owner Can Set Friend Reminders', 'error');
-    return { ok: false };
+    return { ok: false, reason: 'not_owner' };
   }
 
-  const shared = await shareNoteWithFriend(noteId, friend, 'editor', {}, { silent: true });
-  if (!shared) return { ok: false };
+  const noteReady = await prepareNoteForFriendReminder(note);
+  if (!noteReady) return { ok: false, reason: 'save_failed' };
+
+  let shared = false;
+  try {
+    shared = await shareNoteWithFriend(noteId, friend, 'editor', {}, { silent: true });
+  } catch (err) {
+    console.error('share note for friend reminder:', err);
+    return { ok: false, reason: 'share_failed' };
+  }
+  if (!shared) return { ok: false, reason: 'share_failed' };
 
   const reminderId = friendReminderDocId(noteId, targetUid);
   const sender = currentProfileLinkPayload();
@@ -1784,6 +1897,8 @@ async function sendFriendReminder(noteId, targetUid, reminderAt, reminderText = 
     recipientProfileKey: friend.uid,
     recipientName: friend.displayName || '',
     recipientEmail: normalizeEmail(friend.email || ''),
+    recipientPhotoURL: friendPhotos.photoURL,
+    recipientPhotoURLCandidates: friendPhotos.photoURLCandidates,
     fromUid: userId,
     fromName: sender.displayName || 'Someone',
     fromPhotoURL: sender.photoURL,
@@ -1803,10 +1918,21 @@ async function sendFriendReminder(noteId, targetUid, reminderAt, reminderText = 
   };
 
   try {
-    await setDoc(doc(fsDb, 'profileShares', friend.uid, 'items', reminderId), payload, { merge: true });
+    const deliveryWrites = [
+      ...friendReminderInboxWrites(friend, reminderId, payload),
+      writeFriendReminderAccessFallback(noteId, friend, reminderId, payload)
+    ];
+    const deliveryResults = await Promise.allSettled(deliveryWrites);
+    if (!deliveryResults.some(result => result.status === 'fulfilled')) {
+      console.error('send friend reminder delivery:', deliveryResults);
+      return { ok: false, reason: 'delivery_failed' };
+    }
+    if (deliveryResults.some(result => result.status === 'rejected')) {
+      console.warn('partial friend reminder delivery:', deliveryResults);
+    }
   } catch (err) {
-    console.error('send friend reminder:', err);
-    return { ok: false };
+    console.error('send friend reminder delivery:', err);
+    return { ok: false, reason: 'delivery_failed' };
   }
 
   sentReminders[reminderId] = normalizeSentReminder(reminderId, sentPayload);
@@ -2181,7 +2307,7 @@ function _ensureSharedFolderShell(info) {
   const now = new Date().toISOString();
   const existing = folders[id];
   const title = info.title || existing?.title || 'Shared Folder';
-  const iconColor = normalizeFolderIconColor(existing?.iconColor, existing?.iconColorMode) || FOLDER_ICON_THEME;
+  const iconColor = normalizeFolderIconColor(existing?.iconColor, existing?.iconColorMode) || DEFAULT_FOLDER_ICON_COLOR;
   const iconColorMode = iconColor === FOLDER_ICON_THEME ? 'theme' : 'manual';
   const sourceOwnerPhotos = profilePhotoFields(info.sourceOwnerPhotoURL, info.sourceOwnerPhotoURLCandidates, existing?.sourceOwnerPhotoURL, existing?.sourceOwnerPhotoURLCandidates);
   folders[id] = {
@@ -2549,6 +2675,15 @@ function isNotificationRead(notification) {
   return notificationReadKeys(notification).some(key => !!readNotifications[key]);
 }
 
+function reminderClearedReadKey(reminderId) {
+  return 'reminder_cleared_' + _safeDocFragment(reminderId || 'reminder');
+}
+
+function isReminderCleared(reminder) {
+  const reminderId = typeof reminder === 'string' ? reminder : (reminder?.id || reminder?.reminderId || '');
+  return !!(reminderId && readNotifications[reminderClearedReadKey(reminderId)]);
+}
+
 async function persistNotificationReads(keys) {
   const updates = {};
   keys.filter(Boolean).forEach(key => {
@@ -2598,6 +2733,32 @@ function normalizeProfileShareNotification(id, data) {
     read: false,
     source: 'inbox'
   };
+}
+
+function applyAccessReminderNotifications(access) {
+  const reminders = Object.values(access?.reminders || {});
+  const activeReminderIds = new Set(reminders.map(reminder => reminder.id).filter(Boolean));
+  Object.keys(profileShareNotifications || {}).forEach(id => {
+    const notification = profileShareNotifications[id];
+    if (
+      notification?.type === 'reminder' &&
+      notification.source === 'access' &&
+      notification.noteId === access?.noteId &&
+      !activeReminderIds.has(notification.id)
+    ) {
+      delete profileShareNotifications[id];
+    }
+  });
+  reminders.forEach(reminder => {
+    if (!reminder?.id || isReminderCleared(reminder)) {
+      if (profileShareNotifications[reminder?.id]?.source === 'access') delete profileShareNotifications[reminder.id];
+      return;
+    }
+    const existing = profileShareNotifications[reminder.id];
+    if (!existing || existing.source === 'access') {
+      profileShareNotifications[reminder.id] = { ...reminder, read: isNotificationRead(reminder), source: 'access' };
+    }
+  });
 }
 
 function applyDirectSharedNote(docSnap) {
@@ -2805,6 +2966,7 @@ function listenToProfileShares() {
 function getNotificationItems() {
   const byReadKey = {};
   Object.values(profileShareNotifications).forEach(notification => {
+    if (notification?.type === 'reminder' && isReminderCleared(notification)) return;
     const readKey = notification.readKey || notificationReadKeyForParts(notification.type, notificationTargetId(notification), notification.fromUid);
     const item = { ...notification, readKey, read: isNotificationRead({ ...notification, readKey }) };
     const existing = byReadKey[readKey];
@@ -2833,10 +2995,51 @@ function getNotificationItems() {
     .sort((a, b) => new Date(b.created) - new Date(a.created));
 }
 
+function getMentionItems() {
+  const byReadKey = {};
+  getNotificationItems()
+    .filter(item => ['mention', 'share', 'folder_share'].includes(item.type))
+    .forEach(item => { byReadKey[item.readKey || item.id] = item; });
+
+  Object.values(notes || {}).forEach(note => {
+    if (!note?.id || isOwnedNote(note) || isTrashedNote(note)) return;
+    const access = note.directAccess || directAccessForNote(note.id) || {};
+    const type = Array.isArray(note.mentionedUids) && note.mentionedUids.includes(userId) ? 'mention' : 'share';
+    const fromUid = access.fromUid || note.owner || '';
+    const existingForNote = Object.values(byReadKey).some(item =>
+      ['mention', 'share', 'folder_share'].includes(item.type) &&
+      (item.noteId === note.id || (Array.isArray(item.noteIds) && item.noteIds.includes(note.id)))
+    );
+    if (existingForNote) return;
+    const readKey = notificationReadKeyForParts(type, note.id, fromUid);
+    if (byReadKey[readKey]) return;
+    const fromPhotos = profilePhotoFields(access.fromPhotoURL, access.fromPhotoURLCandidates);
+    const item = {
+      id: 'local_' + type + '_' + _safeDocFragment(note.id),
+      type,
+      noteId: note.id,
+      noteIds: [note.id],
+      noteTitle: note.title || 'Untitled Note',
+      fromUid,
+      fromName: access.fromName || 'Someone',
+      fromPhotoURL: fromPhotos.photoURL,
+      fromPhotoURLCandidates: fromPhotos.photoURLCandidates,
+      fromEmail: normalizeEmail(access.fromEmail || ''),
+      created: access.lastSharedAt || access.sharedAt || note.modified || note.created || new Date().toISOString(),
+      readKey,
+      source: 'note'
+    };
+    byReadKey[readKey] = { ...item, read: isNotificationRead(item) };
+  });
+
+  return Object.values(byReadKey)
+    .sort((a, b) => new Date(b.created) - new Date(a.created));
+}
+
 function renderNotificationButton() {
   const badge = document.getElementById('notification-badge');
   if (!badge) return;
-  const unread = getNotificationItems().filter(n => !n.read).length;
+  const unread = getMentionItems().filter(n => !n.read).length;
   badge.textContent = unread > 99 ? '99+' : String(unread);
   badge.hidden = unread === 0;
 }
@@ -2864,13 +3067,13 @@ function relativeNotificationTime(iso) {
 function renderNotificationsList(target = 'notifications-list') {
   const list = typeof target === 'string' ? document.getElementById(target) : target;
   if (!list) return;
-  const items = getNotificationItems();
+  const items = getMentionItems();
   if (notificationsUnavailable) {
-    list.innerHTML = '<div class="profile-empty">Notifications are unavailable right now. Direct sharing can still be retried after Firestore profile-share access is enabled.</div>';
+    list.innerHTML = '<div class="profile-empty">Mentions and shared items are unavailable right now. Direct sharing can still be retried after Firestore profile-share access is enabled.</div>';
     return;
   }
   if (!items.length) {
-    list.innerHTML = '<div class="profile-empty">No notifications yet. Direct shares, reminders, and @mentions from linked profiles will appear here.</div>';
+    list.innerHTML = '<div class="profile-empty">No mentions or shared items yet. Read and unread items from friends will appear here.</div>';
     return;
   }
 
@@ -2889,18 +3092,18 @@ function renderNotificationsList(target = 'notifications-list') {
 
 async function markNotificationRead(id) {
   if (!id) return;
-  const item = getNotificationItems().find(n => n.id === id) || profileShareNotifications[id];
+  const item = getMentionItems().find(n => n.id === id) || getNotificationItems().find(n => n.id === id) || profileShareNotifications[id];
   await persistNotificationReads(notificationReadKeys(item || { id }));
 }
 
 async function markAllNotificationsRead() {
-  const unread = getNotificationItems().filter(n => !n.read);
+  const unread = getMentionItems().filter(n => !n.read);
   if (!unread.length) return;
   await persistNotificationReads(unread.flatMap(notificationReadKeys));
 }
 
 async function openNotification(id) {
-  const item = profileShareNotifications[id] || profileLinkRequests[id] || incomingFriendRequests[id];
+  const item = profileShareNotifications[id] || getMentionItems().find(n => n.id === id) || profileLinkRequests[id] || incomingFriendRequests[id];
   if (!item) return;
   document.getElementById('notifications-modal')?.classList.remove('open');
   if (item.type === 'friend_request') {

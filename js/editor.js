@@ -155,7 +155,11 @@ const compareNotes = (a, b) => {
   return String(a?.title || '').localeCompare(String(b?.title || ''));
 };
 const sortedIds = () =>
-  Object.keys(notes).sort((a, b) => compareNotes(notes[a], notes[b]));
+  Object.keys(notes).filter(id => !isTrashedNote(notes[id])).sort((a, b) => compareNotes(notes[a], notes[b]));
+const trashSortedIds = () =>
+  Object.keys(notes)
+    .filter(id => isOwnedNote(notes[id]) && isTrashedNote(notes[id]))
+    .sort((a, b) => noteTime(notes[b].deletedAt) - noteTime(notes[a].deletedAt));
 const isMobile = () => window.innerWidth <= 767;
 
 function renderMarkdownContent(content) {
@@ -819,7 +823,7 @@ function setSaveState(s) {
 }
 
 function updateCounts() {
-  const txt   = document.getElementById('editor').innerText || '';
+  const txt   = (document.getElementById('editor').innerText || '').replace(/\u200b/g, '');
   const words = txt.trim() ? txt.trim().split(/\s+/).length : 0;
   const chars = txt.length;
   document.getElementById('word-count').textContent = words + (words === 1 ? ' Word' : ' Words');
@@ -886,6 +890,8 @@ function getCleanHTML() {
     el.classList.remove('alarm-due');
     if (!el.classList.length) el.removeAttribute('class');
   });
+  cleanupInlineCodePlaceholders(clone);
+  stripZeroWidthText(clone);
   normalizeChecklistStructure(clone);
   stripTableEditorChrome(clone);
   sanitizeEditorTables(clone);
@@ -900,7 +906,7 @@ function syncActiveNoteFromEditor() {
   notes[activeId].modified = new Date().toISOString();
   updateCounts();
   const preview = document.querySelector('.sidebar-item.active .item-preview');
-  if (preview) preview.textContent = editorEl.innerText.replace(/\s+/g,' ').trim().slice(0,65) || 'Empty Note';
+  if (preview) preview.textContent = editorEl.innerText.replace(/\u200b/g, '').replace(/\s+/g,' ').trim().slice(0,65) || 'Empty Note';
   return true;
 }
 
@@ -1128,10 +1134,131 @@ function isSelectionInTable() {
 function closestInlineCodeFromSelection() {
   const sel = window.getSelection();
   if (!sel || !sel.rangeCount) return null;
-  let node = sel.getRangeAt(0).startContainer;
+  const range = sel.getRangeAt(0);
+  let node = range.startContainer;
   if (node.nodeType === Node.TEXT_NODE) node = node.parentElement;
-  const code = node?.closest?.('code');
+  let code = node?.closest?.('code');
+  if (!code && range.collapsed && range.startContainer.nodeType === Node.ELEMENT_NODE && range.startOffset > 0) {
+    const previous = range.startContainer.childNodes[range.startOffset - 1];
+    code = previous?.nodeType === Node.ELEMENT_NODE && previous.matches?.('code[data-inline-code-typing]')
+      ? previous
+      : null;
+  }
   return code && !code.closest('pre') && getEd().contains(code) ? code : null;
+}
+
+function stripInlineCodePlaceholder(code) {
+  if (!code) return;
+  [...code.childNodes].forEach(node => {
+    if (node.nodeType === Node.TEXT_NODE) node.textContent = node.textContent.replace(/\u200b/g, '');
+  });
+  code.removeAttribute('data-inline-code-empty');
+  code.removeAttribute('data-inline-code-typing');
+}
+
+function cleanupInlineCodePlaceholders(root = getEd()) {
+  root.querySelectorAll?.('code[data-inline-code-empty]').forEach(code => {
+    stripInlineCodePlaceholder(code);
+    if (!code.textContent && !code.querySelector('img, br')) {
+      const parent = code.parentNode;
+      code.remove();
+      parent?.normalize?.();
+    }
+  });
+  root.querySelectorAll?.('code[data-inline-code-typing]').forEach(code => {
+    code.removeAttribute('data-inline-code-typing');
+  });
+}
+
+function stripZeroWidthText(root = getEd()) {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const nodes = [];
+  while (walker.nextNode()) {
+    if (walker.currentNode.textContent.includes('\u200b')) nodes.push(walker.currentNode);
+  }
+  nodes.forEach(node => {
+    node.textContent = node.textContent.replace(/\u200b/g, '');
+    if (!node.textContent) node.remove();
+  });
+}
+
+function textNodeIsInInlineCode(node) {
+  const parent = node?.parentNode?.nodeType === Node.ELEMENT_NODE ? node.parentNode : null;
+  const code = parent?.closest?.('code');
+  return !!(code && !code.closest('pre'));
+}
+
+function cleanupLiveInlineCodeBoundaries(root = getEd(), inputEvent = null) {
+  if (!root || !inputEvent?.inputType) return;
+  const sel = window.getSelection();
+  const anchor = sel?.rangeCount && sel.isCollapsed && root.contains(sel.anchorNode) ? sel.anchorNode : null;
+  let restoredSelection = false;
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const nodes = [];
+
+  while (walker.nextNode()) {
+    const node = walker.currentNode;
+    if (node.textContent.includes('\u200b') && !textNodeIsInInlineCode(node)) nodes.push(node);
+  }
+
+  nodes.forEach(node => {
+    const oldText = node.textContent;
+    if (node === anchor) {
+      const offset = sel.anchorOffset;
+      const removedBeforeCaret = (oldText.slice(0, offset).match(/\u200b/g) || []).length;
+      node.textContent = oldText.replace(/\u200b/g, '');
+      const range = document.createRange();
+      range.setStart(node, Math.max(0, Math.min(node.textContent.length, offset - removedBeforeCaret)));
+      range.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(range);
+      restoredSelection = true;
+      return;
+    }
+    node.textContent = oldText.replace(/\u200b/g, '');
+    if (!node.textContent) node.remove();
+  });
+
+  if (restoredSelection) root.focus();
+}
+
+function placeCaretAfterInlineCode(code) {
+  const parent = code?.parentNode;
+  if (!parent) return;
+  let marker = code.nextSibling;
+  if (marker?.nodeType === Node.TEXT_NODE) {
+    if (!marker.textContent.startsWith('\u200b')) marker.textContent = '\u200b' + marker.textContent;
+  } else {
+    marker = document.createTextNode('\u200b');
+    parent.insertBefore(marker, code.nextSibling);
+  }
+  const range = document.createRange();
+  range.setStart(marker, 1);
+  range.collapse(true);
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+  getEd().focus();
+}
+
+function exitInlineCode(code) {
+  if (!code) return;
+  stripInlineCodePlaceholder(code);
+  const parent = code.parentNode;
+  if (!code.textContent && !code.querySelector('img, br')) {
+    const marker = document.createTextNode('\u200b');
+    parent.insertBefore(marker, code);
+    code.remove();
+    const range = document.createRange();
+    range.setStart(marker, 1);
+    range.collapse(true);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    getEd().focus();
+    return;
+  }
+  placeCaretAfterInlineCode(code);
 }
 
 function unwrapInlineCode(code) {
@@ -1182,7 +1309,8 @@ function insertInlineCode() {
   const sel = window.getSelection();
   const existingCode = closestInlineCodeFromSelection();
   if (existingCode) {
-    unwrapInlineCode(existingCode);
+    if (sel?.isCollapsed) exitInlineCode(existingCode);
+    else unwrapInlineCode(existingCode);
     getEd().dispatchEvent(new Event('input'));
     return;
   }
@@ -1198,10 +1326,20 @@ function insertInlineCode() {
     return;
   }
 
-  if (range.collapsed) expandRangeToCurrentWord(range);
   const code  = document.createElement('code');
   if (range.collapsed) {
-    code.textContent = 'Code';
+    const marker = document.createTextNode('\u200b');
+    code.dataset.inlineCodeEmpty = '1';
+    code.dataset.inlineCodeTyping = '1';
+    code.appendChild(marker);
+    range.insertNode(code);
+    const r2 = document.createRange();
+    r2.setStart(marker, marker.length);
+    r2.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(r2);
+    getEd().dispatchEvent(new Event('input'));
+    return;
   } else {
     const fragment = range.extractContents();
     unwrapNestedInlineCode(fragment);
@@ -1283,6 +1421,7 @@ function createTableControls(title = '') {
   controls.setAttribute('contenteditable', 'false');
   controls.innerHTML =
     '<input class="table-title-input" data-table-title-input type="text" placeholder="Table header" value="' + esc(title) + '" aria-label="Table header" />' +
+    '<button class="table-delete-btn" data-table-action="delete-table" type="button" title="Delete Table" aria-label="Delete Table"><i class="fa-solid fa-xmark"></i></button>' +
     '<div class="table-axis-controls table-row-controls" aria-label="Row controls">' +
       '<button class="table-btn" data-table-action="add-row" type="button" title="Add Row" aria-label="Add Row"><i class="fa-solid fa-plus"></i></button>' +
       '<button class="table-btn" data-table-action="remove-row" type="button" title="Remove Row" aria-label="Remove Row"><i class="fa-solid fa-minus"></i></button>' +
@@ -1292,6 +1431,285 @@ function createTableControls(title = '') {
       '<button class="table-btn" data-table-action="remove-column" type="button" title="Remove Column" aria-label="Remove Column"><i class="fa-solid fa-minus"></i></button>' +
     '</div>';
   return controls;
+}
+
+const TABLE_MIN_COLUMN_WIDTH = 72;
+const TABLE_DEFAULT_COLUMN_WIDTH = 150;
+
+function tableDirectColgroup(table) {
+  return table?.querySelector?.(':scope > colgroup') || null;
+}
+
+function tableColumnElements(table) {
+  return [...(tableDirectColgroup(table)?.children || [])].filter(col => col.tagName === 'COL');
+}
+
+function clampValue(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function tableColumnRawWidth(col) {
+  return String(col?.style?.width || col?.getAttribute?.('width') || '').trim();
+}
+
+function tableWidthBasis(table) {
+  const tableWidth = table?.getBoundingClientRect?.().width || 0;
+  if (Number.isFinite(tableWidth) && tableWidth > 0) return tableWidth;
+  const scrollWrap = tableScrollWrapForTable(table);
+  const wrapWidth = scrollWrap?.clientWidth || 0;
+  if (Number.isFinite(wrapWidth) && wrapWidth > 0) return wrapWidth;
+  return tableColumnCount(table) * TABLE_DEFAULT_COLUMN_WIDTH;
+}
+
+function normalizeTableColumnPercents(percents, count = percents.length) {
+  const fallback = 100 / Math.max(1, count);
+  const safe = Array.from({ length: Math.max(1, count) }, (_, index) => {
+    const value = parseFloat(percents[index]);
+    return Number.isFinite(value) && value > 0 ? value : fallback;
+  });
+  const total = safe.reduce((sum, value) => sum + value, 0);
+  if (total <= 0) return safe.map(() => 100 / safe.length);
+  return safe.map(value => (value / total) * 100);
+}
+
+function formatTableColumnPercent(percent) {
+  const rounded = Math.round(percent * 1000) / 1000;
+  return String(parseFloat(rounded.toFixed(3))) + '%';
+}
+
+function readTableColumnPercents(table, count = tableColumnCount(table)) {
+  const safeCount = Math.max(1, count);
+  const cols = tableColumnElements(table).slice(0, safeCount);
+  const rawWidths = Array.from({ length: safeCount }, (_, index) => tableColumnRawWidth(cols[index]));
+  const pxTotal = rawWidths.reduce((sum, raw) => {
+    const value = parseFloat(raw);
+    return raw && !/%$/.test(raw) && Number.isFinite(value) && value > 0 ? sum + value : sum;
+  }, 0);
+  const basis = tableWidthBasis(table);
+  const fallback = 100 / safeCount;
+  const percents = rawWidths.map(raw => {
+    const value = parseFloat(raw);
+    if (!Number.isFinite(value) || value <= 0) return fallback;
+    if (/%$/.test(raw)) return value;
+    if (pxTotal > 0) return (value / pxTotal) * 100;
+    return basis > 0 ? (value / basis) * 100 : fallback;
+  });
+  return normalizeTableColumnPercents(percents, safeCount);
+}
+
+function updateTableWidthFromCols(table) {
+  if (!table) return;
+  table.style.width = '100%';
+  table.style.minWidth = '';
+}
+
+function setTableColumnPercents(table, percents) {
+  if (!table) return false;
+  const count = Math.max(1, percents.length || tableColumnCount(table));
+  let changed = false;
+  let colgroup = tableDirectColgroup(table);
+  if (!colgroup) {
+    colgroup = document.createElement('colgroup');
+    table.insertBefore(colgroup, table.firstChild);
+    changed = true;
+  }
+  while (colgroup.children.length < count) {
+    colgroup.appendChild(document.createElement('col'));
+    changed = true;
+  }
+  while (colgroup.children.length > count) {
+    colgroup.lastElementChild.remove();
+    changed = true;
+  }
+
+  normalizeTableColumnPercents(percents, count).forEach((percent, index) => {
+    const col = colgroup.children[index];
+    const nextWidth = formatTableColumnPercent(percent);
+    if (col.style.width !== nextWidth) {
+      col.style.width = nextWidth;
+      changed = true;
+    }
+    if (col.hasAttribute('width')) {
+      col.removeAttribute('width');
+      changed = true;
+    }
+  });
+
+  const previousWidth = table.style.width;
+  const previousMinWidth = table.style.minWidth;
+  updateTableWidthFromCols(table);
+  if (table.style.width !== previousWidth || table.style.minWidth !== previousMinWidth) changed = true;
+  return changed;
+}
+
+function ensureTableColumnWidths(table) {
+  if (!table) return false;
+  const colCount = tableColumnCount(table);
+  let colgroup = tableDirectColgroup(table);
+  let changed = false;
+  if (!colgroup) {
+    colgroup = document.createElement('colgroup');
+    table.insertBefore(colgroup, table.firstChild);
+    changed = true;
+  }
+  while (colgroup.children.length < colCount) {
+    colgroup.appendChild(document.createElement('col'));
+    changed = true;
+  }
+  while (colgroup.children.length > colCount) {
+    colgroup.lastElementChild.remove();
+    changed = true;
+  }
+  const percents = readTableColumnPercents(table, colCount);
+  if (setTableColumnPercents(table, percents)) changed = true;
+  return changed;
+}
+
+function tableColumnPixelWidthsFromLayout(table) {
+  ensureTableColumnWidths(table);
+  const colCount = tableColumnCount(table);
+  const firstRow = table.rows[0];
+  const tableWidth = tableWidthBasis(table);
+  const percents = readTableColumnPercents(table, colCount);
+  return Array.from({ length: colCount }, (_, index) => {
+    const width = firstRow?.cells[index]?.getBoundingClientRect?.().width || 0;
+    if (Number.isFinite(width) && width > 0) return width;
+    return Math.max(1, tableWidth * (percents[index] || 0) / 100);
+  });
+}
+
+function setTableColumnWidthsFromLayout(table) {
+  ensureTableColumnWidths(table);
+  const widths = tableColumnPixelWidthsFromLayout(table);
+  const total = widths.reduce((sum, width) => sum + width, 0);
+  if (total > 0) setTableColumnPercents(table, widths.map(width => (width / total) * 100));
+}
+
+function insertTableColumnWidth(table, insertIndex) {
+  ensureTableColumnWidths(table);
+  const existingCount = tableColumnElements(table).length;
+  const percents = readTableColumnPercents(table, existingCount);
+  const targetIndex = clampValue(insertIndex, 0, existingCount);
+  const sourceIndex = clampValue(targetIndex - 1, 0, Math.max(0, existingCount - 1));
+  const split = percents[sourceIndex] || (100 / (existingCount + 1));
+  percents[sourceIndex] = split / 2;
+  percents.splice(targetIndex, 0, split / 2);
+  setTableColumnPercents(table, percents);
+}
+
+function removeTableColumnWidth(table, removeIndex) {
+  ensureTableColumnWidths(table);
+  const percents = readTableColumnPercents(table, tableColumnElements(table).length);
+  if (percents.length <= 1) return;
+  const targetIndex = clampValue(removeIndex, 0, percents.length - 1);
+  const removed = percents.splice(targetIndex, 1)[0] || 0;
+  if (percents.length) {
+    const recipientIndex = clampValue(targetIndex, 0, percents.length - 1);
+    percents[recipientIndex] += removed;
+  }
+  setTableColumnPercents(table, percents);
+}
+
+function tableScrollWrapForTable(table) {
+  return table?.closest?.('.note-table-scroll') || null;
+}
+
+function updateTableScrollState(table) {
+  const scrollWrap = tableScrollWrapForTable(table);
+  if (!scrollWrap) return;
+  const canScroll = scrollWrap.scrollWidth - scrollWrap.clientWidth > 2;
+  scrollWrap.classList.toggle('is-scrollable', canScroll);
+  if (!canScroll) scrollWrap.scrollLeft = 0;
+}
+
+function ensureTableScrollWrap(wrap, table) {
+  if (!wrap || !table) return false;
+  let changed = false;
+  let scrollWrap = tableScrollWrapForTable(table);
+  if (!scrollWrap || scrollWrap.parentElement !== wrap) {
+    scrollWrap = wrap.querySelector(':scope > .note-table-scroll');
+    if (!scrollWrap) {
+      scrollWrap = document.createElement('div');
+      scrollWrap.className = 'note-table-scroll';
+      changed = true;
+    }
+    if (scrollWrap.parentElement !== wrap) {
+      wrap.appendChild(scrollWrap);
+      changed = true;
+    }
+    scrollWrap.appendChild(table);
+    changed = true;
+  }
+  let resizeControls = scrollWrap.querySelector(':scope > .table-resize-controls');
+  if (!resizeControls) {
+    resizeControls = document.createElement('div');
+    resizeControls.className = 'table-resize-controls';
+    resizeControls.setAttribute('contenteditable', 'false');
+    scrollWrap.appendChild(resizeControls);
+    changed = true;
+  }
+  return changed;
+}
+
+function updateTableResizeHandles(table) {
+  const scrollWrap = tableScrollWrapForTable(table);
+  const controls = scrollWrap?.querySelector(':scope > .table-resize-controls');
+  if (!table || !scrollWrap || !controls) return;
+  updateTableScrollState(table);
+  const colCount = tableColumnCount(table);
+  if (colCount <= 1 || !getEd()?.isContentEditable) {
+    controls.replaceChildren();
+    return;
+  }
+  const firstRow = table.rows[0];
+  if (!firstRow) return;
+  const scrollRect = scrollWrap.getBoundingClientRect();
+  const tableRect = table.getBoundingClientRect();
+  controls.style.width = Math.max(scrollWrap.clientWidth, tableRect.width) + 'px';
+  controls.style.height = tableRect.height + 'px';
+  const draggingIndex = controls.querySelector(':scope > .table-resize-handle.dragging')?.dataset.tableResize || '';
+  const existing = new Map(
+    [...controls.querySelectorAll(':scope > .table-resize-handle')]
+      .map(handle => [handle.dataset.tableResize, handle])
+  );
+  const keep = new Set();
+  for (let index = 0; index < colCount - 1; index++) {
+    const cell = firstRow.cells[index];
+    if (!cell) continue;
+    const left = cell.getBoundingClientRect().right - scrollRect.left + scrollWrap.scrollLeft;
+    const key = String(index);
+    const handle = existing.get(key) || document.createElement('span');
+    const wasDragging = handle.classList.contains('dragging') || draggingIndex === key;
+    handle.className = 'table-resize-handle';
+    if (wasDragging) handle.classList.add('dragging');
+    handle.dataset.tableResize = key;
+    handle.setAttribute('contenteditable', 'false');
+    handle.style.left = left + 'px';
+    controls.appendChild(handle);
+    keep.add(key);
+  }
+  existing.forEach((handle, key) => {
+    if (!keep.has(key)) handle.remove();
+  });
+}
+
+function refreshTableResizeHandles(root = getEd()) {
+  root?.querySelectorAll?.('table').forEach(table => {
+    updateTableScrollState(table);
+    updateTableResizeHandles(table);
+  });
+}
+
+function ensureTableTrailingParagraph(wrap) {
+  if (!wrap?.parentNode) return false;
+  let next = wrap.nextSibling;
+  while (next && next.nodeType === Node.TEXT_NODE && !next.textContent.trim()) next = next.nextSibling;
+  if (next?.nodeType === Node.ELEMENT_NODE && next.tagName === 'P') return false;
+  const p = document.createElement('p');
+  p.appendChild(document.createElement('br'));
+  if (next) wrap.parentNode.insertBefore(p, next);
+  else wrap.after(p);
+  return true;
 }
 
 function cellPlainTextFragment(text) {
@@ -1320,6 +1738,7 @@ function sanitizeTableCell(cell) {
   if (!cell) return false;
   let changed = false;
   cell.querySelectorAll('.table-controls').forEach(el => { el.remove(); changed = true; });
+  cell.querySelectorAll('.table-resize-controls').forEach(el => { el.remove(); changed = true; });
   cell.querySelectorAll('table').forEach(table => { replaceElementWithPlainText(table); changed = true; });
   cell.querySelectorAll('ul, ol').forEach(list => { replaceListWithPlainText(list); changed = true; });
   cell.querySelectorAll('pre').forEach(pre => { replaceElementWithPlainText(pre); changed = true; });
@@ -1375,6 +1794,7 @@ function ensureTableShape(table) {
       if (sanitizeTableCell(cell)) changed = true;
     });
   });
+  if (ensureTableColumnWidths(table)) changed = true;
   return changed;
 }
 
@@ -1393,6 +1813,9 @@ function decorateTables(root = getEd()) {
       wrap.appendChild(table);
       changed = true;
     }
+    if (ensureTableScrollWrap(wrap, table)) changed = true;
+    if (ensureTableTrailingParagraph(wrap)) changed = true;
+    updateTableScrollState(table);
     wrap.dataset.noteTableReady = '1';
     if (!editable) {
       wrap.classList.remove('has-table-controls');
@@ -1401,27 +1824,33 @@ function decorateTables(root = getEd()) {
         controls.remove();
         changed = true;
       }
+      wrap.querySelectorAll('.table-resize-controls').forEach(el => {
+        el.remove();
+        changed = true;
+      });
       return;
     }
     wrap.classList.add('has-table-controls');
     if (!wrap.querySelector(':scope > .table-controls')) {
-      wrap.insertBefore(createTableControls(tableCaptionText(table)), table);
+      wrap.insertBefore(createTableControls(tableCaptionText(table)), wrap.firstChild);
       changed = true;
     }
+    updateTableResizeHandles(table);
   });
   return changed;
 }
 
 function stripTableEditorChrome(root) {
   root.querySelectorAll('.note-table-wrap').forEach(wrap => {
-    const table = wrap.querySelector(':scope > table');
+    const table = wrap.querySelector(':scope > .note-table-scroll > table, :scope > table');
     const titleInput = wrap.querySelector(':scope > .table-controls [data-table-title-input]');
     if (table && titleInput) setTableCaptionText(table, titleInput.value || titleInput.getAttribute('value') || '');
   });
   root.querySelectorAll('.table-controls').forEach(el => el.remove());
+  root.querySelectorAll('.table-resize-controls').forEach(el => el.remove());
   root.querySelectorAll('.note-table-wrap').forEach(wrap => {
     wrap.classList.remove('has-table-controls');
-    const table = wrap.querySelector(':scope > table');
+    const table = wrap.querySelector(':scope > .note-table-scroll > table, :scope > table');
     if (table) {
       wrap.replaceWith(table);
       return;
@@ -1435,13 +1864,21 @@ function stripTableEditorChrome(root) {
 
 function createNoteTable(rows = 2, cols = 2) {
   const table = document.createElement('table');
+  const colgroup = document.createElement('colgroup');
+  for (let c = 0; c < cols; c++) {
+    const col = document.createElement('col');
+    col.style.width = formatTableColumnPercent(100 / cols);
+    colgroup.appendChild(col);
+  }
   const tbody = document.createElement('tbody');
   for (let r = 0; r < rows; r++) {
     const tr = document.createElement('tr');
     for (let c = 0; c < cols; c++) tr.appendChild(createTableCell());
     tbody.appendChild(tr);
   }
+  table.appendChild(colgroup);
   table.appendChild(tbody);
+  updateTableWidthFromCols(table);
   return table;
 }
 
@@ -1458,7 +1895,14 @@ function insertTable() {
   wrap.dataset.noteTableReady = '1';
   wrap.classList.add('has-table-controls');
   wrap.appendChild(createTableControls());
-  wrap.appendChild(table);
+  const scrollWrap = document.createElement('div');
+  scrollWrap.className = 'note-table-scroll';
+  const resizeControls = document.createElement('div');
+  resizeControls.className = 'table-resize-controls';
+  resizeControls.setAttribute('contenteditable', 'false');
+  scrollWrap.appendChild(table);
+  scrollWrap.appendChild(resizeControls);
+  wrap.appendChild(scrollWrap);
   const block = currentBlockFromSelection();
   if (range.collapsed && block && block !== getEd() && !['LI', 'TD', 'TH', 'PRE'].includes(block.tagName)) {
     if (block.textContent.replace(/\u00a0/g, ' ').trim() || block.querySelector('img, table, ul, ol')) block.after(wrap);
@@ -1470,6 +1914,7 @@ function insertTable() {
   const p = document.createElement('p');
   p.appendChild(document.createElement('br'));
   wrap.after(p);
+  updateTableResizeHandles(table);
   placeCursorAtStart(table.rows[0].cells[0]);
   getEd().dispatchEvent(new Event('input'));
 }
@@ -1516,8 +1961,10 @@ function removeTableRow(table) {
 }
 
 function addTableColumn(table) {
+  ensureTableColumnWidths(table);
   const selectedCell = selectedCellInTable(table);
   const insertIndex = selectedCell ? selectedCell.cellIndex + 1 : tableColumnCount(table);
+  insertTableColumnWidth(table, insertIndex);
   [...table.rows].forEach(row => {
     row.insertBefore(createTableCell(), row.cells[insertIndex] || null);
   });
@@ -1533,17 +1980,59 @@ function removeTableColumn(table) {
   }
   const selectedCell = selectedCellInTable(table);
   const colIndex = selectedCell ? selectedCell.cellIndex : cols - 1;
+  removeTableColumnWidth(table, colIndex);
   [...table.rows].forEach(row => row.cells[colIndex]?.remove());
   const targetRow = selectedCell?.parentElement?.isConnected ? selectedCell.parentElement : table.rows[0];
   placeCursorInTableCell(targetRow?.cells[Math.max(0, Math.min(colIndex, targetRow.cells.length - 1))]);
+}
+
+function deleteTable(table) {
+  const wrap = table?.closest('.note-table-wrap');
+  if (!wrap) return;
+  let next = wrap.nextElementSibling;
+  if (!next || next.tagName !== 'P') {
+    next = document.createElement('p');
+    next.appendChild(document.createElement('br'));
+    wrap.after(next);
+  }
+  wrap.remove();
+  placeCursorAtStart(next);
+}
+
+function openTableDeleteModal(table) {
+  if (!table || !activeId || !canEditNote(notes[activeId])) return;
+  _deletePending = { type: 'table', table };
+  const titleEl = document.getElementById('delete-modal-title');
+  const bodyEl = document.getElementById('delete-modal-body');
+  const confirmBtn = document.getElementById('delete-modal-confirm');
+  const name = tableCaptionText(table) || 'Table';
+  titleEl.textContent = 'Delete Table?';
+  bodyEl.className = 'delete-message';
+  bodyEl.innerHTML =
+    '<strong class="delete-target">' + esc(name) + '</strong>' +
+    '<div class="delete-copy">Removes this table from the note. This cannot be undone.</div>';
+  confirmBtn.innerHTML = '<i class="fa-solid fa-trash" style="margin-right:6px;"></i>Delete Table';
+  document.getElementById('delete-modal').classList.add('open');
+}
+
+function confirmTableDelete(table) {
+  if (!table || !activeId || !canEditNote(notes[activeId]) || !getEd().contains(table)) return;
+  pushUndo();
+  deleteTable(table);
+  getEd().dispatchEvent(new Event('input'));
+  scheduleUndoSnapshot();
 }
 
 function handleTableControl(btn) {
   if (!activeId || !canEditNote(notes[activeId])) return;
   const table = tableForButton(btn);
   if (!table) return;
-  pushUndo();
   const action = btn.dataset.tableAction;
+  if (action === 'delete-table') {
+    openTableDeleteModal(table);
+    return;
+  }
+  pushUndo();
   if (action === 'add-row') addTableRow(table);
   if (action === 'remove-row') removeTableRow(table);
   if (action === 'add-column') addTableColumn(table);
@@ -1552,6 +2041,78 @@ function handleTableControl(btn) {
   decorateTables(getEd());
   getEd().dispatchEvent(new Event('input'));
   scheduleUndoSnapshot();
+}
+
+function startTableColumnResize(e, handle) {
+  if (!activeId || !canEditNote(notes[activeId])) return;
+  const table = handle?.closest('.note-table-scroll')?.querySelector('table');
+  const colIndex = Number(handle?.dataset?.tableResize);
+  if (!table || !Number.isInteger(colIndex)) return;
+  const colCount = tableColumnCount(table);
+  if (colIndex < 0 || colIndex >= colCount - 1) return;
+
+  e.preventDefault();
+  e.stopPropagation();
+  pushUndo();
+  setTableColumnWidthsFromLayout(table);
+  const startWidths = tableColumnPixelWidthsFromLayout(table);
+  const totalWidth = startWidths.reduce((sum, width) => sum + width, 0);
+  const leftStart = startWidths[colIndex];
+  const rightStart = startWidths[colIndex + 1];
+  const combinedWidth = leftStart + rightStart;
+  if (totalWidth <= 0 || combinedWidth <= 0) return;
+  const startX = e.clientX;
+  const minWidth = Math.min(TABLE_MIN_COLUMN_WIDTH, Math.max(24, Math.floor(combinedWidth / 2)));
+  const minDelta = minWidth - leftStart;
+  const maxDelta = rightStart - minWidth;
+  let latestX = startX;
+  let frame = 0;
+  handle.classList.add('dragging');
+  document.body.style.cursor = 'col-resize';
+  document.body.style.userSelect = 'none';
+  try { handle.setPointerCapture?.(e.pointerId); } catch (_) {}
+
+  const applyResize = clientX => {
+    const delta = clampValue(clientX - startX, minDelta, maxDelta);
+    const nextWidths = startWidths.slice();
+    nextWidths[colIndex] = leftStart + delta;
+    nextWidths[colIndex + 1] = rightStart - delta;
+    setTableColumnPercents(table, nextWidths.map(width => (width / totalWidth) * 100));
+    updateTableResizeHandles(table);
+  };
+
+  const move = evt => {
+    evt.preventDefault();
+    latestX = evt.clientX;
+    if (frame) return;
+    frame = requestAnimationFrame(() => {
+      frame = 0;
+      applyResize(latestX);
+    });
+  };
+
+  const finish = () => {
+    document.removeEventListener('pointermove', move);
+    document.removeEventListener('pointerup', finish);
+    document.removeEventListener('pointercancel', finish);
+    if (frame) {
+      cancelAnimationFrame(frame);
+      frame = 0;
+      applyResize(latestX);
+    }
+    handle.classList.remove('dragging');
+    try { handle.releasePointerCapture?.(e.pointerId); } catch (_) {}
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+    ensureTableShape(table);
+    updateTableResizeHandles(table);
+    getEd().dispatchEvent(new Event('input'));
+    scheduleUndoSnapshot();
+  };
+
+  document.addEventListener('pointermove', move, { passive: false });
+  document.addEventListener('pointerup', finish);
+  document.addEventListener('pointercancel', finish);
 }
 
 function moveTableSelection(delta) {
@@ -1958,6 +2519,7 @@ function getAlarmItems() {
   });
   Object.values(profileShareNotifications || {}).forEach(reminder => {
     if (reminder.type !== 'reminder') return;
+    if (typeof isReminderCleared === 'function' && isReminderCleared(reminder)) return;
     const alarmAt = normalizeAlarmAt(reminder.reminderAt || reminder.alarmAt);
     if (!alarmAt) return;
     items.push({
@@ -2176,18 +2738,78 @@ function alarmRecipientName(uid) {
   return friend?.displayName || friend?.email || 'Friend';
 }
 
+function currentAlarmRecipientProfile() {
+  const photos = profilePhotoFields(
+    currentProfile?.photoURL,
+    currentProfile?.photoURLCandidates,
+    photoCandidatesFromUser(auth.currentUser)
+  );
+  const email = normalizeEmail(currentProfile?.email || auth.currentUser?.email || '');
+  return {
+    uid: 'me',
+    displayName: currentProfile?.displayName || auth.currentUser?.displayName || 'Me',
+    email,
+    photoURL: photos.photoURL,
+    photoURLCandidates: photos.photoURLCandidates
+  };
+}
+
 function canSendFriendReminderForNote(note) {
   return !!(note && (!note.owner || note.owner === userId));
 }
 
-function populateAlarmRecipientOptions(note, selectedUid = '') {
+function renderAlarmRecipientOption(value, profile, subtitle, selected) {
+  return '<button class="alarm-recipient-option' + (selected ? ' active' : '') + '" data-alarm-recipient-option="' + esc(value) + '" type="button" role="radio" aria-checked="' + (selected ? 'true' : 'false') + '">' +
+    renderProfileAvatar(profile) +
+    '<span class="alarm-recipient-copy">' +
+      '<span class="alarm-recipient-name">' + esc(profile.displayName || profile.email || (value === 'me' ? 'Me' : 'Friend')) + '</span>' +
+      '<span class="alarm-recipient-sub">' + esc(subtitle || profile.email || '') + '</span>' +
+    '</span>' +
+  '</button>';
+}
+
+function updateAlarmRecipientOptionState() {
+  const list = document.getElementById('alarm-recipient-options');
+  const select = document.getElementById('alarm-recipient-select');
+  if (!list || !select) return;
+  list.querySelectorAll('[data-alarm-recipient-option]').forEach(btn => {
+    const active = btn.dataset.alarmRecipientOption === select.value;
+    btn.classList.toggle('active', active);
+    btn.setAttribute('aria-checked', active ? 'true' : 'false');
+  });
+}
+
+function setAlarmRecipientValue(value) {
   const select = document.getElementById('alarm-recipient-select');
   if (!select) return;
+  const allowed = [...select.options].some(option => option.value === value);
+  select.value = allowed ? value : 'me';
+  updateAlarmRecipientOptionState();
+  updateAlarmRecipientState();
+  updateAlarmSummary();
+}
+
+function populateAlarmRecipientOptions(note, selectedUid = '') {
+  const select = document.getElementById('alarm-recipient-select');
+  const list = document.getElementById('alarm-recipient-options');
+  if (!select) return;
   const friendOptions = canSendFriendReminderForNote(note) ? friendArray() : [];
+  const selectedValue = selectedUid && friendOptions.some(friend => friend.uid === selectedUid) ? selectedUid : 'me';
   select.innerHTML = '<option value="me">Me</option>' + friendOptions.map(friend =>
     '<option value="' + esc(friend.uid) + '">' + esc(friend.displayName || friend.email || 'Friend') + '</option>'
   ).join('');
-  select.value = selectedUid && friendOptions.some(friend => friend.uid === selectedUid) ? selectedUid : 'me';
+  select.value = selectedValue;
+  if (!list) return;
+  list.innerHTML = renderAlarmRecipientOption('me', currentAlarmRecipientProfile(), 'Personal reminder', selectedValue === 'me') +
+    friendOptions.map(friend => renderAlarmRecipientOption(
+      friend.uid,
+      friend,
+      friend.email || 'Friend reminder',
+      selectedValue === friend.uid
+    )).join('');
+  list.querySelectorAll('[data-alarm-recipient-option]').forEach(btn => {
+    btn.addEventListener('click', () => setAlarmRecipientValue(btn.dataset.alarmRecipientOption || 'me'));
+  });
 }
 
 function updateAlarmRecipientState() {
@@ -2279,6 +2901,13 @@ function applyAlarmToRange(range, alarmAt) {
   return mark;
 }
 
+function friendReminderErrorMessage(reason) {
+  if (reason === 'save_failed') return 'Could Not Save Note For Reminder';
+  if (reason === 'share_failed') return 'Could Not Share Note For Reminder';
+  if (reason === 'delivery_failed') return 'Could Not Deliver Reminder';
+  return 'Could Not Send Reminder';
+}
+
 async function saveNoteAlarm() {
   if (!_alarmContext || !_alarmContext.noteId || !notes[_alarmContext.noteId]) return;
   const alarmAt = parseAlarmInput(
@@ -2295,14 +2924,20 @@ async function saveNoteAlarm() {
       showToast('Could Not Send Reminder', 'error');
       return;
     }
-    const result = await sendFriendReminder(
-      _alarmContext.noteId,
-      targetUid,
-      alarmAt,
-      _alarmContext.targetText || document.getElementById('alarm-target-text')?.textContent || 'Reminder'
-    );
+    let result;
+    try {
+      result = await sendFriendReminder(
+        _alarmContext.noteId,
+        targetUid,
+        alarmAt,
+        _alarmContext.targetText || document.getElementById('alarm-target-text')?.textContent || 'Reminder'
+      );
+    } catch (err) {
+      console.error('send friend reminder:', err);
+      result = { ok: false, reason: 'send_failed' };
+    }
     if (!result?.ok) {
-      showToast('Could Not Send Reminder', 'error');
+      showToast(friendReminderErrorMessage(result?.reason), 'error');
       return;
     }
     renderAlarmButton();
@@ -2387,6 +3022,33 @@ async function clearLegacyNoteAlarm(noteId) {
   }
 }
 
+async function deleteReminderDeliveryCopies(reminder, fallbackUid = '', fallbackEmail = '') {
+  const reminderId = reminder?.id || reminder?.reminderId || '';
+  if (!reminderId) return true;
+  const targetUid = reminder?.targetUid || reminder?.recipientUid || fallbackUid || '';
+  const targetEmail = normalizeEmail(reminder?.targetEmail || reminder?.recipientEmail || fallbackEmail || '');
+  const deletes = [];
+  if (targetUid) deletes.push({ promise: deleteDoc(doc(fsDb, 'profileShares', targetUid, 'items', reminderId)) });
+  if (targetEmail) deletes.push({ promise: deleteDoc(doc(fsDb, 'profileEmailShares', emailProfileDocId(targetEmail), 'items', reminderId)) });
+  if (reminder?.noteId && targetUid && targetUid !== userId && typeof noteAccessDocId === 'function') {
+    deletes.push({ optionalMissing: true, promise: updateDoc(doc(fsDb, 'noteAccess', noteAccessDocId(reminder.noteId, targetUid)), {
+      ['reminders.' + reminderId]: deleteField(),
+      modified: serverTimestamp()
+    }) });
+  }
+  if (!deletes.length) return true;
+  const results = await Promise.allSettled(deletes.map(item => item.promise));
+  const failed = results.some((result, index) =>
+    result.status === 'rejected' &&
+    !(deletes[index]?.optionalMissing && result.reason?.code === 'not-found')
+  );
+  if (failed) {
+    console.warn('delete reminder delivery copies:', results);
+    return false;
+  }
+  return true;
+}
+
 async function clearSentReminder(reminderId) {
   if (!reminderId) return;
   const reminder = sentReminders[reminderId];
@@ -2395,31 +3057,45 @@ async function clearSentReminder(reminderId) {
   renderAlarmButton();
   if (document.getElementById('alarms-modal')?.classList.contains('open')) renderAlarmsList();
   refreshOpenSidebarPage('alarms');
+  let cloudSynced = true;
+  let deliveryDeleted = true;
   try {
     await setDoc(_getUserDocRef(), { sentReminders: { [reminderId]: null } }, { merge: true });
-    if (reminder?.targetUid) {
-      await deleteDoc(doc(fsDb, 'profileShares', reminder.targetUid, 'items', reminderId)).catch(err => {
-        console.warn('delete delivered reminder:', err);
-      });
-    }
-    showToast('Reminder Cleared', 'success');
   } catch (err) {
+    cloudSynced = false;
     console.error('clear sent reminder:', err);
+  }
+  try {
+    deliveryDeleted = await deleteReminderDeliveryCopies(reminder || { id: reminderId });
+  } catch (err) {
+    deliveryDeleted = false;
+    console.warn('delete sent reminder delivery:', err);
+  }
+  if (cloudSynced && deliveryDeleted) {
+    showToast('Reminder Cleared', 'success');
+  } else {
     showToast('Reminder cleared locally; cloud sync failed', 'error');
   }
 }
 
 async function clearReceivedReminder(reminderId) {
   if (!reminderId) return;
+  const reminder = profileShareNotifications[reminderId] || { id: reminderId };
+  const clearedKey = typeof reminderClearedReadKey === 'function' ? reminderClearedReadKey(reminderId) : '';
+  if (clearedKey) readNotifications[clearedKey] = true;
   delete profileShareNotifications[reminderId];
+  _writeNotificationStateToLocal();
   renderAlarmButton();
   if (document.getElementById('alarms-modal')?.classList.contains('open')) renderAlarmsList();
   refreshOpenSidebarPage('alarms');
   try {
-    await deleteDoc(doc(fsDb, 'profileShares', userId, 'items', reminderId));
-    showToast('Reminder Cleared', 'success');
+    const email = normalizeEmail(currentProfile?.email || auth.currentUser?.email || '');
+    const deleted = await deleteReminderDeliveryCopies(reminder, userId, email);
+    if (clearedKey && typeof persistNotificationReads === 'function') await persistNotificationReads([clearedKey]);
+    showToast(deleted ? 'Reminder Cleared' : 'Reminder cleared locally; cloud sync failed', deleted ? 'success' : 'error');
   } catch (err) {
     console.error('clear received reminder:', err);
+    if (clearedKey && typeof persistNotificationReads === 'function') await persistNotificationReads([clearedKey]);
     showToast('Reminder cleared locally; cloud sync failed', 'error');
   }
 }
@@ -2646,12 +3322,19 @@ async function syncMentionNotifications() {
         continue;
       }
     }
+    let accessOk = false;
+    let mentionOk = false;
     try {
-      const ok = await shareNoteWithFriend(note.id, friends[uid] || profile, 'editor');
-      if (ok) sent.push(uid);
+      accessOk = await shareNoteWithFriend(note.id, friends[uid] || profile, 'editor', {}, { silent: true });
+    } catch (err) {
+      console.error('mention access:', err);
+    }
+    try {
+      mentionOk = await shareNoteWithProfile(note.id, uid, 'mention', {}, { silent: true });
     } catch (err) {
       console.error('mention notification:', err);
     }
+    if (accessOk || mentionOk) sent.push(uid);
   }
   if (!sent.length) return;
   note.mentionedUids = [...new Set([...(note.mentionedUids || []), ...sent])];

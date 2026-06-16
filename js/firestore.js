@@ -40,8 +40,9 @@ function listenToNotes() {
         }
       }
     });
+    purgeExpiredTrashNotes();
     renderSidebar();
-    if (!activeId || !notes[activeId]) {
+    if (!activeId || !notes[activeId] || (isTrashedNote(notes[activeId]) && sidebarView !== 'trash')) {
       const ids = sortedIds();
       if (ids.length) openNote(ids[0]);
       else            showEditorView(false);
@@ -77,7 +78,7 @@ function listenToFolders() {
       const id = ch.doc.id;
       if (ch.type === 'removed') { delete folders[id]; return; }
       const d = ch.doc.data();
-      const iconColor = normalizeFolderIconColor(d.iconColor, d.iconColorMode) || FOLDER_ICON_THEME;
+      const iconColor = normalizeFolderIconColor(d.iconColor, d.iconColorMode) || DEFAULT_FOLDER_ICON_COLOR;
       const iconColorMode = iconColor === FOLDER_ICON_THEME ? 'theme' : 'manual';
       folders[id] = {
         id,
@@ -113,10 +114,10 @@ function listenToFolders() {
 
 /* Write / Delete */
 async function saveDoc(note) {
-  if (!userId) return;
+  if (!userId) return false;
   if (!canEditNote(note)) {
     setSaveState('readonly');
-    return;
+    return false;
   }
   setSaveState('saving');
   try {
@@ -140,11 +141,13 @@ async function saveDoc(note) {
     }
     await setDoc(doc(fsDb, 'notes', note.id), payload, { merge: true });
     setSaveState('saved');
+    return true;
   } catch (err) {
     console.error('setDoc:', err);
     setSaveState('error');
     showToast('Failed To Save — Check Connection', 'error');
     _persistOffline(note);
+    return false;
   }
 }
 
@@ -155,8 +158,8 @@ async function saveFolderDoc(folder) {
       owner:    userId,
       public:   folder.public || false,
       title:    folder.title,
-      iconColor: normalizeFolderIconColor(folder.iconColor, folder.iconColorMode) || FOLDER_ICON_THEME,
-      iconColorMode: (normalizeFolderIconColor(folder.iconColor, folder.iconColorMode) || FOLDER_ICON_THEME) === FOLDER_ICON_THEME ? 'theme' : 'manual',
+      iconColor: normalizeFolderIconColor(folder.iconColor, folder.iconColorMode) || DEFAULT_FOLDER_ICON_COLOR,
+      iconColorMode: (normalizeFolderIconColor(folder.iconColor, folder.iconColorMode) || DEFAULT_FOLDER_ICON_COLOR) === FOLDER_ICON_THEME ? 'theme' : 'manual',
       sharedWith: normalizeSharedWith(folder.sharedWith),
       sharedAccessKeys: normalizeSharedAccessKeys(folder.sharedAccessKeys),
       order: Number.isFinite(Number(folder.order)) ? Number(folder.order) : nextFolderOrderValue(),
@@ -173,6 +176,29 @@ async function deleteDocNote(id) {
   if (!userId) return;
   try { await deleteDoc(doc(fsDb, 'notes', id)); }
   catch (err) { console.error('deleteDoc:', err); }
+}
+
+async function trashDocNote(note, deletedAt, trashExpiresAt) {
+  if (!userId || !note) return;
+  await setDoc(doc(fsDb, 'notes', note.id), {
+    owner: userId,
+    title: note.title || 'Untitled Note',
+    content: note.content || '',
+    modified: serverTimestamp(),
+    deletedAt: Timestamp.fromDate(deletedAt),
+    trashExpiresAt: Timestamp.fromDate(trashExpiresAt),
+    pinnedAt: deleteField(),
+    pinScope: deleteField()
+  }, { merge: true });
+}
+
+async function restoreDocNote(id) {
+  if (!userId) return;
+  await setDoc(doc(fsDb, 'notes', id), {
+    deletedAt: deleteField(),
+    trashExpiresAt: deleteField(),
+    modified: serverTimestamp()
+  }, { merge: true });
 }
 
 /* Migration */
