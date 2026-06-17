@@ -717,6 +717,9 @@ function renderConversationsSidebar() {
   sidebar.classList.toggle('open', !!conversationsOpen);
   sidebar.setAttribute('aria-hidden', conversationsOpen ? 'false' : 'true');
   document.getElementById('app')?.classList.toggle('conversations-open', !!conversationsOpen);
+  const toggleBtn = document.getElementById('conversation-toggle-btn');
+  toggleBtn?.classList.toggle('active', !!conversationsOpen);
+  toggleBtn?.setAttribute('aria-pressed', conversationsOpen ? 'true' : 'false');
 
   const note = activeId ? notes[activeId] : null;
   if (noteTitle) noteTitle.textContent = note?.title || '';
