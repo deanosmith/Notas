@@ -138,7 +138,7 @@ function openNote(id) {
   const conversationToggleBtn = document.getElementById('conversation-toggle-btn');
   const canUseConversations = typeof canStartConversationOnNote === 'function' ? canStartConversationOnNote(note) : isEditable;
   if (conversationToggleBtn) {
-    conversationToggleBtn.style.display = canUseConversations ? '' : 'none';
+    conversationToggleBtn.style.display = userId ? '' : 'none';
   }
   const ed = document.getElementById('editor');
   ed.contentEditable = isEditable ? 'true' : 'false';
@@ -161,7 +161,6 @@ function openNote(id) {
   initUndoSnapshot();
   if (typeof listenToConversationsForNote === 'function') {
     listenToConversationsForNote(canUseConversations ? id : null);
-    if (!canUseConversations && typeof closeConversationsSidebar === 'function') closeConversationsSidebar();
   }
   _capitalizeNext = false;
   if (isEditable && !isMobile()) setTimeout(() => placeCursorAtEnd(ed), 40);

@@ -87,6 +87,7 @@ onAuthStateChanged(auth, async user => {
       listenToProfileLinkRequests();
       listenToProfileShares();
       listenOwnedNoteAccess();
+      if (typeof listenToAllConversations === 'function') listenToAllConversations();
       const initialSharedWithMeLoad = listenSharedWithMe();
       _flushOfflineEdits();
       if (_sharedNoteId)   handleShareLink(_sharedNoteId);
@@ -142,6 +143,7 @@ onAuthStateChanged(auth, async user => {
     profileShareNotifications = {};
     notificationsUnavailable = false;
     noteConversations = {};
+    allConversations = {};
     conversationMessages = {};
     conversationMessageUnsubs = {};
     unsubNoteConversations = null;
