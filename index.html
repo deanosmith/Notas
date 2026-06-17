@@ -30,12 +30,12 @@
         <button class="rail-logo active" id="rail-notes-btn" data-sidebar-view="notes" type="button" title="Toggle Notes Sidebar" aria-label="Toggle Notes Sidebar">
           <img src="notas-icon.png" alt="" />
         </button>
-        <button class="rail-btn rail-primary" id="rail-create-btn" data-sidebar-view="create" type="button" title="Create" aria-label="Create">
+        <button class="rail-btn rail-primary" id="rail-create-btn" type="button" title="Create" aria-label="Create">
           <i class="fa-solid fa-plus"></i>
         </button>
         <div class="rail-divider" aria-hidden="true"></div>
-        <button class="rail-btn notification-btn" id="notifications-btn" data-sidebar-view="notifications" type="button" title="Mentions" aria-label="Mentions">
-          <i class="fa-solid fa-at"></i>
+        <button class="rail-btn notification-btn" id="notifications-btn" data-sidebar-view="notifications" type="button" title="Notifications" aria-label="Notifications">
+          <i class="fa-solid fa-bell"></i>
           <span class="notification-badge" id="notification-badge" hidden>0</span>
         </button>
         <button class="rail-btn" id="alarm-btn" data-sidebar-view="alarms" type="button" title="Reminders" aria-label="Reminders">
@@ -84,6 +84,7 @@
           <div style="display:flex;align-items:center;gap:8px;">
             <input class="doc-title-input" id="doc-title" type="text" placeholder="Untitled Note" autocomplete="off" />
             <div id="doc-access-avatars" aria-hidden="true"></div>
+            <button class="new-note-btn" id="conversation-toggle-btn" title="Conversations" aria-label="Conversations" style="flex-shrink:0;width:32px;height:32px;"><i class="fa-regular fa-comments"></i></button>
             <button class="new-note-btn" id="share-btn" title="Share Note" style="flex-shrink:0;width:32px;height:32px;"><i class="fa-solid fa-arrow-up-from-bracket"></i></button>
           </div>
           <div class="toolbar" id="toolbar">
@@ -113,6 +114,7 @@
             <div class="toolbar-sep"></div>
             <div class="toolbar-group">
               <button class="tb-btn" data-action="alarm" title="Set Reminder"><i class="fa-solid fa-clock"></i></button>
+              <button class="tb-btn" data-action="conversation" title="Start Conversation"><i class="fa-regular fa-comments"></i></button>
             </div>
           </div>
         </div>
@@ -137,12 +139,44 @@
         </div>
       </div>
     </main>
+
+    <aside id="conversation-sidebar" aria-label="Conversations" aria-hidden="true">
+      <div class="conversation-panel-header">
+        <div class="conversation-title-wrap">
+          <div class="conversation-panel-title"><i class="fa-regular fa-comments"></i><span>Conversations</span></div>
+          <div class="conversation-note-title" id="conversation-note-title"></div>
+        </div>
+        <div class="conversation-header-actions">
+          <button class="conversation-icon-btn" id="conversation-start-btn" type="button" title="Start Conversation" aria-label="Start Conversation">
+            <i class="fa-regular fa-comment-dots"></i>
+          </button>
+          <button class="conversation-icon-btn" id="conversation-close-btn" type="button" title="Close Conversations" aria-label="Close Conversations">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
+      </div>
+      <div class="conversation-sidebar-body" id="conversation-sidebar-body"></div>
+    </aside>
+  </div>
+
+  <div id="conversation-selection-popover" class="conversation-selection-popover" hidden>
+    <button id="conversation-selection-start-btn" type="button" title="Start Conversation" aria-label="Start Conversation">
+      <i class="fa-regular fa-comment-dots"></i>
+    </button>
   </div>
 
   <div class="modal-overlay" id="modal">
     <div class="modal">
-      <div class="modal-title">New Note</div>
-      <input class="modal-input" id="modal-input" type="text" placeholder="Note Title" maxlength="80" autocomplete="off" />
+      <div class="modal-title" id="modal-title">Create</div>
+      <div class="create-type-toggle" role="group" aria-label="Create type">
+        <button class="create-type-option active" type="button" data-create-type="note" aria-pressed="true">
+          <i class="fa-solid fa-note-sticky"></i><span>Note</span>
+        </button>
+        <button class="create-type-option" type="button" data-create-type="folder" aria-pressed="false">
+          <i class="fa-solid fa-folder-plus"></i><span>Folder</span>
+        </button>
+      </div>
+      <input class="modal-input" id="modal-input" type="text" placeholder="Name" maxlength="80" autocomplete="off" />
       <div class="modal-actions">
         <button class="modal-btn" id="modal-cancel">Cancel</button>
         <button class="modal-btn primary" id="modal-create">Create Note</button>
@@ -186,6 +220,13 @@
             <span class="fs-val" id="fs-val">15</span>
             <button class="fs-btn" id="fs-inc"><i class="fa-solid fa-plus"></i></button>
           </div>
+        </div>
+        <div class="settings-row">
+          <span class="settings-label"><i class="fa-solid fa-list"></i>Note Text</span>
+          <label class="toggle" title="Show note text in sidebar">
+            <input id="sidebar-preview-toggle" type="checkbox" aria-label="Show note text in sidebar" />
+            <span class="toggle-slider"></span>
+          </label>
         </div>
         <div class="settings-row">
           <span class="settings-label"><i class="fa-solid fa-tag"></i>Version</span>
@@ -268,7 +309,7 @@
 
   <div class="modal-overlay" id="notifications-modal">
     <div class="modal wide">
-      <div class="modal-title"><i class="fa-solid fa-at" style="margin-right:8px;opacity:.7;"></i>Mentions</div>
+      <div class="modal-title"><i class="fa-solid fa-bell" style="margin-right:8px;opacity:.7;"></i>Notifications</div>
       <div class="notifications-list" id="notifications-list"></div>
       <div class="modal-actions">
         <button class="modal-btn" id="notifications-mark-read">Mark All Read</button>

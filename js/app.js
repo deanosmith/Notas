@@ -13,6 +13,7 @@ const sectionScripts = [
   './editor.js',
   './ui.js',
   './sharing.js',
+  './conversations.js',
   './auth.js'
 ];
 
@@ -62,6 +63,7 @@ document.querySelectorAll('[data-sidebar-view]').forEach(btn => {
     setSidebarView(btn.dataset.sidebarView);
   });
 });
+document.getElementById('rail-create-btn')?.addEventListener('click', () => openModal('note'));
 document.getElementById('mob-new-btn').addEventListener('click',    openModal);
 document.getElementById('google-signin-btn').addEventListener('click', signInWithGoogle);
 document.getElementById('signout-btn').addEventListener('click', () => {
@@ -107,6 +109,15 @@ document.querySelectorAll('[data-alarm-time-preset]').forEach(btn => {
 document.getElementById('mention-share-confirm').addEventListener('click', () => closeMentionShareModal(true));
 document.getElementById('mention-share-cancel').addEventListener('click', () => closeMentionShareModal(false));
 document.getElementById('mention-share-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeMentionShareModal(false); });
+document.getElementById('conversation-toggle-btn')?.addEventListener('click', () => openConversationsSidebar());
+document.getElementById('conversation-start-btn')?.addEventListener('click', () => openConversationComposerFromSelection());
+document.getElementById('conversation-close-btn')?.addEventListener('click', closeConversationsSidebar);
+document.getElementById('conversation-selection-popover')?.addEventListener('mousedown', e => e.preventDefault());
+document.getElementById('conversation-selection-start-btn')?.addEventListener('click', e => {
+  e.preventDefault();
+  openConversationComposerFromSelection();
+  hideConversationSelectionPopover();
+});
 document.getElementById('connect-profile-btn')?.addEventListener('click', connectProfileByEmail);
 document.getElementById('connect-profile-email-input')?.addEventListener('keydown', e => {
   if (e.key === 'Enter') connectProfileByEmail();
@@ -143,6 +154,9 @@ document.getElementById('move-modal').addEventListener('click', e => { if (e.tar
 document.getElementById('drawer-overlay').addEventListener('click', closeDrawer);
 document.getElementById('new-note-btn')?.addEventListener('click',   openModal);
 document.getElementById('empty-cta-btn').addEventListener('click',  openModal);
+document.querySelectorAll('[data-create-type]').forEach(btn => {
+  btn.addEventListener('click', () => setCreateModalType(btn.dataset.createType));
+});
 document.getElementById('modal-create').addEventListener('click',   confirmCreate);
 document.getElementById('modal-cancel').addEventListener('click',   closeModal);
 document.getElementById('modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeModal(); });
@@ -200,10 +214,21 @@ editorEl.addEventListener('blur', () => {
 editorEl.addEventListener('keyup', () => {
   renderMentionPopover();
   refreshUndoSnapshotSelection();
+  scheduleConversationSelectionPopover();
 });
-editorEl.addEventListener('mouseup', refreshUndoSnapshotSelection);
+editorEl.addEventListener('mouseup', () => {
+  refreshUndoSnapshotSelection();
+  scheduleConversationSelectionPopover();
+});
+editorEl.addEventListener('scroll', hideConversationSelectionPopover);
+document.addEventListener('selectionchange', scheduleConversationSelectionPopover);
 
 editorEl.addEventListener('pointerdown', e => {
+  const reorderHandle = e.target.closest?.('[data-table-reorder]');
+  if (reorderHandle && editorEl.contains(reorderHandle)) {
+    startTableReorder(e, reorderHandle);
+    return;
+  }
   const resizeHandle = e.target.closest?.('[data-table-resize]');
   if (!resizeHandle || !editorEl.contains(resizeHandle)) return;
   startTableColumnResize(e, resizeHandle);
@@ -218,6 +243,12 @@ editorEl.addEventListener('mousedown', e => {
 });
 
 editorEl.addEventListener('click', e => {
+  const reorderHandle = e.target.closest?.('[data-table-reorder]');
+  if (reorderHandle && editorEl.contains(reorderHandle)) {
+    e.preventDefault();
+    e.stopPropagation();
+    return;
+  }
   const tableBtn = e.target.closest('[data-table-action]');
   if (tableBtn && editorEl.contains(tableBtn)) {
     e.preventDefault();
@@ -264,6 +295,13 @@ editorEl.addEventListener('click', e => {
       openNoteAlarmModal(activeId);
       return;
     }
+  }
+  const conversationMark = e.target.closest('.note-conversation-anchor');
+  if (conversationMark && editorEl.contains(conversationMark) && typeof openConversationFromMarker === 'function') {
+    e.preventDefault();
+    e.stopPropagation();
+    openConversationFromMarker(conversationMark);
+    return;
   }
   const link = e.target.closest('a[href]');
   if (!link) return;
@@ -511,6 +549,11 @@ editorEl.addEventListener('paste', e => {
   pushUndo();
   const html = e.clipboardData.getData('text/html');
   const text = e.clipboardData.getData('text/plain');
+  const pastedHref = normalizeHttpUrlValue(text);
+  if (pastedHref && applyLinkToSelection(pastedHref)) {
+    editorEl.dispatchEvent(new Event('input'));
+    return;
+  }
   if (isSelectionInTable()) {
     let plain = text;
     if (!plain && html) {
@@ -556,9 +599,9 @@ document.getElementById('toolbar').addEventListener('mousedown', e => {
     showToast('Tables Support Simple Text Only', 'error');
     return;
   }
-  if (!['link', 'alarm'].includes(btn.dataset.action)) pushUndo();
+  if (!['link', 'alarm', 'conversation'].includes(btn.dataset.action)) pushUndo();
   ACTIONS[btn.dataset.action]?.();
-  if (!['link', 'alarm'].includes(btn.dataset.action)) scheduleUndoSnapshot();
+  if (!['link', 'alarm', 'conversation'].includes(btn.dataset.action)) scheduleUndoSnapshot();
 });
 document.getElementById('toolbar').addEventListener('touchend', e => {
   const btn = e.target.closest('[data-action]');
@@ -568,9 +611,9 @@ document.getElementById('toolbar').addEventListener('touchend', e => {
     showToast('Tables Support Simple Text Only', 'error');
     return;
   }
-  if (!['link', 'alarm'].includes(btn.dataset.action)) pushUndo();
+  if (!['link', 'alarm', 'conversation'].includes(btn.dataset.action)) pushUndo();
   ACTIONS[btn.dataset.action]?.();
-  if (!['link', 'alarm'].includes(btn.dataset.action)) scheduleUndoSnapshot();
+  if (!['link', 'alarm', 'conversation'].includes(btn.dataset.action)) scheduleUndoSnapshot();
 });
 
 document.getElementById('doc-title').addEventListener('input', () => {
@@ -600,7 +643,7 @@ document.getElementById('search-input').addEventListener('input', e => {
 });
 
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') { closeCtxMenu(); hideMentionPopover(); closeMentionShareModal(false); closeFolderColorPicker(); }
+  if (e.key === 'Escape') { closeCtxMenu(); hideMentionPopover(); hideConversationSelectionPopover(); closeMentionShareModal(false); closeFolderColorPicker(); }
   const mod = /Mac/.test(navigator.platform) ? e.metaKey : e.ctrlKey;
   if (!mod) return;
   const key = e.key.toLowerCase();

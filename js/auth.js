@@ -17,6 +17,8 @@ function closeTransientSurfaces() {
   document.getElementById('color-popover')?.setAttribute('hidden', '');
   if (typeof closeCtxMenu === 'function') closeCtxMenu();
   if (typeof hideMentionPopover === 'function') hideMentionPopover();
+  if (typeof hideConversationSelectionPopover === 'function') hideConversationSelectionPopover();
+  if (typeof closeConversationsSidebar === 'function') closeConversationsSidebar();
   _pendingProfileLink = null;
   _alarmNoteId = null;
   _alarmContext = null;
@@ -116,6 +118,7 @@ onAuthStateChanged(auth, async user => {
     if (unsubSentFriendRequests) { unsubSentFriendRequests(); unsubSentFriendRequests = null; }
     if (unsubOwnedNoteAccess) { unsubOwnedNoteAccess(); unsubOwnedNoteAccess = null; }
     if (unsubSharedWithMe) { unsubSharedWithMe(); unsubSharedWithMe = null; }
+    if (typeof clearConversationState === 'function') clearConversationState({ close: true });
     directShareUnsubs.forEach(fn => fn());
     directShareUnsubs = [];
     Object.values(sharedNoteUnsubs).forEach(fn => fn());
@@ -138,6 +141,14 @@ onAuthStateChanged(auth, async user => {
     sentReminders = {};
     profileShareNotifications = {};
     notificationsUnavailable = false;
+    noteConversations = {};
+    conversationMessages = {};
+    conversationMessageUnsubs = {};
+    unsubNoteConversations = null;
+    activeConversationId = null;
+    conversationsOpen = false;
+    conversationComposeAnchor = null;
+    conversationListeningNoteId = null;
     _processingProfileLinkResponses = new Set();
     _processingAcceptedFriendRequests = new Set();
     _sendingFriendRequests = new Set();

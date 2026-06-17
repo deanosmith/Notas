@@ -36,7 +36,9 @@ function listenToNotes() {
           titleEl.value = d.title || 'Untitled Note';
           ed.innerHTML  = renderMarkdownContent(d.content || '');
           linkifyTextNodes(ed); ensureLinkAttrs(ed);
-          restoreChecklistState(ed); restoreAlarmMarks(ed); decorateTables(ed); refreshEmpty(ed); updateCounts();
+          restoreChecklistState(ed); restoreAlarmMarks(ed);
+          if (typeof restoreConversationAnchorMarks === 'function') restoreConversationAnchorMarks(ed);
+          decorateTables(ed); refreshEmpty(ed); updateCounts();
         }
       }
     });

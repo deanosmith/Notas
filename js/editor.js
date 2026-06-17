@@ -747,6 +747,45 @@ function decorateLink(link, href) {
   link.rel = 'noopener noreferrer';
 }
 
+function normalizeHttpUrlValue(raw) {
+  const value = String(raw || '').trim();
+  if (!value || /\s/.test(value)) return '';
+  try {
+    const url = new URL(value);
+    return /^https?:$/i.test(url.protocol) ? url.href : '';
+  } catch (_) {
+    return '';
+  }
+}
+
+function unwrapElement(el) {
+  const frag = document.createDocumentFragment();
+  while (el.firstChild) frag.appendChild(el.firstChild);
+  el.replaceWith(frag);
+}
+
+function applyLinkToSelection(href) {
+  const safeHref = normalizeHttpUrlValue(href);
+  const range = getEditorSelectionRange();
+  if (!safeHref || !range || range.collapsed) return false;
+
+  const link = document.createElement('a');
+  decorateLink(link, safeHref);
+  const contents = range.extractContents();
+  contents.querySelectorAll?.('a').forEach(unwrapElement);
+  link.appendChild(contents);
+
+  range.insertNode(link);
+  range.setStartAfter(link);
+  range.collapse(true);
+  const sel = window.getSelection();
+  if (sel) {
+    sel.removeAllRanges();
+    sel.addRange(range);
+  }
+  return true;
+}
+
 function ensureLinkAttrs(root) {
   root.querySelectorAll('a[href]').forEach(link => decorateLink(link, link.getAttribute('href')));
 }
@@ -833,6 +872,7 @@ function updateCounts() {
 function showEditorView(show) {
   document.getElementById('empty-state').style.display = show ? 'none' : 'flex';
   document.getElementById('editorView').style.display  = show ? 'flex' : 'none';
+  if (!show && typeof listenToConversationsForNote === 'function') listenToConversationsForNote(null);
 }
 
 /* Delete Modal */
@@ -889,6 +929,9 @@ function getCleanHTML() {
   clone.querySelectorAll('.note-alarm').forEach(el => {
     el.classList.remove('alarm-due');
     if (!el.classList.length) el.removeAttribute('class');
+  });
+  clone.querySelectorAll('.note-conversation-anchor').forEach(el => {
+    el.classList.remove('conversation-anchor-focused');
   });
   cleanupInlineCodePlaceholders(clone);
   stripZeroWidthText(clone);
@@ -1435,6 +1478,8 @@ function createTableControls(title = '') {
 
 const TABLE_MIN_COLUMN_WIDTH = 72;
 const TABLE_DEFAULT_COLUMN_WIDTH = 150;
+const TABLE_EDGE_RESIZE_KEY = 'edge';
+let _tableReorderState = null;
 
 function tableDirectColgroup(table) {
   return table?.querySelector?.(':scope > colgroup') || null;
@@ -1499,8 +1544,44 @@ function readTableColumnPercents(table, count = tableColumnCount(table)) {
 
 function updateTableWidthFromCols(table) {
   if (!table) return;
-  table.style.width = '100%';
+  if (!String(table.style.width || '').trim()) table.style.width = '100%';
   table.style.minWidth = '';
+  applyTableChromeWidth(table);
+}
+
+function tablePixelStyleWidth(table) {
+  const raw = String(table?.style?.width || '').trim();
+  const value = parseFloat(raw);
+  return /px$/i.test(raw) && Number.isFinite(value) && value > 0 ? value : 0;
+}
+
+function tableAvailableWidth(table) {
+  const wrap = table?.closest?.('.note-table-wrap');
+  const parent = wrap?.parentElement || getEd();
+  const rectWidth = parent?.getBoundingClientRect?.().width || 0;
+  const clientWidth = parent?.clientWidth || 0;
+  return Math.max(TABLE_MIN_COLUMN_WIDTH, rectWidth || clientWidth || tableWidthBasis(table));
+}
+
+function tableMinimumResizeWidth(table) {
+  const colCount = tableColumnCount(table);
+  const preferred = Math.max(120, colCount * TABLE_MIN_COLUMN_WIDTH);
+  return Math.min(tableAvailableWidth(table), preferred);
+}
+
+function applyTableChromeWidth(table) {
+  const wrap = table?.closest?.('.note-table-wrap');
+  if (!wrap) return;
+  const pxWidth = tablePixelStyleWidth(table);
+  wrap.style.width = pxWidth ? Math.round(pxWidth) + 'px' : '';
+}
+
+function setTablePixelWidth(table, width) {
+  const nextWidth = Math.max(1, Math.round(width));
+  table.style.width = nextWidth + 'px';
+  table.style.minWidth = '';
+  applyTableChromeWidth(table);
+  updateTableScrollState(table);
 }
 
 function setTableColumnPercents(table, percents) {
@@ -1617,9 +1698,20 @@ function tableScrollWrapForTable(table) {
 function updateTableScrollState(table) {
   const scrollWrap = tableScrollWrapForTable(table);
   if (!scrollWrap) return;
+  applyTableChromeWidth(table);
   const canScroll = scrollWrap.scrollWidth - scrollWrap.clientWidth > 2;
   scrollWrap.classList.toggle('is-scrollable', canScroll);
   if (!canScroll) scrollWrap.scrollLeft = 0;
+}
+
+function bindTableChromeScroll(scrollWrap) {
+  if (!scrollWrap || scrollWrap.dataset.tableChromeScrollBound) return;
+  scrollWrap.dataset.tableChromeScrollBound = '1';
+  scrollWrap.addEventListener('scroll', () => {
+    const currentTable = scrollWrap.querySelector(':scope > table');
+    updateTableResizeHandles(currentTable);
+    updateTableReorderHandles(currentTable);
+  }, { passive: true });
 }
 
 function ensureTableScrollWrap(wrap, table) {
@@ -1648,6 +1740,16 @@ function ensureTableScrollWrap(wrap, table) {
     scrollWrap.appendChild(resizeControls);
     changed = true;
   }
+  let reorderControls = scrollWrap.querySelector(':scope > .table-reorder-controls');
+  if (!reorderControls) {
+    reorderControls = document.createElement('div');
+    reorderControls.className = 'table-reorder-controls';
+    reorderControls.setAttribute('contenteditable', 'false');
+    scrollWrap.appendChild(reorderControls);
+    changed = true;
+  }
+  bindTableChromeScroll(scrollWrap);
+  applyTableChromeWidth(table);
   return changed;
 }
 
@@ -1657,7 +1759,7 @@ function updateTableResizeHandles(table) {
   if (!table || !scrollWrap || !controls) return;
   updateTableScrollState(table);
   const colCount = tableColumnCount(table);
-  if (colCount <= 1 || !getEd()?.isContentEditable) {
+  if (!getEd()?.isContentEditable) {
     controls.replaceChildren();
     return;
   }
@@ -1673,21 +1775,106 @@ function updateTableResizeHandles(table) {
       .map(handle => [handle.dataset.tableResize, handle])
   );
   const keep = new Set();
-  for (let index = 0; index < colCount - 1; index++) {
+  if (colCount > 1) {
+    for (let index = 0; index < colCount - 1; index++) {
+      const cell = firstRow.cells[index];
+      if (!cell) continue;
+      const left = cell.getBoundingClientRect().right - scrollRect.left + scrollWrap.scrollLeft;
+      const key = String(index);
+      const handle = existing.get(key) || document.createElement('span');
+      const wasDragging = handle.classList.contains('dragging') || draggingIndex === key;
+      handle.className = 'table-resize-handle';
+      if (wasDragging) handle.classList.add('dragging');
+      handle.dataset.tableResize = key;
+      handle.setAttribute('contenteditable', 'false');
+      handle.style.left = left + 'px';
+      controls.appendChild(handle);
+      keep.add(key);
+    }
+  }
+  const edgeLeft = tableRect.right - scrollRect.left + scrollWrap.scrollLeft;
+  const edgeHandle = existing.get(TABLE_EDGE_RESIZE_KEY) || document.createElement('span');
+  const edgeWasDragging = edgeHandle.classList.contains('dragging') || draggingIndex === TABLE_EDGE_RESIZE_KEY;
+  edgeHandle.className = 'table-resize-handle table-edge-resize-handle';
+  if (edgeWasDragging) edgeHandle.classList.add('dragging');
+  edgeHandle.dataset.tableResize = TABLE_EDGE_RESIZE_KEY;
+  edgeHandle.setAttribute('contenteditable', 'false');
+  edgeHandle.setAttribute('title', 'Resize Table');
+  edgeHandle.setAttribute('aria-label', 'Resize Table');
+  edgeHandle.style.left = edgeLeft + 'px';
+  controls.appendChild(edgeHandle);
+  keep.add(TABLE_EDGE_RESIZE_KEY);
+  existing.forEach((handle, key) => {
+    if (!keep.has(key)) handle.remove();
+  });
+}
+
+function updateTableReorderHandles(table) {
+  const scrollWrap = tableScrollWrapForTable(table);
+  const controls = scrollWrap?.querySelector(':scope > .table-reorder-controls');
+  if (!table || !scrollWrap || !controls) return;
+  const rows = [...table.rows];
+  const colCount = tableColumnCount(table);
+  if (!rows.length || !getEd()?.isContentEditable) {
+    controls.replaceChildren();
+    return;
+  }
+
+  const firstRow = rows[0];
+  const scrollRect = scrollWrap.getBoundingClientRect();
+  const tableRect = table.getBoundingClientRect();
+  controls.style.width = Math.max(scrollWrap.clientWidth, tableRect.width) + 'px';
+  controls.style.height = tableRect.height + 'px';
+
+  const existing = new Map(
+    [...controls.querySelectorAll(':scope > .table-reorder-handle')]
+      .map(handle => [handle.dataset.tableReorder + ':' + (handle.dataset.tableRowReorder || handle.dataset.tableColumnReorder), handle])
+  );
+  const keep = new Set();
+
+  rows.forEach((row, index) => {
+    const rect = row.getBoundingClientRect();
+    const firstCellRect = row.cells[0]?.getBoundingClientRect?.() || tableRect;
+    const key = 'row:' + index;
+    const handle = existing.get(key) || document.createElement('button');
+    const active = _tableReorderState?.type === 'row' && _tableReorderState.table === table && _tableReorderState.fromIndex === index;
+    handle.className = 'table-reorder-handle table-row-reorder-handle';
+    if (active) handle.classList.add('dragging');
+    handle.type = 'button';
+    handle.dataset.tableReorder = 'row';
+    handle.dataset.tableRowReorder = String(index);
+    handle.setAttribute('contenteditable', 'false');
+    handle.setAttribute('title', 'Move Row');
+    handle.setAttribute('aria-label', 'Move Row');
+    handle.innerHTML = '<i class="fa-solid fa-arrows-up-down"></i>';
+    handle.style.left = (firstCellRect.left - scrollRect.left + scrollWrap.scrollLeft + 9) + 'px';
+    handle.style.top = (rect.top - scrollRect.top + scrollWrap.scrollTop + rect.height / 2) + 'px';
+    controls.appendChild(handle);
+    keep.add(key);
+  });
+
+  for (let index = 0; index < colCount; index++) {
     const cell = firstRow.cells[index];
     if (!cell) continue;
-    const left = cell.getBoundingClientRect().right - scrollRect.left + scrollWrap.scrollLeft;
-    const key = String(index);
-    const handle = existing.get(key) || document.createElement('span');
-    const wasDragging = handle.classList.contains('dragging') || draggingIndex === key;
-    handle.className = 'table-resize-handle';
-    if (wasDragging) handle.classList.add('dragging');
-    handle.dataset.tableResize = key;
+    const rect = cell.getBoundingClientRect();
+    const key = 'column:' + index;
+    const handle = existing.get(key) || document.createElement('button');
+    const active = _tableReorderState?.type === 'column' && _tableReorderState.table === table && _tableReorderState.fromIndex === index;
+    handle.className = 'table-reorder-handle table-column-reorder-handle';
+    if (active) handle.classList.add('dragging');
+    handle.type = 'button';
+    handle.dataset.tableReorder = 'column';
+    handle.dataset.tableColumnReorder = String(index);
     handle.setAttribute('contenteditable', 'false');
-    handle.style.left = left + 'px';
+    handle.setAttribute('title', 'Move Column');
+    handle.setAttribute('aria-label', 'Move Column');
+    handle.innerHTML = '<i class="fa-solid fa-arrows-left-right"></i>';
+    handle.style.left = (rect.left - scrollRect.left + scrollWrap.scrollLeft + rect.width / 2) + 'px';
+    handle.style.top = (rect.top - scrollRect.top + scrollWrap.scrollTop + 9) + 'px';
     controls.appendChild(handle);
     keep.add(key);
   }
+
   existing.forEach((handle, key) => {
     if (!keep.has(key)) handle.remove();
   });
@@ -1697,6 +1884,7 @@ function refreshTableResizeHandles(root = getEd()) {
   root?.querySelectorAll?.('table').forEach(table => {
     updateTableScrollState(table);
     updateTableResizeHandles(table);
+    updateTableReorderHandles(table);
   });
 }
 
@@ -1739,6 +1927,8 @@ function sanitizeTableCell(cell) {
   let changed = false;
   cell.querySelectorAll('.table-controls').forEach(el => { el.remove(); changed = true; });
   cell.querySelectorAll('.table-resize-controls').forEach(el => { el.remove(); changed = true; });
+  cell.querySelectorAll('.table-reorder-controls').forEach(el => { el.remove(); changed = true; });
+  cell.querySelectorAll('.table-reorder-indicator').forEach(el => { el.remove(); changed = true; });
   cell.querySelectorAll('table').forEach(table => { replaceElementWithPlainText(table); changed = true; });
   cell.querySelectorAll('ul, ol').forEach(list => { replaceListWithPlainText(list); changed = true; });
   cell.querySelectorAll('pre').forEach(pre => { replaceElementWithPlainText(pre); changed = true; });
@@ -1828,6 +2018,10 @@ function decorateTables(root = getEd()) {
         el.remove();
         changed = true;
       });
+      wrap.querySelectorAll('.table-reorder-controls,.table-reorder-indicator').forEach(el => {
+        el.remove();
+        changed = true;
+      });
       return;
     }
     wrap.classList.add('has-table-controls');
@@ -1836,6 +2030,7 @@ function decorateTables(root = getEd()) {
       changed = true;
     }
     updateTableResizeHandles(table);
+    updateTableReorderHandles(table);
   });
   return changed;
 }
@@ -1848,6 +2043,7 @@ function stripTableEditorChrome(root) {
   });
   root.querySelectorAll('.table-controls').forEach(el => el.remove());
   root.querySelectorAll('.table-resize-controls').forEach(el => el.remove());
+  root.querySelectorAll('.table-reorder-controls,.table-reorder-indicator').forEach(el => el.remove());
   root.querySelectorAll('.note-table-wrap').forEach(wrap => {
     wrap.classList.remove('has-table-controls');
     const table = wrap.querySelector(':scope > .note-table-scroll > table, :scope > table');
@@ -1900,8 +2096,13 @@ function insertTable() {
   const resizeControls = document.createElement('div');
   resizeControls.className = 'table-resize-controls';
   resizeControls.setAttribute('contenteditable', 'false');
+  const reorderControls = document.createElement('div');
+  reorderControls.className = 'table-reorder-controls';
+  reorderControls.setAttribute('contenteditable', 'false');
   scrollWrap.appendChild(table);
   scrollWrap.appendChild(resizeControls);
+  scrollWrap.appendChild(reorderControls);
+  bindTableChromeScroll(scrollWrap);
   wrap.appendChild(scrollWrap);
   const block = currentBlockFromSelection();
   if (range.collapsed && block && block !== getEd() && !['LI', 'TD', 'TH', 'PRE'].includes(block.tagName)) {
@@ -1915,6 +2116,7 @@ function insertTable() {
   p.appendChild(document.createElement('br'));
   wrap.after(p);
   updateTableResizeHandles(table);
+  updateTableReorderHandles(table);
   placeCursorAtStart(table.rows[0].cells[0]);
   getEd().dispatchEvent(new Event('input'));
 }
@@ -1986,6 +2188,183 @@ function removeTableColumn(table) {
   placeCursorInTableCell(targetRow?.cells[Math.max(0, Math.min(colIndex, targetRow.cells.length - 1))]);
 }
 
+function tableReorderCount(table, type) {
+  if (!table) return 0;
+  return type === 'row' ? table.rows.length : tableColumnCount(table);
+}
+
+function tableReorderInsertionIndex(table, type, clientX, clientY) {
+  const items = type === 'row' ? [...table.rows] : [...(table.rows[0]?.cells || [])];
+  if (!items.length) return 0;
+  for (let index = 0; index < items.length; index++) {
+    const rect = items[index].getBoundingClientRect();
+    const midpoint = type === 'row' ? rect.top + rect.height / 2 : rect.left + rect.width / 2;
+    const pointer = type === 'row' ? clientY : clientX;
+    if (pointer < midpoint) return index;
+  }
+  return items.length;
+}
+
+function tableReorderTargetIndex(fromIndex, insertionIndex, count) {
+  if (count <= 1) return fromIndex;
+  const adjusted = insertionIndex > fromIndex ? insertionIndex - 1 : insertionIndex;
+  return clampValue(adjusted, 0, count - 1);
+}
+
+function tableReorderIndicator(scrollWrap) {
+  if (!scrollWrap) return null;
+  let indicator = scrollWrap.querySelector(':scope > .table-reorder-indicator');
+  if (!indicator) {
+    indicator = document.createElement('div');
+    indicator.className = 'table-reorder-indicator';
+    indicator.setAttribute('contenteditable', 'false');
+    scrollWrap.appendChild(indicator);
+  }
+  return indicator;
+}
+
+function updateTableReorderIndicator(table, type, insertionIndex) {
+  const scrollWrap = tableScrollWrapForTable(table);
+  const indicator = tableReorderIndicator(scrollWrap);
+  if (!table || !scrollWrap || !indicator) return;
+  const tableRect = table.getBoundingClientRect();
+  const scrollRect = scrollWrap.getBoundingClientRect();
+  indicator.className = 'table-reorder-indicator ' + (type === 'row' ? 'is-row' : 'is-column');
+
+  if (type === 'row') {
+    const rows = [...table.rows];
+    if (!rows.length) return;
+    const rowRect = insertionIndex >= rows.length
+      ? rows[rows.length - 1].getBoundingClientRect()
+      : rows[insertionIndex].getBoundingClientRect();
+    const y = insertionIndex >= rows.length ? rowRect.bottom : rowRect.top;
+    indicator.style.left = (tableRect.left - scrollRect.left + scrollWrap.scrollLeft) + 'px';
+    indicator.style.top = (y - scrollRect.top + scrollWrap.scrollTop) + 'px';
+    indicator.style.width = tableRect.width + 'px';
+    indicator.style.height = '';
+    return;
+  }
+
+  const cells = [...(table.rows[0]?.cells || [])];
+  if (!cells.length) return;
+  const cellRect = insertionIndex >= cells.length
+    ? cells[cells.length - 1].getBoundingClientRect()
+    : cells[insertionIndex].getBoundingClientRect();
+  const x = insertionIndex >= cells.length ? cellRect.right : cellRect.left;
+  indicator.style.left = (x - scrollRect.left + scrollWrap.scrollLeft) + 'px';
+  indicator.style.top = (tableRect.top - scrollRect.top + scrollWrap.scrollTop) + 'px';
+  indicator.style.width = '';
+  indicator.style.height = tableRect.height + 'px';
+}
+
+function clearTableReorderIndicator(table) {
+  tableScrollWrapForTable(table)?.querySelector(':scope > .table-reorder-indicator')?.remove();
+}
+
+function moveTableRow(table, fromIndex, toIndex) {
+  const rows = [...table.rows];
+  if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0 || fromIndex >= rows.length || toIndex >= rows.length) return false;
+  const row = rows[fromIndex];
+  const target = rows[toIndex];
+  if (!row || !target) return false;
+  target.parentNode.insertBefore(row, fromIndex < toIndex ? target.nextSibling : target);
+  return true;
+}
+
+function moveTableColumn(table, fromIndex, toIndex) {
+  const colCount = tableColumnCount(table);
+  if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0 || fromIndex >= colCount || toIndex >= colCount) return false;
+  ensureTableColumnWidths(table);
+  const percents = readTableColumnPercents(table, colCount);
+  const [movedPercent] = percents.splice(fromIndex, 1);
+  percents.splice(toIndex, 0, movedPercent);
+  [...table.rows].forEach(row => {
+    const cells = [...row.cells];
+    const cell = cells[fromIndex];
+    if (!cell) return;
+    const target = cells[toIndex];
+    if (!target) row.appendChild(cell);
+    else row.insertBefore(cell, fromIndex < toIndex ? target.nextSibling : target);
+  });
+  setTableColumnPercents(table, percents);
+  return true;
+}
+
+function startTableReorder(e, handle) {
+  if (!activeId || !canEditNote(notes[activeId])) return;
+  const type = handle?.dataset?.tableReorder;
+  if (type !== 'row' && type !== 'column') return;
+  const table = handle.closest('.note-table-scroll')?.querySelector('table');
+  const fromIndex = Number(type === 'row' ? handle.dataset.tableRowReorder : handle.dataset.tableColumnReorder);
+  const count = tableReorderCount(table, type);
+  if (!table || !Number.isInteger(fromIndex) || fromIndex < 0 || fromIndex >= count || count <= 1) return;
+
+  e.preventDefault();
+  e.stopPropagation();
+  pushUndo();
+  if (type === 'column') setTableColumnWidthsFromLayout(table);
+
+  _tableReorderState = {
+    table,
+    type,
+    fromIndex,
+    insertionIndex: tableReorderInsertionIndex(table, type, e.clientX, e.clientY)
+  };
+  handle.classList.add('dragging');
+  table.closest('.note-table-wrap')?.classList.add('table-reordering');
+  updateTableReorderIndicator(table, type, _tableReorderState.insertionIndex);
+  document.body.style.cursor = 'grabbing';
+  document.body.style.userSelect = 'none';
+  try { handle.setPointerCapture?.(e.pointerId); } catch (_) {}
+
+  const move = evt => {
+    evt.preventDefault();
+    if (!_tableReorderState || _tableReorderState.table !== table) return;
+    _tableReorderState.insertionIndex = tableReorderInsertionIndex(table, type, evt.clientX, evt.clientY);
+    updateTableReorderIndicator(table, type, _tableReorderState.insertionIndex);
+  };
+
+  const finish = () => {
+    document.removeEventListener('pointermove', move);
+    document.removeEventListener('pointerup', finish);
+    document.removeEventListener('pointercancel', finish);
+    handle.classList.remove('dragging');
+    try { handle.releasePointerCapture?.(e.pointerId); } catch (_) {}
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+    table.closest('.note-table-wrap')?.classList.remove('table-reordering');
+
+    const state = _tableReorderState;
+    _tableReorderState = null;
+    clearTableReorderIndicator(table);
+    if (!state || state.table !== table) return;
+
+    const nextCount = tableReorderCount(table, type);
+    const toIndex = tableReorderTargetIndex(state.fromIndex, state.insertionIndex, nextCount);
+    const moved = type === 'row'
+      ? moveTableRow(table, state.fromIndex, toIndex)
+      : moveTableColumn(table, state.fromIndex, toIndex);
+
+    if (moved) {
+      ensureTableShape(table);
+      decorateTables(getEd());
+      const targetCell = type === 'row'
+        ? table.rows[toIndex]?.cells[0]
+        : table.rows[0]?.cells[toIndex];
+      placeCursorInTableCell(targetCell);
+      getEd().dispatchEvent(new Event('input'));
+    } else {
+      updateTableResizeHandles(table);
+      updateTableReorderHandles(table);
+    }
+    scheduleUndoSnapshot();
+  };
+
+  document.addEventListener('pointermove', move, { passive: false });
+  document.addEventListener('pointerup', finish);
+  document.addEventListener('pointercancel', finish);
+}
+
 function deleteTable(table) {
   const wrap = table?.closest('.note-table-wrap');
   if (!wrap) return;
@@ -2045,6 +2424,10 @@ function handleTableControl(btn) {
 
 function startTableColumnResize(e, handle) {
   if (!activeId || !canEditNote(notes[activeId])) return;
+  if (handle?.dataset?.tableResize === TABLE_EDGE_RESIZE_KEY) {
+    startTableWidthResize(e, handle);
+    return;
+  }
   const table = handle?.closest('.note-table-scroll')?.querySelector('table');
   const colIndex = Number(handle?.dataset?.tableResize);
   if (!table || !Number.isInteger(colIndex)) return;
@@ -2079,6 +2462,7 @@ function startTableColumnResize(e, handle) {
     nextWidths[colIndex + 1] = rightStart - delta;
     setTableColumnPercents(table, nextWidths.map(width => (width / totalWidth) * 100));
     updateTableResizeHandles(table);
+    updateTableReorderHandles(table);
   };
 
   const move = evt => {
@@ -2106,6 +2490,69 @@ function startTableColumnResize(e, handle) {
     document.body.style.userSelect = '';
     ensureTableShape(table);
     updateTableResizeHandles(table);
+    getEd().dispatchEvent(new Event('input'));
+    scheduleUndoSnapshot();
+  };
+
+  document.addEventListener('pointermove', move, { passive: false });
+  document.addEventListener('pointerup', finish);
+  document.addEventListener('pointercancel', finish);
+}
+
+function startTableWidthResize(e, handle) {
+  if (!activeId || !canEditNote(notes[activeId])) return;
+  const table = handle?.closest('.note-table-scroll')?.querySelector('table');
+  if (!table) return;
+
+  e.preventDefault();
+  e.stopPropagation();
+  pushUndo();
+  setTableColumnWidthsFromLayout(table);
+  const startWidth = table.getBoundingClientRect().width || tableWidthBasis(table);
+  const minWidth = Math.min(startWidth, tableMinimumResizeWidth(table));
+  const maxWidth = Math.max(startWidth, tableAvailableWidth(table));
+  const startX = e.clientX;
+  let latestX = startX;
+  let frame = 0;
+  handle.classList.add('dragging');
+  document.body.style.cursor = 'col-resize';
+  document.body.style.userSelect = 'none';
+  try { handle.setPointerCapture?.(e.pointerId); } catch (_) {}
+
+  const applyResize = clientX => {
+    const nextWidth = clampValue(startWidth + clientX - startX, minWidth, maxWidth);
+    setTablePixelWidth(table, nextWidth);
+    updateTableResizeHandles(table);
+    updateTableReorderHandles(table);
+  };
+
+  const move = evt => {
+    evt.preventDefault();
+    latestX = evt.clientX;
+    if (frame) return;
+    frame = requestAnimationFrame(() => {
+      frame = 0;
+      applyResize(latestX);
+    });
+  };
+
+  const finish = () => {
+    document.removeEventListener('pointermove', move);
+    document.removeEventListener('pointerup', finish);
+    document.removeEventListener('pointercancel', finish);
+    if (frame) {
+      cancelAnimationFrame(frame);
+      frame = 0;
+      applyResize(latestX);
+    }
+    handle.classList.remove('dragging');
+    try { handle.releasePointerCapture?.(e.pointerId); } catch (_) {}
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+    ensureTableShape(table);
+    applyTableChromeWidth(table);
+    updateTableResizeHandles(table);
+    updateTableReorderHandles(table);
     getEd().dispatchEvent(new Event('input'));
     scheduleUndoSnapshot();
   };
@@ -2147,10 +2594,8 @@ function _confirmInsertLink() {
   const raw = document.getElementById('link-modal-url').value.trim();
   document.getElementById('link-modal').classList.remove('open');
   if (!raw) return;
-  // Validate URL protocol to prevent javascript: XSS
-  let url;
-  try { url = new URL(raw); } catch { return; }
-  if (!/^https?:$/i.test(url.protocol)) return;
+  const href = normalizeHttpUrlValue(raw);
+  if (!href) return;
   getEd().focus();
   if (_linkSavedRange) {
     const sel = window.getSelection();
@@ -2159,26 +2604,20 @@ function _confirmInsertLink() {
   }
   pushUndo();
   const sel = window.getSelection();
-  if (sel && !sel.isCollapsed) {
+  if (!sel || sel.isCollapsed || !applyLinkToSelection(href)) {
     const link = document.createElement('a');
-    decorateLink(link, url.href);
-    const range = sel.getRangeAt(0);
-    link.appendChild(range.extractContents());
+    decorateLink(link, href);
+    link.textContent = href;
+    const range = getEditorSelectionRange();
+    if (!range) return;
     range.insertNode(link);
     range.setStartAfter(link);
     range.collapse(true);
-    sel.removeAllRanges();
-    sel.addRange(range);
-  } else {
-    const link = document.createElement('a');
-    decorateLink(link, url.href);
-    link.textContent = url.href;
-    const range = sel.getRangeAt(0);
-    range.insertNode(link);
-    range.setStartAfter(link);
-    range.collapse(true);
-    sel.removeAllRanges();
-    sel.addRange(range);
+    const nextSel = window.getSelection();
+    if (nextSel) {
+      nextSel.removeAllRanges();
+      nextSel.addRange(range);
+    }
   }
   scheduleUndoSnapshot();
   getEd().dispatchEvent(new Event('input'));
@@ -2277,7 +2716,7 @@ function applyBlockFormatToBlocks(blocks, format) {
   getEd().dispatchEvent(new Event('input'));
 }
 
-const TABLE_ALLOWED_ACTIONS = new Set(['bold', 'italic', 'strikethrough', 'code', 'link']);
+const TABLE_ALLOWED_ACTIONS = new Set(['bold', 'italic', 'strikethrough', 'code', 'link', 'conversation']);
 
 function shouldBlockTableAction(action) {
   return isSelectionInTable() && !TABLE_ALLOWED_ACTIONS.has(action);
@@ -2359,6 +2798,7 @@ const ACTIONS = {
   table:         insertTable,
   link:          insertLink,
   alarm:         () => openNoteAlarmModal(activeId),
+  conversation:  () => openConversationComposerFromSelection(),
   hr:            () => { cmd('insertHorizontalRule'); getEd().focus(); },
   indentLeft:    () => {
     const checklistLi = currentChecklistItemFromSelection();
