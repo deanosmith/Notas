@@ -51,6 +51,14 @@ service cloud.firestore {
         && canConverseOnNote(conversationNoteId(conversationId));
     }
 
+    function canDeleteConversation(conversationId) {
+      return canReadConversation(conversationId)
+        && (
+          get(/databases/$(database)/documents/noteConversations/$(conversationId)).data.createdBy == request.auth.uid
+          || isNoteOwner(conversationNoteId(conversationId))
+        );
+    }
+
     function ownsProfileEmail(emailId) {
       return signedIn()
         && exists(/databases/$(database)/documents/profileEmails/$(emailId))
@@ -227,7 +235,7 @@ service cloud.firestore {
           "resolved"
         ]);
 
-      allow delete: if false;
+      allow delete: if canDeleteConversation(conversationId);
 
       match /messages/{messageId} {
         allow read: if canReadConversation(conversationId);
@@ -237,7 +245,9 @@ service cloud.firestore {
           && request.resource.data.conversationId == conversationId
           && request.resource.data.noteId == conversationNoteId(conversationId);
 
-        allow update, delete: if false;
+        allow update: if false;
+
+        allow delete: if canDeleteConversation(conversationId);
       }
     }
   }

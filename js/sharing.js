@@ -3201,6 +3201,7 @@ function _subscribeSharedNote(noteId) {
         if (sharedNoteUnsubs[noteId]) { sharedNoteUnsubs[noteId](); delete sharedNoteUnsubs[noteId]; delete sharedNoteInitialLoads[noteId]; }
         if (activeId === noteId) { activeId = null; }
         renderSidebar();
+        if (conversationsOpen && typeof scheduleConversationOverviewRefresh === 'function') scheduleConversationOverviewRefresh();
         if (!activeId) { const ids = sortedIds(); ids.length ? openNote(ids[0]) : showEditorView(false); }
       }
       settleInitial();
@@ -3221,6 +3222,7 @@ function _subscribeSharedNote(noteId) {
       if (sharedNoteUnsubs[noteId]) { sharedNoteUnsubs[noteId](); delete sharedNoteUnsubs[noteId]; delete sharedNoteInitialLoads[noteId]; }
       if (activeId === noteId) { activeId = null; }
       renderSidebar();
+      if (conversationsOpen && typeof scheduleConversationOverviewRefresh === 'function') scheduleConversationOverviewRefresh();
       if (!activeId) { const ids = sortedIds(); ids.length ? openNote(ids[0]) : showEditorView(false); }
       showToast('A shared note is no longer available', 'error');
       settleInitial();
@@ -3242,6 +3244,7 @@ function _subscribeSharedNote(noteId) {
     });
 
     renderSidebar();
+    if (conversationsOpen && typeof scheduleConversationOverviewRefresh === 'function') scheduleConversationOverviewRefresh();
 
     // If this note is currently open and the editor is idle, sync it
     if (activeId === noteId && prevContent !== undefined && prevContent !== d.content) {
@@ -3265,6 +3268,7 @@ function _subscribeSharedNote(noteId) {
       if (sharedNoteUnsubs[noteId]) { sharedNoteUnsubs[noteId](); delete sharedNoteUnsubs[noteId]; delete sharedNoteInitialLoads[noteId]; }
       if (activeId === noteId) { activeId = null; }
       renderSidebar();
+      if (conversationsOpen && typeof scheduleConversationOverviewRefresh === 'function') scheduleConversationOverviewRefresh();
       if (!activeId) { const ids = sortedIds(); ids.length ? openNote(ids[0]) : showEditorView(false); }
     }
     settleInitial();

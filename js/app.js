@@ -55,13 +55,7 @@ document.getElementById('mob-logo-btn').addEventListener('click',   toggleDrawer
 document.getElementById('sidebar-logo-btn').addEventListener('click', toggleSidebarFromLogo);
 document.getElementById('sidebar').addEventListener('click', () => { if (sidebarMinimized && !isMobile()) setSidebarMinimized(false); });
 document.querySelectorAll('[data-sidebar-view]').forEach(btn => {
-  btn.addEventListener('click', () => {
-    if (btn.id === 'rail-notes-btn' && !isMobile() && sidebarView === 'notes') {
-      setSidebarMinimized(!sidebarMinimized);
-      return;
-    }
-    setSidebarView(btn.dataset.sidebarView);
-  });
+  btn.addEventListener('click', () => toggleSidebarView(btn.dataset.sidebarView));
 });
 document.getElementById('rail-create-btn')?.addEventListener('click', () => openModal('note'));
 document.getElementById('mob-new-btn').addEventListener('click',    openModal);
@@ -109,7 +103,7 @@ document.querySelectorAll('[data-alarm-time-preset]').forEach(btn => {
 document.getElementById('mention-share-confirm').addEventListener('click', () => closeMentionShareModal(true));
 document.getElementById('mention-share-cancel').addEventListener('click', () => closeMentionShareModal(false));
 document.getElementById('mention-share-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeMentionShareModal(false); });
-document.getElementById('conversation-toggle-btn')?.addEventListener('click', () => openConversationsSidebar());
+document.getElementById('conversation-toggle-btn')?.addEventListener('click', toggleConversationsSidebar);
 document.getElementById('conversation-start-btn')?.addEventListener('click', () => openConversationComposerFromSelection());
 document.getElementById('conversation-close-btn')?.addEventListener('click', closeConversationsSidebar);
 document.getElementById('conversation-selection-popover')?.addEventListener('mousedown', e => e.preventDefault());

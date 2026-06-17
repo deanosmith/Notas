@@ -49,6 +49,7 @@ async function confirmDelete() {
   else if (type === 'trash-note') permanentlyDeleteTrashedNote(id);
   else if (type === 'profile') await removeLinkedProfile(id);
   else if (type === 'table') confirmTableDelete(pending.table);
+  else if (type === 'conversation-subject') await deleteConversationSubject(pending.conversationId);
   else await _execDeleteFolder(id);
 }
 
@@ -416,9 +417,15 @@ function attachFolderReorderHandlers(row, folder) {
 
 const SIDEBAR_VIEWS = new Set(['notes', 'notifications', 'alarms', 'friends', 'trash']);
 
+function isSidebarPanelVisible() {
+  const sidebar = document.getElementById('sidebar');
+  return isMobile() ? !!sidebar?.classList.contains('open') : !sidebarMinimized;
+}
+
 function updateRailActiveState() {
+  const sidebarVisible = isSidebarPanelVisible();
   document.querySelectorAll('[data-sidebar-view]').forEach(btn => {
-    const active = btn.dataset.sidebarView === sidebarView;
+    const active = sidebarVisible && btn.dataset.sidebarView === sidebarView;
     btn.classList.toggle('active', active);
     btn.setAttribute('aria-pressed', active ? 'true' : 'false');
   });
@@ -434,6 +441,16 @@ function setSidebarView(view) {
     activeId ? openNote(activeId) : showEditorView(false);
   }
   renderSidebar();
+}
+
+function toggleSidebarView(view) {
+  const nextView = SIDEBAR_VIEWS.has(view) ? view : 'notes';
+  if (sidebarView === nextView && isSidebarPanelVisible()) {
+    if (isMobile()) closeDrawer();
+    else setSidebarMinimized(true);
+    return;
+  }
+  setSidebarView(nextView);
 }
 
 function refreshOpenSidebarPage(view) {
@@ -783,6 +800,7 @@ function openDrawer() {
   document.getElementById('sidebar').classList.add('open');
   document.getElementById('drawer-overlay').classList.add('open');
   updateMobileSidebarToggleLabel(true);
+  updateRailActiveState();
 }
 
 function closeDrawer() {
@@ -790,6 +808,7 @@ function closeDrawer() {
   document.getElementById('sidebar').classList.remove('open');
   document.getElementById('drawer-overlay').classList.remove('open');
   updateMobileSidebarToggleLabel(false);
+  updateRailActiveState();
 }
 
 function toggleDrawer() {
@@ -1434,6 +1453,7 @@ function setSidebarMinimized(val) {
     sidebar.style.minWidth = w + 'px';
     updateSidebarWidthState(w);
   }
+  updateRailActiveState();
 }
 
 /* Share ─────────────────────────────────────────────────── */

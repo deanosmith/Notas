@@ -44,6 +44,8 @@ function listenToNotes() {
     });
     purgeExpiredTrashNotes();
     renderSidebar();
+    if (typeof renderConversationsSidebar === 'function') renderConversationsSidebar();
+    if (conversationsOpen && typeof scheduleConversationOverviewRefresh === 'function') scheduleConversationOverviewRefresh();
     if (!activeId || !notes[activeId] || (isTrashedNote(notes[activeId]) && sidebarView !== 'trash')) {
       const ids = sortedIds();
       if (ids.length) openNote(ids[0]);
@@ -56,6 +58,7 @@ function listenToNotes() {
     if (err.code === 'permission-denied')
       showToast('Firestore Permission Denied — Check Security Rules', 'error');
     renderSidebar();
+    if (typeof renderConversationsSidebar === 'function') renderConversationsSidebar();
     if (!activeId || !notes[activeId]) showEditorView(false);
     setSaveState('error');
     settleInitial();
@@ -106,9 +109,11 @@ function listenToFolders() {
       }
     });
     renderSidebar();
+    if (typeof renderConversationsSidebar === 'function') renderConversationsSidebar();
     settleInitial();
   }, err => {
     console.error('onSnapshot folders:', err);
+    if (typeof renderConversationsSidebar === 'function') renderConversationsSidebar();
     settleInitial();
   });
   return initialLoad;

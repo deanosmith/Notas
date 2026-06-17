@@ -1,5 +1,9 @@
 /* Right-side note conversations and conversation alerts. */
 
+let _conversationOverviewRefreshTimer = null;
+let _conversationOverviewRefreshSeq = 0;
+let _conversationDeletingSubject = false;
+
 function conversationIso(value, fallback = new Date().toISOString()) {
   const normalized = typeof isoFromTimestamp === 'function' ? isoFromTimestamp(value) : '';
   if (normalized) return normalized;
@@ -83,14 +87,28 @@ function clearConversationState(options = {}) {
     try { unsubNoteConversations(); } catch (_) {}
     unsubNoteConversations = null;
   }
+  if (unsubAllConversations) {
+    try { unsubAllConversations(); } catch (_) {}
+    unsubAllConversations = null;
+  }
   clearConversationMessageSubscriptions();
+  if (_conversationOverviewRefreshTimer) {
+    clearTimeout(_conversationOverviewRefreshTimer);
+    _conversationOverviewRefreshTimer = null;
+  }
+  _conversationOverviewRefreshSeq += 1;
   noteConversations = {};
+  allConversations = {};
   conversationMessages = {};
   activeConversationId = null;
   conversationComposeAnchor = null;
   conversationListeningNoteId = null;
+  conversationBrowseView = 'all';
+  conversationBrowseFolderId = null;
+  conversationBrowseNoteId = null;
   hideConversationSelectionPopover();
   if (options.close) closeConversationsSidebar();
+  updateConversationRailBadge();
   renderConversationsSidebar();
 }
 
@@ -152,13 +170,17 @@ function listenToConversationsForNote(noteId) {
       const id = ch.doc.id;
       if (ch.type === 'removed') {
         delete noteConversations[id];
+        delete allConversations[id];
         unsubscribeConversationMessages(id);
         if (activeConversationId === id) activeConversationId = null;
         return;
       }
-      noteConversations[id] = normalizeConversation(id, ch.doc.data() || {});
+      const conversation = normalizeConversation(id, ch.doc.data() || {});
+      noteConversations[id] = conversation;
+      allConversations[id] = conversation;
       subscribeConversationMessages(id);
     });
+    updateConversationRailBadge();
     renderConversationsSidebar();
     settleInitial();
   }, err => {
@@ -167,6 +189,123 @@ function listenToConversationsForNote(noteId) {
     settleInitial();
   });
   return initialLoad;
+}
+
+function listenToAllConversations() {
+  if (!userId || unsubAllConversations) return;
+  const q = query(collection(fsDb, 'noteConversations'), where('participantUids', 'array-contains', userId));
+  unsubAllConversations = onSnapshot(q, snap => {
+    snap.docChanges().forEach(ch => {
+      const id = ch.doc.id;
+      if (ch.type === 'removed') {
+        delete allConversations[id];
+        return;
+      }
+      allConversations[id] = normalizeConversation(id, ch.doc.data() || {});
+    });
+    updateConversationRailBadge();
+    if (conversationsOpen) renderConversationsSidebar();
+  }, err => {
+    console.warn('all conversations listener:', err);
+    updateConversationRailBadge();
+    if (conversationsOpen) renderConversationsSidebar();
+  });
+}
+
+function scheduleConversationOverviewRefresh(delay = 160) {
+  if (!userId) return;
+  if (_conversationOverviewRefreshTimer) clearTimeout(_conversationOverviewRefreshTimer);
+  _conversationOverviewRefreshTimer = setTimeout(() => {
+    _conversationOverviewRefreshTimer = null;
+    refreshConversationOverviewFromNotes();
+  }, delay);
+}
+
+function conversationOverviewNoteCandidates() {
+  return Object.values(notes || {})
+    .filter(note => note?.id && !isTrashedNote(note) && canStartConversationOnNote(note));
+}
+
+async function loadConversationsForOverviewNote(noteId) {
+  const snap = await getDocs(query(collection(fsDb, 'noteConversations'), where('noteId', '==', noteId)));
+  const records = [];
+  snap.forEach(conversationSnap => {
+    records.push({
+      id: conversationSnap.id,
+      conversation: normalizeConversation(conversationSnap.id, conversationSnap.data() || {})
+    });
+  });
+  return { noteId, records };
+}
+
+async function refreshConversationOverviewFromNotes() {
+  if (!userId) return;
+  const scanId = ++_conversationOverviewRefreshSeq;
+  const noteIds = [...new Set(conversationOverviewNoteCandidates().map(note => note.id))];
+  if (!noteIds.length) {
+    updateConversationRailBadge();
+    if (conversationsOpen && conversationBrowseView === 'all' && !activeConversationId && !conversationComposeAnchor) renderConversationsSidebar();
+    return;
+  }
+
+  const successfulNoteIds = new Set();
+  const discoveredConversationIds = new Set();
+  const batchSize = 8;
+
+  for (let i = 0; i < noteIds.length; i += batchSize) {
+    const batch = noteIds.slice(i, i + batchSize);
+    const results = await Promise.allSettled(batch.map(loadConversationsForOverviewNote));
+    if (scanId !== _conversationOverviewRefreshSeq) return;
+
+    results.forEach(result => {
+      if (result.status !== 'fulfilled') {
+        console.warn('conversation overview note scan:', result.reason);
+        return;
+      }
+      successfulNoteIds.add(result.value.noteId);
+      result.value.records.forEach(({ id, conversation }) => {
+        discoveredConversationIds.add(id);
+        allConversations[id] = conversation;
+        if (conversationListeningNoteId && conversation.noteId === conversationListeningNoteId) noteConversations[id] = conversation;
+      });
+    });
+  }
+
+  Object.keys(allConversations || {}).forEach(id => {
+    const noteId = allConversations[id]?.noteId || '';
+    if (successfulNoteIds.has(noteId) && !discoveredConversationIds.has(id)) delete allConversations[id];
+  });
+
+  updateConversationRailBadge();
+  if (conversationsOpen && !activeConversationId && !conversationComposeAnchor) renderConversationsSidebar();
+}
+
+function conversationTimeValue(conversation) {
+  const value = conversation?.modified || conversation?.lastMessageAt || conversation?.created || 0;
+  const time = new Date(value).getTime();
+  return Number.isFinite(time) ? time : 0;
+}
+
+function compareConversationRows(a, b) {
+  if (conversationHasUnread(a.id) !== conversationHasUnread(b.id)) return conversationHasUnread(a.id) ? -1 : 1;
+  if (a.resolved !== b.resolved) return a.resolved ? 1 : -1;
+  return conversationTimeValue(b) - conversationTimeValue(a);
+}
+
+function sortedAllConversations() {
+  return Object.values(allConversations || {}).sort(compareConversationRows);
+}
+
+function updateConversationRailBadge() {
+  const badge = document.getElementById('conversation-badge');
+  if (!badge) return;
+  const unreadCount = Object.values(allConversations || {}).reduce((sum, conv) => sum + conversationUnreadCount(conv.id), 0);
+  const label = unreadCount + ' unread conversation message' + (unreadCount === 1 ? '' : 's');
+  badge.classList.add('conversation-notification-icon');
+  badge.innerHTML = '<i class="fa-solid fa-bell"></i>';
+  badge.title = label;
+  badge.setAttribute('aria-label', label);
+  badge.hidden = unreadCount <= 0;
 }
 
 function canStartConversationOnNote(note) {
@@ -329,22 +468,114 @@ function conversationAnchorCopy(anchorOrConversation) {
   return conversationText(text || context || 'Cursor location', 220);
 }
 
-function conversationParticipantSummary(conversation) {
-  const others = (conversation?.participantUids || [])
-    .filter(uid => uid && uid !== userId)
-    .map(uid => {
-      const profile = conversationProfileByUid(uid, conversation);
-      return profile.displayName || profile.email || 'Friend';
-    })
-    .filter(Boolean);
-  if (!others.length) return 'Only you';
-  if (others.length === 1) return others[0];
-  return others.slice(0, 2).join(', ') + (others.length > 2 ? ' +' + (others.length - 2) : '');
-}
-
 function conversationMessageCountLabel(count) {
   const total = Number(count) || 0;
   return total + ' message' + (total === 1 ? '' : 's');
+}
+
+function conversationNoteForDisplay(conversation) {
+  return notes[conversation?.noteId] || {
+    id: conversation?.noteId || '',
+    title: conversation?.noteTitle || 'Untitled Note',
+    folderId: ''
+  };
+}
+
+function conversationFolderLabel(note) {
+  const folder = note?.folderId ? folders[note.folderId] : null;
+  return folder?.title || 'Notes';
+}
+
+function conversationFolderColor(note) {
+  const folder = note?.folderId ? folders[note.folderId] : null;
+  return folder ? resolveFolderIconColor(folder.iconColor, folder.iconColorMode) : DEFAULT_FOLDER_ICON_COLOR;
+}
+
+function conversationLocationLabel(conversation) {
+  const note = conversationNoteForDisplay(conversation);
+  const folderLabel = conversationFolderLabel(note);
+  const noteLabel = note?.title || conversation?.noteTitle || 'Untitled Note';
+  return folderLabel + ' / ' + noteLabel;
+}
+
+function conversationById(conversationId) {
+  return noteConversations[conversationId] || allConversations[conversationId] || null;
+}
+
+function conversationsForNote(noteId) {
+  const local = Object.values(noteConversations || {}).filter(conv => conv.noteId === noteId);
+  const localIds = new Set(local.map(conv => conv.id));
+  const global = sortedAllConversations().filter(conv => conv.noteId === noteId && !localIds.has(conv.id));
+  return [...local, ...global].sort(compareConversationRows);
+}
+
+function newestConversation(conversations) {
+  return [...(conversations || [])].sort(compareConversationRows)[0] || null;
+}
+
+function conversationCountLabel(count) {
+  const total = Number(count) || 0;
+  return total + ' conversation' + (total === 1 ? '' : 's');
+}
+
+function conversationNoteGroups(conversations = sortedAllConversations()) {
+  const groups = new Map();
+  (conversations || []).forEach(conv => {
+    const note = conversationNoteForDisplay(conv);
+    const noteId = note?.id || conv.noteId || '';
+    if (!noteId) return;
+    if (!groups.has(noteId)) {
+      groups.set(noteId, {
+        id: noteId,
+        title: note?.title || conv.noteTitle || 'Untitled Note',
+        folderTitle: conversationFolderLabel(note),
+        folderColor: conversationFolderColor(note),
+        conversations: []
+      });
+    }
+    groups.get(noteId).conversations.push(conv);
+  });
+  return [...groups.values()]
+    .map(group => ({ ...group, latest: newestConversation(group.conversations) }))
+    .sort((a, b) => compareConversationRows(a.latest || {}, b.latest || {}));
+}
+
+function setConversationBrowseScope(view = 'all', options = {}) {
+  conversationBrowseView = view === 'note' ? 'note' : 'all';
+  conversationBrowseFolderId = null;
+  conversationBrowseNoteId = conversationBrowseView === 'note' ? (options.noteId || null) : null;
+}
+
+function setConversationScopeForConversation(conversation) {
+  if (!conversation?.noteId) return;
+  setConversationBrowseScope('note', {
+    noteId: conversation.noteId
+  });
+}
+
+function conversationScopeTitle() {
+  if (activeConversationId) {
+    const conv = conversationById(activeConversationId);
+    const note = conv ? conversationNoteForDisplay(conv) : null;
+    return note?.title || conv?.noteTitle || '';
+  }
+  if (conversationBrowseView === 'note') {
+    const conv = conversationsForNote(conversationBrowseNoteId)[0];
+    const note = conv ? conversationNoteForDisplay(conv) : notes[conversationBrowseNoteId];
+    return note?.title || conv?.noteTitle || 'Untitled Note';
+  }
+  return 'All notes';
+}
+
+function conversationPreviewForConversation(conversation) {
+  return conversationText(conversation?.lastMessagePreview || conversationAnchorCopy(conversation) || 'Conversation', 120);
+}
+
+function conversationSenderName(conversation, message) {
+  if (message?.authorUid === userId) return 'You';
+  if (message?.authorName) return message.authorName;
+  const profile = conversationProfileByUid(conversation?.lastMessageBy || conversation?.createdBy, conversation);
+  return profile.displayName || profile.email || conversation?.createdByName || 'Someone';
 }
 
 function createConversationAnchorMark(conversationId, anchor = {}) {
@@ -460,9 +691,25 @@ async function applyConversationAnchorMark(conversationId, anchor) {
   }
 }
 
-function openConversationsSidebar(conversationId = activeConversationId) {
+function openConversationsSidebar(conversationId = null, options = {}) {
   conversationsOpen = true;
-  if (conversationId) activeConversationId = conversationId;
+  if (conversationId) {
+    activeConversationId = conversationId;
+    conversationComposeAnchor = null;
+    const conversation = conversationById(conversationId);
+    if (conversation) {
+      setConversationScopeForConversation(conversation);
+      if (conversation.noteId && notes[conversation.noteId] && activeId !== conversation.noteId) openNote(conversation.noteId);
+      activeConversationId = conversationId;
+    }
+  } else if (!options.preserveScope && !conversationComposeAnchor) {
+    activeConversationId = null;
+    setConversationBrowseScope('all');
+  } else if (!conversationComposeAnchor) {
+    activeConversationId = null;
+  }
+  if (activeConversationId) subscribeConversationMessages(activeConversationId);
+  if (!conversationId) scheduleConversationOverviewRefresh(0);
   document.getElementById('app')?.classList.add('conversations-open');
   const sidebar = document.getElementById('conversation-sidebar');
   sidebar?.classList.add('open');
@@ -471,7 +718,8 @@ function openConversationsSidebar(conversationId = activeConversationId) {
   if (activeConversationId) {
     markConversationNotificationsRead(activeConversationId);
     setTimeout(() => {
-      if (noteConversations[activeConversationId]) focusConversationAnchor(noteConversations[activeConversationId]);
+      const conversation = conversationById(activeConversationId);
+      if (conversation && activeId === conversation.noteId) focusConversationAnchor(conversation);
     }, 80);
   }
 }
@@ -486,6 +734,11 @@ function closeConversationsSidebar() {
   renderConversationsSidebar();
 }
 
+function toggleConversationsSidebar() {
+  if (conversationsOpen) closeConversationsSidebar();
+  else openConversationsSidebar();
+}
+
 function openConversationComposerFromSelection(anchor = null) {
   if (!activeId || !notes[activeId]) {
     showToast('Select A Note First', 'error');
@@ -497,23 +750,23 @@ function openConversationComposerFromSelection(anchor = null) {
   }
   conversationComposeAnchor = anchor || conversationAnchorFromSelection();
   activeConversationId = null;
-  openConversationsSidebar(null);
+  setConversationBrowseScope('note', {
+    noteId: conversationComposeAnchor.noteId
+  });
+  openConversationsSidebar(null, { preserveScope: true });
   setTimeout(() => document.getElementById('conversation-new-message')?.focus(), 80);
 }
 
 function selectConversation(conversationId) {
   if (!conversationId) return;
+  const conversation = conversationById(conversationId);
+  if (conversation) {
+    setConversationScopeForConversation(conversation);
+    if (conversation.noteId && notes[conversation.noteId] && activeId !== conversation.noteId) openNote(conversation.noteId);
+  }
   activeConversationId = conversationId;
   conversationComposeAnchor = null;
-  openConversationsSidebar(conversationId);
-}
-
-function sortedConversations() {
-  return Object.values(noteConversations || {})
-    .sort((a, b) => {
-      if (a.resolved !== b.resolved) return a.resolved ? 1 : -1;
-      return new Date(b.modified || b.lastMessageAt || 0) - new Date(a.modified || a.lastMessageAt || 0);
-    });
+  openConversationsSidebar(conversationId, { preserveScope: true });
 }
 
 function conversationUnreadItems(conversationId) {
@@ -526,7 +779,15 @@ function conversationUnreadItems(conversationId) {
 }
 
 function conversationHasUnread(conversationId) {
-  return conversationUnreadItems(conversationId).length > 0;
+  return conversationUnreadCount(conversationId) > 0;
+}
+
+function conversationUnreadCount(conversationId) {
+  return conversationUnreadItems(conversationId).length;
+}
+
+function conversationGroupUnreadCount(conversations = []) {
+  return conversations.reduce((sum, conv) => sum + conversationUnreadCount(conv.id), 0);
 }
 
 async function markConversationNotificationsRead(conversationId) {
@@ -539,57 +800,93 @@ function renderConversationAnchor(anchorOrConversation, options = {}) {
   const mode = anchorOrConversation?.anchorMode || anchorOrConversation?.mode || 'cursor';
   const icon = mode === 'cursor' ? 'fa-solid fa-location-dot' : 'fa-solid fa-quote-left';
   const text = conversationAnchorCopy(anchorOrConversation);
-  const label = mode === 'cursor' ? 'Cursor point' : 'Highlighted text';
+  const title = mode === 'cursor' ? 'Cursor location' : 'Highlighted text';
   const inner =
     '<span class="conversation-anchor-icon"><i class="' + icon + '"></i></span>' +
     '<span class="conversation-anchor-copy">' +
-      '<span class="conversation-anchor-label">' + label + '</span>' +
       '<span class="conversation-anchor-text">' + conversationEsc(text) + '</span>' +
     '</span>';
   if (options.button) {
-    return '<button class="conversation-anchor-card as-button" data-conversation-focus-anchor="' + conversationEsc(anchorOrConversation?.id || '') + '" type="button">' +
+    return '<button class="conversation-anchor-card as-button" data-conversation-focus-anchor="' + conversationEsc(anchorOrConversation?.id || '') + '" type="button" title="' + conversationEsc(title) + '">' +
       inner +
     '</button>';
   }
-  return '<div class="conversation-anchor-card">' + inner + '</div>';
+  return '<div class="conversation-anchor-card" title="' + conversationEsc(title) + '">' + inner + '</div>';
 }
 
-function renderConversationList(body, conversations) {
-  const openCount = conversations.filter(conv => !conv.resolved).length;
-  const resolvedCount = conversations.length - openCount;
-  const rows = conversations.map(conv => {
-    const messages = conversationMessages[conv.id] || [];
-    const last = messages[messages.length - 1];
-    const profile = conversationProfileByUid(last?.authorUid || conv.lastMessageBy || conv.createdBy, conv);
-    const preview = conversationText(last?.body || conv.lastMessagePreview || conversationAnchorCopy(conv) || 'Conversation', 120);
-    const unread = conversationHasUnread(conv.id);
-    const status = conv.resolved ? 'Resolved' : 'Open';
-    const mode = conv.anchorMode === 'cursor' ? 'Point' : 'Highlight';
-    return '<button class="conversation-thread-row' + (unread ? ' unread' : '') + (conv.resolved ? ' resolved' : '') + '" data-conversation-open="' + conversationEsc(conv.id) + '" type="button">' +
-      '<span class="conversation-thread-status ' + (conv.resolved ? 'resolved' : 'open') + '">' + status + '</span>' +
-      '<div class="conversation-thread-head">' +
-        '<div class="conversation-thread-avatar">' + renderProfileAvatar(profile) + '</div>' +
-        '<div class="conversation-thread-title-wrap">' +
-          '<div class="conversation-thread-anchor">' + conversationEsc(conversationAnchorCopy(conv)) + '</div>' +
-          '<div class="conversation-thread-participants">' + conversationEsc(conversationParticipantSummary(conv)) + '</div>' +
-        '</div>' +
-        (unread ? '<span class="conversation-unread-dot"></span>' : '') +
-      '</div>' +
-      '<div class="conversation-thread-preview">' + conversationEsc(preview) + '</div>' +
-      '<div class="conversation-thread-footer">' +
-        '<span><i class="fa-solid ' + (conv.anchorMode === 'cursor' ? 'fa-location-dot' : 'fa-highlighter') + '"></i><span>' + mode + '</span></span>' +
-        '<span>' + conversationEsc(conversationMessageCountLabel(messages.length)) + '</span>' +
-        '<time>' + conversationEsc(relativeNotificationTime(conv.modified || conv.lastMessageAt || conv.created)) + '</time>' +
-      '</div>' +
+function renderConversationNoteOverview(body) {
+  const conversations = sortedAllConversations();
+  const noteGroups = conversationNoteGroups(conversations);
+  const rows = noteGroups.map(group => {
+    const latest = group.latest;
+    const preview = latest ? conversationPreviewForConversation(latest) : conversationCountLabel(group.conversations.length);
+    const sub = group.folderTitle + ' · ' + preview;
+    const unreadCount = conversationGroupUnreadCount(group.conversations);
+    const unreadLabel = unreadCount + ' unread message' + (unreadCount === 1 ? '' : 's');
+    return '<button class="conversation-scope-row" data-conversation-note="' + conversationEsc(group.id) + '" type="button">' +
+      '<span class="conversation-scope-icon folder" style="--conversation-folder-color:' + conversationEsc(group.folderColor || DEFAULT_FOLDER_ICON_COLOR) + ';"><i class="fa-solid fa-folder"></i></span>' +
+      '<span class="conversation-scope-main">' +
+        '<span class="conversation-scope-title">' + conversationEsc(group.title) + '</span>' +
+        '<span class="conversation-scope-sub">' + conversationEsc(sub) + '</span>' +
+      '</span>' +
+      '<span class="conversation-scope-trailing">' +
+        (unreadCount ? '<span class="conversation-scope-count unread" title="' + conversationEsc(unreadLabel) + '" aria-label="' + conversationEsc(unreadLabel) + '">' + conversationEsc(unreadCount > 99 ? '99+' : String(unreadCount)) + '</span>' : '') +
+        '<span class="conversation-scope-chevron"><i class="fa-solid fa-chevron-right"></i></span>' +
+      '</span>' +
     '</button>';
   }).join('');
 
   body.innerHTML =
     '<div class="conversation-list">' +
-      '<div class="conversation-overview">' +
-        '<div><span class="conversation-overview-label">Open</span><strong>' + openCount + '</strong></div>' +
-        '<div><span class="conversation-overview-label">Resolved</span><strong>' + resolvedCount + '</strong></div>' +
+      (rows
+        ? '<div class="conversation-scope-list">' + rows + '</div>'
+        : '<div class="conversation-empty"><i class="fa-regular fa-comments"></i><span>No Conversations Yet</span></div>') +
+    '</div>';
+}
+
+function renderConversationList(body, conversations, options = {}) {
+  const note = options.noteId ? (notes[options.noteId] || (conversations[0] ? conversationNoteForDisplay(conversations[0]) : conversationNoteForDisplay({ noteId: options.noteId, noteTitle: '' }))) : null;
+  const rows = conversations.map(conv => {
+    const messages = conversationMessages[conv.id] || [];
+    const last = messages[messages.length - 1];
+    const profile = conversationProfileByUid(last?.authorUid || conv.lastMessageBy || conv.createdBy, conv);
+    const preview = conversationText(last?.body || conv.lastMessagePreview || 'Conversation', 120);
+    const note = conversationNoteForDisplay(conv);
+    const folderLabel = conversationFolderLabel(note);
+    const noteLabel = note?.title || conv.noteTitle || 'Untitled Note';
+    const sender = conversationSenderName(conv, last);
+    const unread = conversationHasUnread(conv.id);
+    const status = conv.resolved ? 'Resolved' : 'Open';
+    const canDelete = canDeleteConversationSubject(conv);
+    return '<div class="conversation-thread-row' + (unread ? ' unread' : '') + (conv.resolved ? ' resolved' : '') + (canDelete ? ' has-topic-delete' : '') + '">' +
+      '<button class="conversation-thread-main" data-conversation-open="' + conversationEsc(conv.id) + '" type="button">' +
+      '<div class="conversation-thread-top">' +
+        '<div class="conversation-thread-avatar">' + renderProfileAvatar(profile) + '</div>' +
+        '<span class="conversation-thread-sender">' + conversationEsc(sender) + '</span>' +
+        (unread ? '<span class="conversation-unread-dot"></span>' : '') +
+        '<span class="conversation-thread-status ' + (conv.resolved ? 'resolved' : 'open') + '">' + status + '</span>' +
       '</div>' +
+      '<div class="conversation-thread-location"><i class="fa-solid fa-folder"></i><span>' + conversationEsc(folderLabel) + '</span><span class="conversation-thread-separator">/</span><i class="fa-solid fa-note-sticky"></i><span>' + conversationEsc(noteLabel) + '</span></div>' +
+      '<div class="conversation-thread-bottom">' +
+        '<span class="conversation-thread-preview">' + conversationEsc(preview) + '</span>' +
+        '<time>' + conversationEsc(relativeNotificationTime(conv.modified || conv.lastMessageAt || conv.created)) + '</time>' +
+      '</div>' +
+      '</button>' +
+      (canDelete
+        ? '<button class="conversation-thread-delete" data-conversation-delete-subject="' + conversationEsc(conv.id) + '" type="button" title="Delete Topic" aria-label="Delete Topic"' + (_conversationDeletingSubject ? ' disabled' : '') + '><i class="fa-solid fa-trash"></i></button>'
+        : '') +
+    '</div>';
+  }).join('');
+
+  body.innerHTML =
+    '<div class="conversation-list">' +
+      (options.showBack
+        ? '<div class="conversation-subheader">' +
+            '<button class="conversation-text-btn" data-conversation-back type="button"><i class="fa-solid fa-chevron-left"></i><span>Back</span></button>' +
+            '<div class="conversation-view-title"><span>' + conversationEsc(note?.title || 'Untitled Note') + '</span><small>' + conversationEsc(conversationCountLabel(conversations.length)) + '</small></div>' +
+            '<span class="conversation-subheader-spacer"></span>' +
+          '</div>'
+        : '') +
       (conversations.length
         ? '<div class="conversation-thread-list">' + rows + '</div>'
         : '<div class="conversation-empty"><i class="fa-regular fa-comments"></i><span>No Conversations Yet</span><button class="conversation-text-btn" data-conversation-start-new type="button"><i class="fa-regular fa-comment-dots"></i><span>Start</span></button></div>') +
@@ -614,8 +911,8 @@ function renderConversationComposer(body, anchor) {
       renderConversationAnchor(anchor) +
       (recipients.length
         ? '<div class="conversation-compose-fields">' +
-            '<label class="conversation-field"><span>To</span><select class="settings-select" id="conversation-recipient-select">' + recipientOptions + '</select></label>' +
-            '<label class="conversation-field"><span>Message</span><textarea class="conversation-textarea" id="conversation-new-message" rows="5" maxlength="1200" placeholder="Write the first message..."></textarea></label>' +
+            '<select class="settings-select conversation-recipient-select" id="conversation-recipient-select" aria-label="Recipient">' + recipientOptions + '</select>' +
+            '<textarea class="conversation-textarea" id="conversation-new-message" rows="5" maxlength="1200" placeholder="Write the first message..." aria-label="Message"></textarea>' +
           '</div>' +
           '<div class="conversation-actions"><button class="modal-btn" data-conversation-cancel-compose type="button">Cancel</button><button class="modal-btn primary" id="conversation-create-btn" type="button"><i class="fa-solid fa-paper-plane" style="margin-right:6px;"></i>Start</button></div>'
         : '<div class="conversation-empty compact"><i class="fa-solid fa-user-group"></i><span>No Friends Available</span></div>') +
@@ -636,6 +933,7 @@ function renderConversationDetail(body, conv) {
   }
 
   const messages = conversationMessages[conv.id] || [];
+  const locationLabel = conversationLocationLabel(conv);
   const messageRows = messages.map(message => {
     const mine = message.authorUid === userId;
     const profile = conversationProfileByUid(message.authorUid, conv);
@@ -652,12 +950,14 @@ function renderConversationDetail(body, conv) {
     '<div class="conversation-detail">' +
       '<div class="conversation-subheader">' +
         '<button class="conversation-text-btn" data-conversation-back type="button"><i class="fa-solid fa-chevron-left"></i><span>Back</span></button>' +
-        '<div class="conversation-view-title"><span>' + conversationEsc(conversationParticipantSummary(conv)) + '</span><small>' + conversationEsc(conversationMessageCountLabel(messages.length)) + '</small></div>' +
+        '<div class="conversation-view-title" title="' + conversationEsc(locationLabel) + '"><span>' + conversationEsc(locationLabel) + '</span><small>' + conversationEsc(conversationMessageCountLabel(messages.length)) + '</small></div>' +
         '<button class="conversation-text-btn" data-conversation-toggle-resolved="' + conversationEsc(conv.id) + '" type="button">' +
           '<i class="fa-solid ' + (conv.resolved ? 'fa-rotate-left' : 'fa-check') + '"></i><span>' + (conv.resolved ? 'Reopen' : 'Resolve') + '</span>' +
         '</button>' +
       '</div>' +
-      renderConversationAnchor(conv, { button: true }) +
+      '<div class="conversation-detail-context">' +
+        renderConversationAnchor(conv, { button: true }) +
+      '</div>' +
       '<div class="conversation-messages">' + (messageRows || '<div class="conversation-empty compact"><span>No Messages Yet</span></div>') + '</div>' +
       '<div class="conversation-reply">' +
         '<textarea class="conversation-textarea" id="conversation-reply-input" rows="3" maxlength="1200" placeholder="Reply..."></textarea>' +
@@ -672,7 +972,34 @@ function renderConversationDetail(body, conv) {
   }, 0);
 }
 
+function openConversationNoteOverview(noteId) {
+  if (!noteId) return;
+  activeConversationId = null;
+  conversationComposeAnchor = null;
+  setConversationBrowseScope('note', {
+    noteId
+  });
+  if (notes[noteId] && activeId !== noteId) openNote(noteId);
+  else renderConversationsSidebar();
+}
+
+function navigateConversationBack() {
+  if (activeConversationId) {
+    activeConversationId = null;
+    renderConversationsSidebar();
+    return;
+  }
+  if (conversationBrowseView === 'note') {
+    setConversationBrowseScope('all');
+    renderConversationsSidebar();
+    return;
+  }
+}
+
 function attachConversationSidebarEvents(body) {
+  body.querySelectorAll('[data-conversation-note]').forEach(btn => {
+    btn.addEventListener('click', () => openConversationNoteOverview(btn.dataset.conversationNote));
+  });
   body.querySelectorAll('[data-conversation-open]').forEach(btn => {
     btn.addEventListener('click', () => selectConversation(btn.dataset.conversationOpen));
   });
@@ -680,10 +1007,7 @@ function attachConversationSidebarEvents(body) {
     btn.addEventListener('click', () => openConversationComposerFromSelection());
   });
   body.querySelectorAll('[data-conversation-back]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      activeConversationId = null;
-      renderConversationsSidebar();
-    });
+    btn.addEventListener('click', navigateConversationBack);
   });
   body.querySelectorAll('[data-conversation-cancel-compose]').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -692,10 +1016,29 @@ function attachConversationSidebarEvents(body) {
     });
   });
   body.querySelectorAll('[data-conversation-focus-anchor]').forEach(btn => {
-    btn.addEventListener('click', () => focusConversationAnchor(noteConversations[btn.dataset.conversationFocusAnchor]));
+    btn.addEventListener('click', () => {
+      const conversation = conversationById(btn.dataset.conversationFocusAnchor);
+      if (!conversation) return;
+      if (conversation.noteId && notes[conversation.noteId] && activeId !== conversation.noteId) {
+        openNote(conversation.noteId);
+        setTimeout(() => focusConversationAnchor(conversationById(conversation.id)), 120);
+        return;
+      }
+      focusConversationAnchor(conversation);
+    });
   });
   body.querySelectorAll('[data-conversation-toggle-resolved]').forEach(btn => {
-    btn.addEventListener('click', () => setConversationResolved(btn.dataset.conversationToggleResolved, !noteConversations[btn.dataset.conversationToggleResolved]?.resolved));
+    btn.addEventListener('click', () => {
+      const conversation = conversationById(btn.dataset.conversationToggleResolved);
+      setConversationResolved(btn.dataset.conversationToggleResolved, !conversation?.resolved);
+    });
+  });
+  body.querySelectorAll('[data-conversation-delete-subject]').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      openConversationSubjectDeleteModal(btn.dataset.conversationDeleteSubject);
+    });
   });
   document.getElementById('conversation-create-btn')?.addEventListener('click', createConversationFromComposer);
   document.getElementById('conversation-send-btn')?.addEventListener('click', sendActiveConversationReply);
@@ -722,17 +1065,19 @@ function renderConversationsSidebar() {
   toggleBtn?.setAttribute('aria-pressed', conversationsOpen ? 'true' : 'false');
 
   const note = activeId ? notes[activeId] : null;
-  if (noteTitle) noteTitle.textContent = note?.title || '';
+  if (noteTitle) noteTitle.textContent = conversationScopeTitle();
   if (startBtn) startBtn.disabled = !canStartConversationOnNote(note);
 
-  if (!note) {
-    body.innerHTML = '<div class="conversation-empty"><i class="fa-regular fa-note-sticky"></i><span>No Note Selected</span></div>';
-    return;
-  }
-
   if (conversationComposeAnchor) renderConversationComposer(body, conversationComposeAnchor);
-  else if (activeConversationId) renderConversationDetail(body, noteConversations[activeConversationId]);
-  else renderConversationList(body, sortedConversations());
+  else if (activeConversationId) renderConversationDetail(body, conversationById(activeConversationId));
+  else if (conversationBrowseView === 'note' && conversationBrowseNoteId) {
+    renderConversationList(body, conversationsForNote(conversationBrowseNoteId), {
+      noteId: conversationBrowseNoteId,
+      showBack: true
+    });
+  } else {
+    renderConversationNoteOverview(body);
+  }
 
   attachConversationSidebarEvents(body);
 }
@@ -848,6 +1193,7 @@ async function createConversationFromComposer() {
     await setDoc(doc(fsDb, 'noteConversations', conversationId), parentPayload);
     const conversation = normalizeConversation(conversationId, parentPayload);
     noteConversations[conversationId] = conversation;
+    allConversations[conversationId] = conversation;
     conversationComposeAnchor = null;
     activeConversationId = conversationId;
     applyConversationAnchorMark(conversationId, anchor).catch(err => console.warn('save conversation anchor mark:', err));
@@ -887,22 +1233,24 @@ async function writeConversationMessage(conversation, body) {
   const existingMessages = conversationMessages[conversation.id] || [];
   conversationMessages[conversation.id] = [...existingMessages.filter(item => item.id !== messageId), message]
     .sort((a, b) => new Date(a.created) - new Date(b.created));
-  noteConversations[conversation.id] = {
+  const updatedConversation = {
     ...conversation,
     lastMessagePreview: preview,
     lastMessageBy: userId,
     lastMessageAt: now,
     modified: now
   };
+  noteConversations[conversation.id] = updatedConversation;
+  allConversations[conversation.id] = updatedConversation;
 
-  const delivered = await notifyConversationParticipants(noteConversations[conversation.id], message);
+  const delivered = await notifyConversationParticipants(updatedConversation, message);
   if (!delivered) showToast('Message Sent; Alert Delivery Failed', 'error');
   return message;
 }
 
 async function sendActiveConversationReply() {
   if (_conversationSending) return;
-  const conversation = noteConversations[activeConversationId];
+  const conversation = conversationById(activeConversationId);
   const input = document.getElementById('conversation-reply-input');
   const body = String(input?.value || '').trim();
   if (!conversation || !body) {
@@ -924,21 +1272,139 @@ async function sendActiveConversationReply() {
   }
 }
 
+function canDeleteConversationSubject(conversation) {
+  if (!conversation?.id) return false;
+  const note = conversation?.noteId ? notes[conversation.noteId] : null;
+  return conversation.createdBy === userId || (note && isOwnedNote(note));
+}
+
+function openConversationSubjectDeleteModal(conversationId) {
+  const conversation = conversationById(conversationId);
+  if (!conversation || !canDeleteConversationSubject(conversation)) return;
+
+  _deletePending = { type: 'conversation-subject', conversationId };
+  const titleEl = document.getElementById('delete-modal-title');
+  const bodyEl = document.getElementById('delete-modal-body');
+  const confirmBtn = document.getElementById('delete-modal-confirm');
+  if (!titleEl || !bodyEl || !confirmBtn) return;
+
+  titleEl.textContent = 'Delete Topic?';
+  bodyEl.className = 'delete-message';
+  bodyEl.innerHTML =
+    '<strong class="delete-target">' + conversationEsc(conversationAnchorCopy(conversation) || 'Topic') + '</strong>' +
+    '<div class="delete-copy">Deletes this topic and all of its messages. This cannot be undone.</div>';
+  confirmBtn.innerHTML = '<i class="fa-solid fa-trash" style="margin-right:6px;"></i>Delete Topic';
+  document.getElementById('delete-modal')?.classList.add('open');
+}
+
+async function deleteConversationDocuments(conversationId) {
+  const parentRef = doc(fsDb, 'noteConversations', conversationId);
+  const messagesSnap = await getDocs(collection(fsDb, 'noteConversations', conversationId, 'messages'));
+  const messageRefs = [];
+  messagesSnap.forEach(messageSnap => messageRefs.push(messageSnap.ref));
+
+  for (let i = 0; i < messageRefs.length; i += 450) {
+    const batch = writeBatch(fsDb);
+    messageRefs.slice(i, i + 450).forEach(ref => batch.delete(ref));
+    await batch.commit();
+  }
+
+  const parentBatch = writeBatch(fsDb);
+  parentBatch.delete(parentRef);
+  await parentBatch.commit();
+}
+
+async function removeConversationAnchorFromNote(conversation) {
+  const note = conversation?.noteId ? notes[conversation.noteId] : null;
+  if (!conversation?.id || !note || !canEditNote(note)) return true;
+
+  if (activeId === note.id) {
+    const ed = getEd();
+    const mark = conversationAnchorMarkForConversation(ed, conversation.id);
+    if (!mark) return true;
+    pushUndo();
+    unwrapConversationAnchorMark(mark);
+    refreshEmpty(ed);
+    if (!syncActiveNoteFromEditor()) {
+      commitUndoSnapshot();
+      return false;
+    }
+    scheduleUndoSnapshot();
+    renderSidebar();
+    return await saveDoc(note);
+  }
+
+  const root = document.createElement('div');
+  root.innerHTML = note.content || '';
+  const mark = conversationAnchorMarkForConversation(root, conversation.id);
+  if (!mark) return true;
+  unwrapConversationAnchorMark(mark);
+  note.content = root.innerHTML;
+  note.modified = new Date().toISOString();
+  renderSidebar();
+  return await saveDoc(note);
+}
+
+function removeConversationLocal(conversationId) {
+  delete noteConversations[conversationId];
+  delete allConversations[conversationId];
+  delete conversationMessages[conversationId];
+  unsubscribeConversationMessages(conversationId);
+  if (activeConversationId === conversationId) activeConversationId = null;
+}
+
+async function deleteConversationSubject(conversationId) {
+  if (_conversationDeletingSubject) return;
+  const conversation = conversationById(conversationId);
+  if (!conversation || !canDeleteConversationSubject(conversation)) {
+    showToast('Could Not Delete Topic', 'error');
+    return;
+  }
+
+  _conversationDeletingSubject = true;
+  renderConversationsSidebar();
+
+  try {
+    const anchorRemoved = await removeConversationAnchorFromNote(conversation);
+    if (!anchorRemoved) throw new Error('Conversation subject marker could not be removed from the note.');
+    await deleteConversationDocuments(conversationId);
+    await markConversationNotificationsRead(conversationId);
+    removeConversationLocal(conversationId);
+    updateConversationRailBadge();
+    showToast('Topic Deleted', 'success');
+  } catch (err) {
+    console.error('delete conversation subject:', err);
+    showToast('Could Not Delete Topic', 'error');
+  } finally {
+    _conversationDeletingSubject = false;
+    renderConversationsSidebar();
+  }
+}
+
 async function setConversationResolved(conversationId, resolved) {
-  const conversation = noteConversations[conversationId];
+  const conversation = conversationById(conversationId);
   if (!conversation) return;
-  conversation.resolved = !!resolved;
-  conversation.modified = new Date().toISOString();
+  const previousResolved = !!conversation.resolved;
+  const modified = new Date().toISOString();
+  if (noteConversations[conversationId]) {
+    noteConversations[conversationId].resolved = !!resolved;
+    noteConversations[conversationId].modified = modified;
+  }
+  if (allConversations[conversationId]) {
+    allConversations[conversationId].resolved = !!resolved;
+    allConversations[conversationId].modified = modified;
+  }
   renderConversationsSidebar();
   try {
     await setDoc(doc(fsDb, 'noteConversations', conversationId), {
       resolved: !!resolved,
-      modifiedIso: conversation.modified,
+      modifiedIso: modified,
       modified: serverTimestamp()
     }, { merge: true });
   } catch (err) {
     console.error('resolve conversation:', err);
-    conversation.resolved = !resolved;
+    if (noteConversations[conversationId]) noteConversations[conversationId].resolved = previousResolved;
+    if (allConversations[conversationId]) allConversations[conversationId].resolved = previousResolved;
     renderConversationsSidebar();
     showToast('Could Not Update Conversation', 'error');
   }

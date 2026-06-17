@@ -27,28 +27,29 @@
   <div id="app">
     <nav id="app-rail" aria-label="App navigation">
       <div class="rail-stack">
-        <button class="rail-logo active" id="rail-notes-btn" data-sidebar-view="notes" type="button" title="Toggle Notes Sidebar" aria-label="Toggle Notes Sidebar">
+        <button class="rail-logo active" id="rail-notes-btn" data-sidebar-view="notes" type="button" title="Toggle Notes Sidebar" aria-label="Toggle Notes Sidebar" aria-pressed="true">
           <img src="notas-icon.png" alt="" />
         </button>
         <button class="rail-btn rail-primary" id="rail-create-btn" type="button" title="Create" aria-label="Create">
           <i class="fa-solid fa-plus"></i>
         </button>
         <div class="rail-divider" aria-hidden="true"></div>
-        <button class="rail-btn notification-btn" id="notifications-btn" data-sidebar-view="notifications" type="button" title="Notifications" aria-label="Notifications">
+        <button class="rail-btn notification-btn" id="notifications-btn" data-sidebar-view="notifications" type="button" title="Toggle Notifications" aria-label="Toggle Notifications" aria-pressed="false">
           <i class="fa-solid fa-bell"></i>
           <span class="notification-badge" id="notification-badge" hidden>0</span>
         </button>
-        <button class="rail-btn" id="conversation-toggle-btn" type="button" title="Conversations" aria-label="Conversations">
-          <i class="fa-regular fa-comments"></i>
+        <button class="rail-btn" id="conversation-toggle-btn" type="button" title="Toggle Conversations" aria-label="Toggle Conversations" aria-pressed="false">
+          <i class="fa-solid fa-comments"></i>
+          <span class="notification-badge conversation-notification-icon" id="conversation-badge" hidden><i class="fa-solid fa-bell"></i></span>
         </button>
-        <button class="rail-btn" id="alarm-btn" data-sidebar-view="alarms" type="button" title="Reminders" aria-label="Reminders">
+        <button class="rail-btn" id="alarm-btn" data-sidebar-view="alarms" type="button" title="Toggle Reminders" aria-label="Toggle Reminders" aria-pressed="false">
           <i class="fa-solid fa-clock"></i>
           <span class="notification-badge" id="alarm-badge" hidden>0</span>
         </button>
-        <button class="rail-btn" id="rail-friends-btn" data-sidebar-view="friends" type="button" title="Friends" aria-label="Friends">
+        <button class="rail-btn" id="rail-friends-btn" data-sidebar-view="friends" type="button" title="Toggle Friends" aria-label="Toggle Friends" aria-pressed="false">
           <i class="fa-solid fa-user-group"></i>
         </button>
-        <button class="rail-btn" id="rail-trash-btn" data-sidebar-view="trash" type="button" title="Trash" aria-label="Trash">
+        <button class="rail-btn" id="rail-trash-btn" data-sidebar-view="trash" type="button" title="Toggle Trash" aria-label="Toggle Trash" aria-pressed="false">
           <i class="fa-solid fa-trash"></i>
         </button>
       </div>
@@ -145,7 +146,7 @@
     <aside id="conversation-sidebar" aria-label="Conversations" aria-hidden="true">
       <div class="conversation-panel-header">
         <div class="conversation-title-wrap">
-          <div class="conversation-panel-title"><i class="fa-regular fa-comments"></i><span>Conversations</span></div>
+          <div class="conversation-panel-title"><i class="fa-solid fa-comments"></i><span>Conversations</span></div>
           <div class="conversation-note-title" id="conversation-note-title"></div>
         </div>
         <div class="conversation-header-actions">
