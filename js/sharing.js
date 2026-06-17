@@ -2653,6 +2653,7 @@ function notificationReadKeyForParts(type, noteId, fromUid) {
 
 function notificationTargetId(notification) {
   if (notification?.type === 'reminder') return notification.reminderId || notification.id || '';
+  if (notification?.type === 'conversation') return notification.messageId || notification.id || '';
   return notification?.noteId || notification?.sourceFolderId || notification?.folderId || notification?.id || '';
 }
 
@@ -2692,6 +2693,7 @@ async function persistNotificationReads(keys) {
   });
   _writeNotificationStateToLocal();
   renderNotificationButton();
+  if (typeof renderConversationsSidebar === 'function') renderConversationsSidebar();
   if (document.getElementById('notifications-modal')?.classList.contains('open')) renderNotificationsList();
   refreshOpenSidebarPage('notifications');
   if (!Object.keys(updates).length) return;
@@ -2707,10 +2709,12 @@ function normalizeProfileShareNotification(id, data) {
   const created = createdDate ? createdDate.toISOString() : (data.createdIso || new Date().toISOString());
   const type = data.type === 'reminder'
     ? 'reminder'
-    : (data.type === 'mention' ? 'mention' : (data.type === 'folder_share' ? 'folder_share' : 'share'));
+    : (data.type === 'conversation' ? 'conversation' : (data.type === 'mention' ? 'mention' : (data.type === 'folder_share' ? 'folder_share' : 'share')));
   const sourceFolderId = data.sourceFolderId || data.folderId || '';
   const sourceFolderTitle = data.sourceFolderTitle || data.folderTitle || 'Shared Folder';
-  const targetId = type === 'reminder' ? (data.reminderId || data.id || id) : (data.noteId || sourceFolderId || id);
+  const targetId = type === 'reminder'
+    ? (data.reminderId || data.id || id)
+    : (type === 'conversation' ? (data.messageId || data.id || id) : (data.noteId || sourceFolderId || id));
   const fromPhotos = profilePhotoFields(data.fromPhotoURL, data.fromPhotoURLCandidates);
   return {
     id,
@@ -2725,6 +2729,10 @@ function normalizeProfileShareNotification(id, data) {
     fromEmail: normalizeEmail(data.fromEmail || ''),
     sourceFolderId,
     sourceFolderTitle,
+    conversationId: data.conversationId || '',
+    messageId: data.messageId || data.id || id,
+    messagePreview: data.messagePreview || '',
+    anchorText: data.anchorText || '',
     reminderId: data.reminderId || data.id || id,
     reminderAt: normalizeAlarmAt(data.reminderAt || data.alarmAt),
     reminderText: data.reminderText || data.text || data.noteTitle || 'Reminder',
@@ -2998,7 +3006,7 @@ function getNotificationItems() {
 function getMentionItems() {
   const byReadKey = {};
   getNotificationItems()
-    .filter(item => ['mention', 'share', 'folder_share'].includes(item.type))
+    .filter(item => ['mention', 'share', 'folder_share', 'conversation'].includes(item.type))
     .forEach(item => { byReadKey[item.readKey || item.id] = item; });
 
   Object.values(notes || {}).forEach(note => {
@@ -3048,6 +3056,7 @@ function notificationText(n) {
   if (n.type === 'friend_request') return n.fromDisplayName + ' sent you a friend request';
   if (n.type === 'profile_link') return n.fromName + ' wants to link profiles';
   if (n.type === 'folder_share') return n.fromName + ' shared folder "' + (n.sourceFolderTitle || 'Shared Folder') + '" with you';
+  if (n.type === 'conversation') return n.fromName + ' replied in "' + (n.noteTitle || 'Untitled Note') + '"';
   if (n.type === 'mention') return n.fromName + ' mentioned you in "' + n.noteTitle + '"';
   if (n.type === 'reminder') return n.fromName + ' set a reminder for "' + (n.reminderText || n.noteTitle || 'Reminder') + '"';
   return n.fromName + ' shared "' + n.noteTitle + '" with you';
@@ -3069,11 +3078,11 @@ function renderNotificationsList(target = 'notifications-list') {
   if (!list) return;
   const items = getMentionItems();
   if (notificationsUnavailable) {
-    list.innerHTML = '<div class="profile-empty">Mentions and shared items are unavailable right now. Direct sharing can still be retried after Firestore profile-share access is enabled.</div>';
+    list.innerHTML = '<div class="profile-empty">Notifications are unavailable right now. Direct sharing can still be retried after Firestore profile-share access is enabled.</div>';
     return;
   }
   if (!items.length) {
-    list.innerHTML = '<div class="profile-empty">No mentions or shared items yet. Read and unread items from friends will appear here.</div>';
+    list.innerHTML = '<div class="profile-empty">No notifications yet. Mentions, shares, and conversation replies from friends will appear here.</div>';
     return;
   }
 
@@ -3125,6 +3134,9 @@ async function openNotification(id) {
     } else {
       opened = await openDirectSharedNote(item.noteId);
     }
+  }
+  if (opened && item.type === 'conversation' && item.conversationId && typeof openConversationsSidebar === 'function') {
+    openConversationsSidebar(item.conversationId);
   }
   if (opened) await markNotificationRead(id);
 }

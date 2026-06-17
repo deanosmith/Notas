@@ -32,6 +32,25 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/notes/$(noteId)).data.owner == request.auth.uid;
     }
 
+    function canConverseOnNote(noteId) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/notes/$(noteId))
+        && (
+          get(/databases/$(database)/documents/notes/$(noteId)).data.owner == request.auth.uid
+          || hasNoteAccess(noteId)
+        );
+    }
+
+    function conversationNoteId(conversationId) {
+      return get(/databases/$(database)/documents/noteConversations/$(conversationId)).data.noteId;
+    }
+
+    function canReadConversation(conversationId) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/noteConversations/$(conversationId))
+        && canConverseOnNote(conversationNoteId(conversationId));
+    }
+
     function ownsProfileEmail(emailId) {
       return signedIn()
         && exists(/databases/$(database)/documents/profileEmails/$(emailId))
@@ -185,6 +204,41 @@ service cloud.firestore {
 
       allow delete: if signedIn()
         && isNoteOwner(resource.data.noteId);
+    }
+
+    match /noteConversations/{conversationId} {
+      allow read: if canConverseOnNote(resource.data.noteId);
+
+      allow create: if canConverseOnNote(request.resource.data.noteId)
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.noteId is string;
+
+      allow update: if canConverseOnNote(resource.data.noteId)
+        && request.resource.data.noteId == resource.data.noteId
+        && request.resource.data.createdBy == resource.data.createdBy
+        && request.resource.data.diff(resource.data).changedKeys().hasOnly([
+          "noteTitle",
+          "lastMessagePreview",
+          "lastMessageBy",
+          "lastMessageAtIso",
+          "lastMessageAt",
+          "modifiedIso",
+          "modified",
+          "resolved"
+        ]);
+
+      allow delete: if false;
+
+      match /messages/{messageId} {
+        allow read: if canReadConversation(conversationId);
+
+        allow create: if canReadConversation(conversationId)
+          && request.resource.data.authorUid == request.auth.uid
+          && request.resource.data.conversationId == conversationId
+          && request.resource.data.noteId == conversationNoteId(conversationId);
+
+        allow update, delete: if false;
+      }
     }
   }
 }

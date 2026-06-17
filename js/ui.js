@@ -244,12 +244,13 @@ function makeSidebarNoteEl(note, { inFolder = false } = {}) {
         label: isPinned ? 'Unpin from Sidebar' : 'Pin to Sidebar',
         action: () => setNotePinned(note.id, !isPinnedNote(note), 'major')
       };
-  const snippet  = note.content.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 65) || 'Empty Note';
+  const showPreview = sidebarNotePreviewMode === 'title-text';
+  const snippet  = showPreview ? (note.content.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 65) || 'Empty Note') : '';
   const accessAvatars = inFolder ? '' : renderAccessAvatars(accessProfilesForNote(note), isOwned ? 'Shared with' : 'Shared by');
   const noteFolder = note.folderId ? folders[note.folderId] : null;
   const noteFolderColor = noteFolder ? resolveFolderIconColor(noteFolder.iconColor, noteFolder.iconColorMode) : '';
   const el       = document.createElement('div');
-  el.className   = 'sidebar-item' + (active ? ' active' : '');
+  el.className   = 'sidebar-item' + (active ? ' active' : '') + (showPreview ? '' : ' titles-only');
   el.dataset.id  = note.id;
   el.draggable   = true;
   if (noteFolderColor) {
@@ -257,7 +258,7 @@ function makeSidebarNoteEl(note, { inFolder = false } = {}) {
     el.style.setProperty('--note-folder-color', noteFolderColor);
   }
   el.innerHTML   =
-    '<div class="item-info"><div class="item-name">' + esc(note.title) + '</div><div class="item-preview">' + esc(snippet) + '</div></div>' +
+    '<div class="item-info"><div class="item-name">' + esc(note.title) + '</div>' + (showPreview ? '<div class="item-preview">' + esc(snippet) + '</div>' : '') + '</div>' +
     accessAvatars +
     (isPinned ? '<span class="note-pin-badge" title="' + (pinScope === 'minor' ? 'Pinned in folder' : 'Pinned to sidebar') + '"><i class="fa-solid fa-thumbtack"></i></span>' : '') +
     (isOwned ? '' : '<span class="note-shared-badge" title="Shared with you"><i class="fa-solid fa-link"></i></span>') +
@@ -413,7 +414,7 @@ function attachFolderReorderHandlers(row, folder) {
   });
 }
 
-const SIDEBAR_VIEWS = new Set(['notes', 'create', 'notifications', 'alarms', 'friends', 'trash']);
+const SIDEBAR_VIEWS = new Set(['notes', 'notifications', 'alarms', 'friends', 'trash']);
 
 function updateRailActiveState() {
   document.querySelectorAll('[data-sidebar-view]').forEach(btn => {
@@ -448,7 +449,7 @@ function renderSidebarPage(view) {
 
   const meta = {
     create:        { icon: 'fa-solid fa-plus',       label: 'Create' },
-    notifications: { icon: 'fa-solid fa-at',         label: 'Mentions' },
+    notifications: { icon: 'fa-solid fa-bell',       label: 'Notifications' },
     alarms:        { icon: 'fa-solid fa-clock',      label: 'Reminders' },
     friends:       { icon: 'fa-solid fa-user-group', label: 'Friends' },
     trash:         { icon: 'fa-solid fa-trash',      label: 'Trash' }
@@ -464,19 +465,6 @@ function renderSidebarPage(view) {
 
   const content = document.getElementById('sidebar-page-content');
   if (!content) return;
-
-  if (view === 'create') {
-    const target = activeFolderId && folders[activeFolderId] ? folders[activeFolderId].title : 'Notes';
-    content.innerHTML =
-      '<div class="sidebar-section-label" style="padding:0 4px 2px;">' + esc(target) + '</div>' +
-      '<div class="sidebar-page-actions">' +
-        '<button class="sidebar-page-action primary" id="sidebar-create-note-btn" type="button"><i class="fa-solid fa-note-sticky"></i><span>New Note</span></button>' +
-        '<button class="sidebar-page-action" id="sidebar-create-folder-btn" type="button"><i class="fa-solid fa-folder-plus"></i><span>New Folder</span></button>' +
-      '</div>';
-    document.getElementById('sidebar-create-note-btn')?.addEventListener('click', openModal);
-    document.getElementById('sidebar-create-folder-btn')?.addEventListener('click', openFolderModal);
-    return;
-  }
 
   if (view === 'notifications') {
     content.innerHTML =
@@ -815,36 +803,48 @@ function toggleSidebarFromLogo(e) {
 }
 
 /* Modal */
-const openModal  = () => {
+let createModalType = 'note';
+function normalizeCreateModalType(type) {
+  return type === 'folder' ? 'folder' : 'note';
+}
+function setCreateModalType(type) {
+  createModalType = normalizeCreateModalType(type);
+  const isFolder = createModalType === 'folder';
+  const title = document.getElementById('modal-title');
+  const input = document.getElementById('modal-input');
+  const createBtn = document.getElementById('modal-create');
+  if (title) title.textContent = isFolder ? 'New Folder' : 'New Note';
+  if (input) input.placeholder = isFolder ? 'Folder Name' : 'Note Name';
+  if (createBtn) createBtn.textContent = isFolder ? 'Create Folder' : 'Create Note';
+  document.querySelectorAll('[data-create-type]').forEach(btn => {
+    const active = btn.dataset.createType === createModalType;
+    btn.classList.toggle('active', active);
+    btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+  });
+}
+function openModal(type = 'note') {
+  if (type && typeof type === 'object') type = 'note';
+  setCreateModalType(type);
   document.getElementById('modal').classList.add('open');
   document.getElementById('modal-input').value = '';
   setTimeout(() => document.getElementById('modal-input').focus(), 120);
-};
+}
 const closeModal = () => document.getElementById('modal').classList.remove('open');
 function confirmCreate() {
   const t = document.getElementById('modal-input').value.trim();
   if (!t) { document.getElementById('modal-input').focus(); return; }
+  const type = createModalType;
   const fid = activeFolderId;
   closeModal();
+  if (type === 'folder') {
+    createFolder(t);
+    return;
+  }
   createNote(t, fid);
 }
 
 /* Folder Modal */
-const openFolderModal = () => {
-  _folderModalMode = 'create';
-  _folderRenameId = null;
-  const title = document.querySelector('#folder-modal .modal-title');
-  const input = document.getElementById('folder-modal-input');
-  const createBtn = document.getElementById('folder-modal-create');
-  if (title) title.innerHTML = '<i class="fa-solid fa-folder-plus" style="margin-right:8px;opacity:.7;"></i>New Folder';
-  if (input) {
-    input.placeholder = 'Folder Name';
-    input.value = '';
-  }
-  if (createBtn) createBtn.textContent = 'Create Folder';
-  document.getElementById('folder-modal').classList.add('open');
-  setTimeout(() => input?.focus(), 120);
-};
+const openFolderModal = () => openModal('folder');
 function openFolderRenameModal(folderId) {
   const folder = folders[folderId];
   if (!folder || !isOwnedFolder(folder)) return;
@@ -886,6 +886,9 @@ function confirmCreateFolder() {
 /* Settings */
 const FONT_MIN = 12, FONT_MAX = 24;
 let editorFontSize = parseInt(localStorage.getItem('notas_font_size') || '15');
+const SIDEBAR_NOTE_PREVIEW_STORAGE_KEY = 'notas_sidebar_note_preview_mode';
+const savedSidebarNotePreviewMode = localStorage.getItem(SIDEBAR_NOTE_PREVIEW_STORAGE_KEY);
+let sidebarNotePreviewMode = savedSidebarNotePreviewMode === 'title-only' ? 'title-only' : 'title-text';
 const savedThemeMode = localStorage.getItem('notas_theme');
 let themeMode = ['system', 'dark', 'light'].includes(savedThemeMode) ? savedThemeMode : 'dark';
 let isLightMode = false;
@@ -1133,6 +1136,12 @@ function accentPalette(value) {
   };
 }
 
+function brightenDarkUiColor(hex, weight) {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return hex;
+  return rgbToHex(mixColor(rgb, { r: 255, g: 255, b: 255 }, weight));
+}
+
 function applyAccentColor(value) {
   const normalized = normalizeAccentColor(value);
   const p = accentPalette(normalized);
@@ -1146,8 +1155,8 @@ function applyAccentColor(value) {
   s.setProperty('--orb2-r',   p.r2);
   s.setProperty('--orb2-g',   p.g2);
   s.setProperty('--orb2-b',   p.b2);
-  s.setProperty('--glass-border',    `rgba(${Math.min(p.r+80,255)},${Math.min(p.g+30,255)},${Math.min(p.b+10,255)},.11)`);
-  s.setProperty('--glass-highlight', `rgba(${Math.min(p.r+80,255)},${Math.min(p.g+30,255)},${Math.min(p.b+10,255)},.08)`);
+  s.setProperty('--glass-border',    `rgba(${Math.min(p.r+80,255)},${Math.min(p.g+30,255)},${Math.min(p.b+10,255)},.16)`);
+  s.setProperty('--glass-highlight', `rgba(${Math.min(p.r+80,255)},${Math.min(p.g+30,255)},${Math.min(p.b+10,255)},.12)`);
 
   // Accent on both <html> and <body> — body inline style beats body.light-mode CSS rule
   s.setProperty('--accent',   p.accent);
@@ -1159,10 +1168,10 @@ function applyAccentColor(value) {
 
   // Mode-dependent vars — set on <body> so they override body.light-mode CSS in both modes
   const lm = isLightMode;
-  b.setProperty('--muted',  lm ? p.lightMuted  : p.muted);
-  b.setProperty('--text2',  lm ? p.lightText2  : p.text2);
-  b.setProperty('--border', lm ? p.lightBorder : p.border);
-  b.setProperty('--note-subtext', lm ? 'rgba(12, 28, 44, .68)' : 'rgba(232, 240, 255, .72)');
+  b.setProperty('--muted',  lm ? p.lightMuted  : brightenDarkUiColor(p.muted, .16));
+  b.setProperty('--text2',  lm ? p.lightText2  : brightenDarkUiColor(p.text2, .08));
+  b.setProperty('--border', lm ? p.lightBorder : brightenDarkUiColor(p.border, .18));
+  b.setProperty('--note-subtext', lm ? 'rgba(12, 28, 44, .68)' : 'rgba(232, 240, 255, .78)');
   // Ambient glows adapt in both modes
   b.setProperty('--ambient-a', `rgba(${p.r},${p.g},${p.b},${lm ? '.14' : '.18'})`);
   b.setProperty('--ambient-b', `rgba(${p.r2},${p.g2},${p.b2},.12)`);
@@ -1235,9 +1244,16 @@ function applyFontSize() {
   if (val) val.textContent = editorFontSize;
 }
 
+function applySidebarNotePreviewMode() {
+  const toggle = document.getElementById('sidebar-preview-toggle');
+  if (toggle) toggle.checked = sidebarNotePreviewMode === 'title-text';
+  if (sidebarView === 'notes') renderSidebar();
+}
+
 function initSettings() {
   applyTheme(); // also calls applyAccentColor
   applyFontSize();
+  applySidebarNotePreviewMode();
   const settingsModal = document.getElementById('settings-modal');
   const colorControl = document.getElementById('color-control');
   const pickerBtn = document.getElementById('accent-picker-btn');
@@ -1265,6 +1281,8 @@ function initSettings() {
   document.getElementById('profile-settings-btn').addEventListener('click', () => {
     if (isMobile()) closeDrawer();
     document.getElementById('theme-select').value = themeMode;
+    const sidebarPreviewToggle = document.getElementById('sidebar-preview-toggle');
+    if (sidebarPreviewToggle) sidebarPreviewToggle.checked = sidebarNotePreviewMode === 'title-text';
     updateColorPickerUI(accentColor);
     settingsModal.classList.add('open');
   });
@@ -1282,6 +1300,11 @@ function initSettings() {
     themeMode = e.target.value;
     localStorage.setItem('notas_theme', themeMode);
     applyTheme();
+  });
+  document.getElementById('sidebar-preview-toggle')?.addEventListener('change', e => {
+    sidebarNotePreviewMode = e.target.checked ? 'title-text' : 'title-only';
+    localStorage.setItem(SIDEBAR_NOTE_PREVIEW_STORAGE_KEY, sidebarNotePreviewMode);
+    renderSidebar();
   });
   const onSystemThemeChange = () => {
     if (themeMode === 'system') applyTheme();

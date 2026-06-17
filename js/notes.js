@@ -135,6 +135,11 @@ function openNote(id) {
   titleEl.readOnly = !isEditable;
   document.getElementById('toolbar').style.display   = isEditable ? '' : 'none';
   document.getElementById('share-btn').style.display = isOwned && !isTrashedNote(note) ? '' : 'none';
+  const conversationToggleBtn = document.getElementById('conversation-toggle-btn');
+  const canUseConversations = typeof canStartConversationOnNote === 'function' ? canStartConversationOnNote(note) : isEditable;
+  if (conversationToggleBtn) {
+    conversationToggleBtn.style.display = canUseConversations ? '' : 'none';
+  }
   const ed = document.getElementById('editor');
   ed.contentEditable = isEditable ? 'true' : 'false';
   ed.innerHTML = renderMarkdownContent(note.content || '');
@@ -142,6 +147,7 @@ function openNote(id) {
   ensureLinkAttrs(ed);
   restoreChecklistState(ed);
   restoreAlarmMarks(ed);
+  if (typeof restoreConversationAnchorMarks === 'function') restoreConversationAnchorMarks(ed);
   decorateTables(ed);
   restoreCollapsedState(id);
   const cleanContent = getCleanHTML();
@@ -153,6 +159,10 @@ function openNote(id) {
   updateCounts();
   setSaveState(isEditable ? 'saved' : 'readonly');
   initUndoSnapshot();
+  if (typeof listenToConversationsForNote === 'function') {
+    listenToConversationsForNote(canUseConversations ? id : null);
+    if (!canUseConversations && typeof closeConversationsSidebar === 'function') closeConversationsSidebar();
+  }
   _capitalizeNext = false;
   if (isEditable && !isMobile()) setTimeout(() => placeCursorAtEnd(ed), 40);
   if (isMobile()) closeDrawer();
