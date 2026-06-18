@@ -972,14 +972,30 @@ function contrastRatio(a, b) {
   return (lighter + .05) / (darker + .05);
 }
 
+const ACCENT_FOREGROUND_CONTRAST_MIN = 4.5;
+const DARK_THEME_CONTRAST_SURFACE = { r: 8, g: 12, b: 18 };
+const LIGHT_THEME_CONTRAST_SURFACE = { r: 228, g: 239, b: 248 };
+
+function themeOppositeColor(lightMode) {
+  return lightMode ? '#000000' : '#ffffff';
+}
+
+function accentInkColor(palette, lightMode) {
+  const accent = hexToRgb(palette.accent) || { r: palette.r, g: palette.g, b: palette.b };
+  const surface = lightMode ? LIGHT_THEME_CONTRAST_SURFACE : DARK_THEME_CONTRAST_SURFACE;
+  return contrastRatio(accent, surface) >= ACCENT_FOREGROUND_CONTRAST_MIN
+    ? palette.accent
+    : themeOppositeColor(lightMode);
+}
+
 function accentTextColor(palette) {
   const accent = { r: palette.r, g: palette.g, b: palette.b };
   const accentH = hexToRgb(palette.accentH) || accent;
   const lightText = { r: 255, g: 255, b: 255 };
-  const darkText = { r: 4, g: 18, b: 28 };
+  const darkText = { r: 0, g: 0, b: 0 };
   const lightScore = Math.min(contrastRatio(accent, lightText), contrastRatio(accentH, lightText));
   const darkScore = Math.min(contrastRatio(accent, darkText), contrastRatio(accentH, darkText));
-  return darkScore >= lightScore ? '#04121c' : '#ffffff';
+  return darkScore >= lightScore ? '#000000' : '#ffffff';
 }
 
 function rgbToHsv({ r, g, b }) {
@@ -1166,6 +1182,9 @@ function applyAccentColor(value) {
   const p = accentPalette(normalized);
   const s = document.documentElement.style; // <html>
   const b = document.body.style;            // <body>
+  const lm = isLightMode;
+  const accentInk = accentInkColor(p, lm);
+  const accentText = accentTextColor(p);
 
   // Orb/ambient/glass on <html> — cascade correctly in both modes
   s.setProperty('--orb-r',    p.r);
@@ -1180,13 +1199,16 @@ function applyAccentColor(value) {
   // Accent on both <html> and <body> — body inline style beats body.light-mode CSS rule
   s.setProperty('--accent',   p.accent);
   s.setProperty('--accent-h', p.accentH);
-  s.setProperty('--accent-text', accentTextColor(p));
+  s.setProperty('--accent-ink', accentInk);
+  s.setProperty('--accent-caret', accentInk);
+  s.setProperty('--accent-text', accentText);
   b.setProperty('--accent',   p.accent);
   b.setProperty('--accent-h', p.accentH);
-  b.setProperty('--accent-text', accentTextColor(p));
+  b.setProperty('--accent-ink', accentInk);
+  b.setProperty('--accent-caret', accentInk);
+  b.setProperty('--accent-text', accentText);
 
   // Mode-dependent vars — set on <body> so they override body.light-mode CSS in both modes
-  const lm = isLightMode;
   b.setProperty('--muted',  lm ? p.lightMuted  : brightenDarkUiColor(p.muted, .16));
   b.setProperty('--text2',  lm ? p.lightText2  : brightenDarkUiColor(p.text2, .08));
   b.setProperty('--border', lm ? p.lightBorder : brightenDarkUiColor(p.border, .18));

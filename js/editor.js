@@ -2987,7 +2987,7 @@ function getAlarmItems() {
       text: normalized.reminderText || normalized.noteTitle || 'Reminder',
       targetUid: normalized.targetUid,
       targetName: normalized.targetName || 'Friend',
-      due: new Date(normalized.reminderAt).getTime() <= Date.now()
+      due: false
     });
   });
   return items.sort((a, b) => new Date(a.alarmAt) - new Date(b.alarmAt));
