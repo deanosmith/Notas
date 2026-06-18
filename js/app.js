@@ -104,7 +104,6 @@ document.getElementById('mention-share-confirm').addEventListener('click', () =>
 document.getElementById('mention-share-cancel').addEventListener('click', () => closeMentionShareModal(false));
 document.getElementById('mention-share-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeMentionShareModal(false); });
 document.getElementById('conversation-toggle-btn')?.addEventListener('click', toggleConversationsSidebar);
-document.getElementById('conversation-start-btn')?.addEventListener('click', () => openConversationComposerFromSelection());
 document.getElementById('conversation-close-btn')?.addEventListener('click', closeConversationsSidebar);
 document.getElementById('conversation-selection-popover')?.addEventListener('mousedown', e => e.preventDefault());
 document.getElementById('conversation-selection-start-btn')?.addEventListener('click', e => {

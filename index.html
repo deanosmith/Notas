@@ -117,7 +117,7 @@
             <div class="toolbar-sep"></div>
             <div class="toolbar-group">
               <button class="tb-btn" data-action="alarm" title="Set Reminder"><i class="fa-solid fa-clock"></i></button>
-              <button class="tb-btn" data-action="conversation" title="Start Conversation"><i class="fa-regular fa-comments"></i></button>
+              <button class="tb-btn" data-action="conversation" title="Start Conversation"><i class="fa-solid fa-comments"></i></button>
             </div>
           </div>
         </div>
@@ -146,25 +146,24 @@
     <aside id="conversation-sidebar" aria-label="Conversations" aria-hidden="true">
       <div class="conversation-panel-header">
         <div class="conversation-title-wrap">
-          <div class="conversation-panel-title"><i class="fa-solid fa-comments"></i><span>Conversations</span></div>
+          <div class="conversation-panel-title"><i class="fa-solid fa-comments"></i><span id="conversation-panel-title-text">Conversations</span></div>
           <div class="conversation-note-title" id="conversation-note-title"></div>
         </div>
         <div class="conversation-header-actions">
-          <button class="conversation-icon-btn" id="conversation-start-btn" type="button" title="Start Conversation" aria-label="Start Conversation">
-            <i class="fa-regular fa-comment-dots"></i>
-          </button>
           <button class="conversation-icon-btn" id="conversation-close-btn" type="button" title="Close Conversations" aria-label="Close Conversations">
             <i class="fa-solid fa-xmark"></i>
           </button>
         </div>
       </div>
       <div class="conversation-sidebar-body" id="conversation-sidebar-body"></div>
+      <button class="conversation-resize-handle conversation-resize-handle-left" id="conversation-resize-left" type="button" title="Resize Conversations" aria-label="Resize Conversations" data-conversation-resize-edge="left"></button>
+      <button class="conversation-resize-handle conversation-resize-handle-right" id="conversation-resize-right" type="button" title="Resize Conversations" aria-label="Resize Conversations" data-conversation-resize-edge="right"></button>
     </aside>
   </div>
 
   <div id="conversation-selection-popover" class="conversation-selection-popover" hidden>
     <button id="conversation-selection-start-btn" type="button" title="Start Conversation" aria-label="Start Conversation">
-      <i class="fa-regular fa-comment-dots"></i>
+      <i class="fa-solid fa-comment-dots"></i>
     </button>
   </div>
 

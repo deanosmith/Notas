@@ -3,6 +3,9 @@
 let _conversationOverviewRefreshTimer = null;
 let _conversationOverviewRefreshSeq = 0;
 let _conversationDeletingSubject = false;
+let _conversationPanelChromeReady = false;
+let _conversationPanelDrag = null;
+let _conversationPanelResize = null;
 
 function conversationIso(value, fallback = new Date().toISOString()) {
   const normalized = typeof isoFromTimestamp === 'function' ? isoFromTimestamp(value) : '';
@@ -567,6 +570,206 @@ function conversationScopeTitle() {
   return 'All notes';
 }
 
+function conversationPanelTitle() {
+  if (conversationComposeAnchor || activeConversationId) return 'Conversation';
+  if (conversationBrowseView === 'note') return 'Note Conversations';
+  return 'Conversations';
+}
+
+function conversationPanelNumberVar(name, fallback) {
+  const raw = getComputedStyle(document.documentElement).getPropertyValue(name);
+  const value = parseFloat(raw);
+  return Number.isFinite(value) ? value : fallback;
+}
+
+function conversationPanelBounds(width, height) {
+  const edge = isMobile() ? 12 : 16;
+  const rail = isMobile() ? 0 : conversationPanelNumberVar('--rail-w', 64);
+  const minLeft = rail + edge;
+  const minTop = edge;
+  return {
+    minLeft,
+    minTop,
+    maxLeft: Math.max(minLeft, window.innerWidth - width - edge),
+    maxTop: Math.max(minTop, window.innerHeight - height - edge)
+  };
+}
+
+function conversationPanelSizeLimits(top = 0) {
+  const edge = isMobile() ? 12 : 16;
+  const rail = isMobile() ? 0 : conversationPanelNumberVar('--rail-w', 64);
+  const minWidth = Math.max(280, Math.min(320, window.innerWidth - edge * 2));
+  const minHeight = Math.max(260, Math.min(360, window.innerHeight - 104));
+  return {
+    minWidth,
+    minHeight,
+    maxWidth: Math.max(minWidth, window.innerWidth - rail - edge * 2),
+    maxHeight: Math.max(minHeight, window.innerHeight - top - edge)
+  };
+}
+
+function resetConversationPanelPlacement() {
+  const sidebar = document.getElementById('conversation-sidebar');
+  if (!sidebar) return;
+  sidebar.style.left = '';
+  sidebar.style.top = '';
+  sidebar.style.right = '';
+  sidebar.style.width = '';
+  sidebar.style.height = '';
+  sidebar.classList.remove('conversation-panel-dragging');
+  sidebar.classList.remove('conversation-panel-resizing');
+  _conversationPanelDrag = null;
+  _conversationPanelResize = null;
+}
+
+function clampConversationPanelToViewport() {
+  const sidebar = document.getElementById('conversation-sidebar');
+  if (!sidebar || isMobile() || !sidebar.classList.contains('open')) return;
+  const rect = sidebar.getBoundingClientRect();
+  const bounds = conversationPanelBounds(rect.width, rect.height);
+  const left = Math.min(Math.max(rect.left, bounds.minLeft), bounds.maxLeft);
+  const top = Math.min(Math.max(rect.top, bounds.minTop), bounds.maxTop);
+  sidebar.style.left = left + 'px';
+  sidebar.style.top = top + 'px';
+  sidebar.style.right = 'auto';
+}
+
+function startConversationPanelDrag(e) {
+  if (e.button !== 0 || isMobile()) return;
+  if (e.target.closest?.('button, input, select, textarea, a')) return;
+  const sidebar = document.getElementById('conversation-sidebar');
+  const header = e.currentTarget;
+  if (!sidebar?.classList.contains('open')) return;
+  const rect = sidebar.getBoundingClientRect();
+  _conversationPanelDrag = {
+    pointerId: e.pointerId,
+    startX: e.clientX,
+    startY: e.clientY,
+    left: rect.left,
+    top: rect.top,
+    width: rect.width,
+    height: rect.height
+  };
+  sidebar.style.left = rect.left + 'px';
+  sidebar.style.top = rect.top + 'px';
+  sidebar.style.right = 'auto';
+  sidebar.style.width = rect.width + 'px';
+  sidebar.style.height = rect.height + 'px';
+  sidebar.classList.add('conversation-panel-dragging');
+  header.setPointerCapture?.(e.pointerId);
+  e.preventDefault();
+}
+
+function moveConversationPanelDrag(e) {
+  if (!_conversationPanelDrag || e.pointerId !== _conversationPanelDrag.pointerId) return;
+  const sidebar = document.getElementById('conversation-sidebar');
+  if (!sidebar) return;
+  const bounds = conversationPanelBounds(_conversationPanelDrag.width, _conversationPanelDrag.height);
+  const left = Math.min(
+    Math.max(_conversationPanelDrag.left + e.clientX - _conversationPanelDrag.startX, bounds.minLeft),
+    bounds.maxLeft
+  );
+  const top = Math.min(
+    Math.max(_conversationPanelDrag.top + e.clientY - _conversationPanelDrag.startY, bounds.minTop),
+    bounds.maxTop
+  );
+  sidebar.style.left = left + 'px';
+  sidebar.style.top = top + 'px';
+}
+
+function endConversationPanelDrag(e = {}) {
+  if (!_conversationPanelDrag || (e.pointerId && e.pointerId !== _conversationPanelDrag.pointerId)) return;
+  document.getElementById('conversation-sidebar')?.classList.remove('conversation-panel-dragging');
+  _conversationPanelDrag = null;
+  clampConversationPanelToViewport();
+}
+
+function startConversationPanelResize(e) {
+  if (e.button !== 0 || isMobile()) return;
+  const sidebar = document.getElementById('conversation-sidebar');
+  const handle = e.currentTarget;
+  if (!sidebar?.classList.contains('open')) return;
+  const rect = sidebar.getBoundingClientRect();
+  _conversationPanelResize = {
+    pointerId: e.pointerId,
+    edge: handle.dataset.conversationResizeEdge || (handle.classList.contains('conversation-resize-handle-right') ? 'right' : 'left'),
+    startX: e.clientX,
+    startY: e.clientY,
+    left: rect.left,
+    top: rect.top,
+    right: rect.right,
+    width: rect.width,
+    height: rect.height
+  };
+  sidebar.style.left = rect.left + 'px';
+  sidebar.style.top = rect.top + 'px';
+  sidebar.style.right = 'auto';
+  sidebar.style.width = rect.width + 'px';
+  sidebar.style.height = rect.height + 'px';
+  sidebar.classList.add('conversation-panel-resizing');
+  handle.setPointerCapture?.(e.pointerId);
+  e.preventDefault();
+  e.stopPropagation();
+}
+
+function moveConversationPanelResize(e) {
+  if (!_conversationPanelResize || e.pointerId !== _conversationPanelResize.pointerId) return;
+  const sidebar = document.getElementById('conversation-sidebar');
+  if (!sidebar) return;
+  const edge = isMobile() ? 12 : 16;
+  const rail = isMobile() ? 0 : conversationPanelNumberVar('--rail-w', 64);
+  const minLeft = rail + edge;
+  const limits = conversationPanelSizeLimits(_conversationPanelResize.top);
+  const deltaX = e.clientX - _conversationPanelResize.startX;
+  const resizingRight = _conversationPanelResize.edge === 'right';
+  const maxWidth = resizingRight
+    ? Math.min(limits.maxWidth, window.innerWidth - edge - _conversationPanelResize.left)
+    : Math.min(limits.maxWidth, _conversationPanelResize.right - minLeft);
+  const width = Math.min(
+    Math.max(_conversationPanelResize.width + (resizingRight ? deltaX : -deltaX), limits.minWidth),
+    maxWidth
+  );
+  const height = Math.min(Math.max(_conversationPanelResize.height + (e.clientY - _conversationPanelResize.startY), limits.minHeight), limits.maxHeight);
+  sidebar.style.left = (resizingRight ? _conversationPanelResize.left : _conversationPanelResize.right - width) + 'px';
+  sidebar.style.width = width + 'px';
+  sidebar.style.height = height + 'px';
+}
+
+function endConversationPanelResize(e = {}) {
+  if (!_conversationPanelResize || (e.pointerId && e.pointerId !== _conversationPanelResize.pointerId)) return;
+  document.getElementById('conversation-sidebar')?.classList.remove('conversation-panel-resizing');
+  _conversationPanelResize = null;
+  clampConversationPanelToViewport();
+}
+
+function setupConversationPanelChrome() {
+  if (_conversationPanelChromeReady) return;
+  _conversationPanelChromeReady = true;
+  const header = document.querySelector('#conversation-sidebar .conversation-panel-header');
+  const resizeHandles = document.querySelectorAll('#conversation-sidebar .conversation-resize-handle');
+  header?.addEventListener('pointerdown', startConversationPanelDrag);
+  header?.addEventListener('pointermove', moveConversationPanelDrag);
+  header?.addEventListener('pointerup', endConversationPanelDrag);
+  header?.addEventListener('pointercancel', endConversationPanelDrag);
+  resizeHandles.forEach(handle => {
+    handle.addEventListener('pointerdown', startConversationPanelResize);
+    handle.addEventListener('pointermove', moveConversationPanelResize);
+    handle.addEventListener('pointerup', endConversationPanelResize);
+    handle.addEventListener('pointercancel', endConversationPanelResize);
+  });
+  document.addEventListener('pointermove', moveConversationPanelDrag);
+  document.addEventListener('pointerup', endConversationPanelDrag);
+  document.addEventListener('pointercancel', endConversationPanelDrag);
+  document.addEventListener('pointermove', moveConversationPanelResize);
+  document.addEventListener('pointerup', endConversationPanelResize);
+  document.addEventListener('pointercancel', endConversationPanelResize);
+  window.addEventListener('resize', () => {
+    if (!conversationsOpen) return;
+    if (isMobile()) resetConversationPanelPlacement();
+    else clampConversationPanelToViewport();
+  });
+}
+
 function conversationPreviewForConversation(conversation) {
   return conversationText(conversation?.lastMessagePreview || conversationAnchorCopy(conversation) || 'Conversation', 120);
 }
@@ -692,6 +895,7 @@ async function applyConversationAnchorMark(conversationId, anchor) {
 }
 
 function openConversationsSidebar(conversationId = null, options = {}) {
+  const wasOpen = conversationsOpen;
   conversationsOpen = true;
   if (conversationId) {
     activeConversationId = conversationId;
@@ -712,6 +916,8 @@ function openConversationsSidebar(conversationId = null, options = {}) {
   if (!conversationId) scheduleConversationOverviewRefresh(0);
   document.getElementById('app')?.classList.add('conversations-open');
   const sidebar = document.getElementById('conversation-sidebar');
+  setupConversationPanelChrome();
+  if (!wasOpen) resetConversationPanelPlacement();
   sidebar?.classList.add('open');
   sidebar?.setAttribute('aria-hidden', 'false');
   renderConversationsSidebar();
@@ -727,6 +933,8 @@ function openConversationsSidebar(conversationId = null, options = {}) {
 function closeConversationsSidebar() {
   conversationsOpen = false;
   conversationComposeAnchor = null;
+  endConversationPanelDrag();
+  endConversationPanelResize();
   document.getElementById('app')?.classList.remove('conversations-open');
   const sidebar = document.getElementById('conversation-sidebar');
   sidebar?.classList.remove('open');
@@ -801,17 +1009,19 @@ function renderConversationAnchor(anchorOrConversation, options = {}) {
   const icon = mode === 'cursor' ? 'fa-solid fa-location-dot' : 'fa-solid fa-quote-left';
   const text = conversationAnchorCopy(anchorOrConversation);
   const title = mode === 'cursor' ? 'Cursor location' : 'Highlighted text';
+  const cardClass = 'conversation-anchor-card conversation-anchor-' + (mode === 'cursor' ? 'cursor' : 'selection') + (options.button ? ' as-button' : '');
   const inner =
     '<span class="conversation-anchor-icon"><i class="' + icon + '"></i></span>' +
     '<span class="conversation-anchor-copy">' +
+      '<span class="conversation-anchor-label">' + title + '</span>' +
       '<span class="conversation-anchor-text">' + conversationEsc(text) + '</span>' +
     '</span>';
   if (options.button) {
-    return '<button class="conversation-anchor-card as-button" data-conversation-focus-anchor="' + conversationEsc(anchorOrConversation?.id || '') + '" type="button" title="' + conversationEsc(title) + '">' +
+    return '<button class="' + cardClass + '" data-conversation-focus-anchor="' + conversationEsc(anchorOrConversation?.id || '') + '" type="button" title="' + conversationEsc(title) + '">' +
       inner +
     '</button>';
   }
-  return '<div class="conversation-anchor-card" title="' + conversationEsc(title) + '">' + inner + '</div>';
+  return '<div class="' + cardClass + '" title="' + conversationEsc(title) + '">' + inner + '</div>';
 }
 
 function renderConversationNoteOverview(body) {
@@ -855,8 +1065,8 @@ function renderConversationList(body, conversations, options = {}) {
     const folderLabel = conversationFolderLabel(note);
     const noteLabel = note?.title || conv.noteTitle || 'Untitled Note';
     const sender = conversationSenderName(conv, last);
+    const modifiedLabel = relativeNotificationTime(conv.modified || conv.lastMessageAt || conv.created);
     const unread = conversationHasUnread(conv.id);
-    const status = conv.resolved ? 'Resolved' : 'Open';
     const canDelete = canDeleteConversationSubject(conv);
     return '<div class="conversation-thread-row' + (unread ? ' unread' : '') + (conv.resolved ? ' resolved' : '') + (canDelete ? ' has-topic-delete' : '') + '">' +
       '<button class="conversation-thread-main" data-conversation-open="' + conversationEsc(conv.id) + '" type="button">' +
@@ -864,16 +1074,15 @@ function renderConversationList(body, conversations, options = {}) {
         '<div class="conversation-thread-avatar">' + renderProfileAvatar(profile) + '</div>' +
         '<span class="conversation-thread-sender">' + conversationEsc(sender) + '</span>' +
         (unread ? '<span class="conversation-unread-dot"></span>' : '') +
-        '<span class="conversation-thread-status ' + (conv.resolved ? 'resolved' : 'open') + '">' + status + '</span>' +
       '</div>' +
       '<div class="conversation-thread-location"><i class="fa-solid fa-folder"></i><span>' + conversationEsc(folderLabel) + '</span><span class="conversation-thread-separator">/</span><i class="fa-solid fa-note-sticky"></i><span>' + conversationEsc(noteLabel) + '</span></div>' +
       '<div class="conversation-thread-bottom">' +
         '<span class="conversation-thread-preview">' + conversationEsc(preview) + '</span>' +
-        '<time>' + conversationEsc(relativeNotificationTime(conv.modified || conv.lastMessageAt || conv.created)) + '</time>' +
+        '<time>' + conversationEsc(modifiedLabel) + '</time>' +
       '</div>' +
       '</button>' +
       (canDelete
-        ? '<button class="conversation-thread-delete" data-conversation-delete-subject="' + conversationEsc(conv.id) + '" type="button" title="Delete Topic" aria-label="Delete Topic"' + (_conversationDeletingSubject ? ' disabled' : '') + '><i class="fa-solid fa-trash"></i></button>'
+        ? '<button class="conversation-thread-delete" data-conversation-delete-subject="' + conversationEsc(conv.id) + '" type="button" title="Delete Conversation" aria-label="Delete Conversation"' + (_conversationDeletingSubject ? ' disabled' : '') + '><i class="fa-solid fa-trash"></i></button>'
         : '') +
     '</div>';
   }).join('');
@@ -889,7 +1098,7 @@ function renderConversationList(body, conversations, options = {}) {
         : '') +
       (conversations.length
         ? '<div class="conversation-thread-list">' + rows + '</div>'
-        : '<div class="conversation-empty"><i class="fa-regular fa-comments"></i><span>No Conversations Yet</span><button class="conversation-text-btn" data-conversation-start-new type="button"><i class="fa-regular fa-comment-dots"></i><span>Start</span></button></div>') +
+        : '<div class="conversation-empty"><i class="fa-regular fa-comments"></i><span>No Conversations Yet</span></div>') +
     '</div>';
 }
 
@@ -938,7 +1147,7 @@ function renderConversationDetail(body, conv) {
     const mine = message.authorUid === userId;
     const profile = conversationProfileByUid(message.authorUid, conv);
     return '<div class="conversation-message' + (mine ? ' mine' : '') + '">' +
-      (mine ? '' : renderProfileAvatar({ ...profile, displayName: message.authorName || profile.displayName, photoURL: message.authorPhotoURL || profile.photoURL, photoURLCandidates: message.authorPhotoURLCandidates || profile.photoURLCandidates || [] })) +
+      renderProfileAvatar({ ...profile, displayName: message.authorName || profile.displayName, photoURL: message.authorPhotoURL || profile.photoURL, photoURLCandidates: message.authorPhotoURLCandidates || profile.photoURLCandidates || [] }) +
       '<div class="conversation-bubble">' +
         '<div class="conversation-message-meta">' + conversationEsc(mine ? 'You' : (message.authorName || profile.displayName || 'Friend')) + ' &middot; ' + conversationEsc(relativeNotificationTime(message.created)) + '</div>' +
         '<div class="conversation-message-body">' + conversationEsc(message.body) + '</div>' +
@@ -1003,9 +1212,6 @@ function attachConversationSidebarEvents(body) {
   body.querySelectorAll('[data-conversation-open]').forEach(btn => {
     btn.addEventListener('click', () => selectConversation(btn.dataset.conversationOpen));
   });
-  body.querySelectorAll('[data-conversation-start-new]').forEach(btn => {
-    btn.addEventListener('click', () => openConversationComposerFromSelection());
-  });
   body.querySelectorAll('[data-conversation-back]').forEach(btn => {
     btn.addEventListener('click', navigateConversationBack);
   });
@@ -1054,19 +1260,22 @@ function renderConversationsSidebar() {
   const sidebar = document.getElementById('conversation-sidebar');
   const body = document.getElementById('conversation-sidebar-body');
   const noteTitle = document.getElementById('conversation-note-title');
-  const startBtn = document.getElementById('conversation-start-btn');
+  const panelTitle = document.getElementById('conversation-panel-title-text');
   if (!sidebar || !body) return;
+  setupConversationPanelChrome();
 
   sidebar.classList.toggle('open', !!conversationsOpen);
   sidebar.setAttribute('aria-hidden', conversationsOpen ? 'false' : 'true');
+  sidebar.dataset.conversationView = conversationComposeAnchor
+    ? 'compose'
+    : (activeConversationId ? 'detail' : (conversationBrowseView === 'note' ? 'note' : 'overview'));
   document.getElementById('app')?.classList.toggle('conversations-open', !!conversationsOpen);
   const toggleBtn = document.getElementById('conversation-toggle-btn');
   toggleBtn?.classList.toggle('active', !!conversationsOpen);
   toggleBtn?.setAttribute('aria-pressed', conversationsOpen ? 'true' : 'false');
 
-  const note = activeId ? notes[activeId] : null;
+  if (panelTitle) panelTitle.textContent = conversationPanelTitle();
   if (noteTitle) noteTitle.textContent = conversationScopeTitle();
-  if (startBtn) startBtn.disabled = !canStartConversationOnNote(note);
 
   if (conversationComposeAnchor) renderConversationComposer(body, conversationComposeAnchor);
   else if (activeConversationId) renderConversationDetail(body, conversationById(activeConversationId));
@@ -1288,12 +1497,12 @@ function openConversationSubjectDeleteModal(conversationId) {
   const confirmBtn = document.getElementById('delete-modal-confirm');
   if (!titleEl || !bodyEl || !confirmBtn) return;
 
-  titleEl.textContent = 'Delete Topic?';
+  titleEl.textContent = 'Delete Conversation?';
   bodyEl.className = 'delete-message';
   bodyEl.innerHTML =
-    '<strong class="delete-target">' + conversationEsc(conversationAnchorCopy(conversation) || 'Topic') + '</strong>' +
-    '<div class="delete-copy">Deletes this topic and all of its messages. This cannot be undone.</div>';
-  confirmBtn.innerHTML = '<i class="fa-solid fa-trash" style="margin-right:6px;"></i>Delete Topic';
+    '<strong class="delete-target">' + conversationEsc(conversationAnchorCopy(conversation) || 'Conversation') + '</strong>' +
+    '<div class="delete-copy">Deletes this conversation and all of its messages. This cannot be undone.</div>';
+  confirmBtn.innerHTML = '<i class="fa-solid fa-trash" style="margin-right:6px;"></i>Delete Conversation';
   document.getElementById('delete-modal')?.classList.add('open');
 }
 
@@ -1357,7 +1566,7 @@ async function deleteConversationSubject(conversationId) {
   if (_conversationDeletingSubject) return;
   const conversation = conversationById(conversationId);
   if (!conversation || !canDeleteConversationSubject(conversation)) {
-    showToast('Could Not Delete Topic', 'error');
+    showToast('Could Not Delete Conversation', 'error');
     return;
   }
 
@@ -1371,10 +1580,10 @@ async function deleteConversationSubject(conversationId) {
     await markConversationNotificationsRead(conversationId);
     removeConversationLocal(conversationId);
     updateConversationRailBadge();
-    showToast('Topic Deleted', 'success');
+    showToast('Conversation Deleted', 'success');
   } catch (err) {
     console.error('delete conversation subject:', err);
-    showToast('Could Not Delete Topic', 'error');
+    showToast('Could Not Delete Conversation', 'error');
   } finally {
     _conversationDeletingSubject = false;
     renderConversationsSidebar();
