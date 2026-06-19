@@ -1109,8 +1109,8 @@ function contrastRatio(a, b) {
 }
 
 const ACCENT_FOREGROUND_CONTRAST_MIN = 4.5;
-const DARK_THEME_CONTRAST_SURFACE = { r: 8, g: 12, b: 18 };
-const LIGHT_THEME_CONTRAST_SURFACE = { r: 228, g: 239, b: 248 };
+const DARK_THEME_CONTRAST_SURFACE = { r: 13, g: 19, b: 28 };
+const LIGHT_THEME_CONTRAST_SURFACE = { r: 220, g: 233, b: 243 };
 
 function themeOppositeColor(lightMode) {
   return lightMode ? '#000000' : '#ffffff';
@@ -1348,11 +1348,11 @@ function applyAccentColor(value) {
   b.setProperty('--muted',  lm ? p.lightMuted  : brightenDarkUiColor(p.muted, .16));
   b.setProperty('--text2',  lm ? p.lightText2  : brightenDarkUiColor(p.text2, .08));
   b.setProperty('--border', lm ? p.lightBorder : brightenDarkUiColor(p.border, .18));
-  b.setProperty('--note-subtext', lm ? 'rgba(12, 28, 44, .68)' : 'rgba(232, 240, 255, .78)');
+  b.setProperty('--note-subtext', lm ? 'rgba(16, 32, 51, .66)' : 'rgba(237, 244, 255, .76)');
   // Ambient glows adapt in both modes
-  b.setProperty('--ambient-a', `rgba(${p.r},${p.g},${p.b},${lm ? '.24' : '.18'})`);
-  b.setProperty('--ambient-b', `rgba(${p.r2},${p.g2},${p.b2},${lm ? '.2' : '.12'})`);
-  b.setProperty('--ambient-c', `rgba(${Math.min(p.r+90,255)},${Math.min(p.g+30,255)},${Math.min(p.b+10,255)},${lm ? '.18' : '.08'})`);
+  b.setProperty('--ambient-a', `rgba(${p.r},${p.g},${p.b},${lm ? '.2' : '.18'})`);
+  b.setProperty('--ambient-b', `rgba(${p.r2},${p.g2},${p.b2},${lm ? '.16' : '.12'})`);
+  b.setProperty('--ambient-c', `rgba(${Math.min(p.r+90,255)},${Math.min(p.g+30,255)},${Math.min(p.b+10,255)},${lm ? '.14' : '.08'})`);
 
   updateColorPickerUI(normalized);
 }
