@@ -35,6 +35,7 @@ function closeTransientSurfaces() {
 
 function prepareAuthenticatedHome() {
   closeTransientSurfaces();
+  if (typeof resetAppNavigationState === 'function') resetAppNavigationState();
   activeFolderId = null;
   sidebarView = 'notes';
   sidebarFilter = '';
@@ -156,6 +157,7 @@ onAuthStateChanged(auth, async user => {
     _sendingFriendRequests = new Set();
     declinedMentionShares = new Set();
     notes = {}; folders = {}; activeId = null; activeFolderId = null; sidebarView = 'notes'; sidebarFilter = '';
+    if (typeof resetAppNavigationState === 'function') resetAppNavigationState();
     showEditorView(false);
     renderSidebar();
     renderNotificationButton();

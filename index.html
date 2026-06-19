@@ -66,6 +66,14 @@
         <button class="app-logo" id="sidebar-logo-btn" type="button" title="Collapse Sidebar" aria-label="Collapse Sidebar">
           <img class="brand-wordmark" src="notas.png" alt="Notas" />
         </button>
+        <div class="app-history-controls" role="group" aria-label="Page navigation">
+          <button class="app-history-btn" id="app-back-btn" type="button" title="Backward" aria-label="Backward" disabled>
+            <i class="fa-solid fa-chevron-left"></i>
+          </button>
+          <button class="app-history-btn" id="app-forward-btn" type="button" title="Forward" aria-label="Forward" disabled>
+            <i class="fa-solid fa-chevron-right"></i>
+          </button>
+        </div>
       </div>
       <div class="sidebar-search">
         <input type="text" id="search-input" placeholder="Search Notes" autocomplete="off" />
@@ -192,13 +200,13 @@
     <div class="modal wide">
       <div class="modal-title"><i class="fa-solid fa-gear" style="margin-right:8px;opacity:.7;"></i>Settings</div>
       <div class="settings-rows">
-        <div class="settings-row">
+        <div class="settings-row theme-settings-row">
           <span class="settings-label"><i class="fa-solid fa-circle-half-stroke"></i>Theme</span>
-          <select class="settings-select" id="theme-select" aria-label="Theme">
-            <option value="system">System</option>
-            <option value="dark">Dark</option>
-            <option value="light">Light</option>
-          </select>
+          <div class="theme-toggle" id="theme-toggle" role="group" aria-label="Theme">
+            <button class="theme-option" type="button" data-theme-mode="light" aria-pressed="false">Light</button>
+            <button class="theme-option" type="button" data-theme-mode="dark" aria-pressed="false">Dark</button>
+            <button class="theme-option" type="button" data-theme-mode="system" aria-pressed="false">System</button>
+          </div>
         </div>
         <div class="settings-row">
           <span class="settings-label"><i class="fa-solid fa-palette"></i>Colour</span>

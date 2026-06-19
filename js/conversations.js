@@ -1574,8 +1574,14 @@ async function deleteConversationSubject(conversationId) {
   renderConversationsSidebar();
 
   try {
-    const anchorRemoved = await removeConversationAnchorFromNote(conversation);
-    if (!anchorRemoved) throw new Error('Conversation subject marker could not be removed from the note.');
+    let anchorRemoved = true;
+    try {
+      anchorRemoved = await removeConversationAnchorFromNote(conversation);
+    } catch (err) {
+      anchorRemoved = false;
+      console.warn('remove conversation anchor marker:', err);
+    }
+    if (!anchorRemoved) console.warn('conversation subject marker cleanup skipped:', conversationId);
     await deleteConversationDocuments(conversationId);
     await markConversationNotificationsRead(conversationId);
     removeConversationLocal(conversationId);

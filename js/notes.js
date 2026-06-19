@@ -166,4 +166,5 @@ function openNote(id) {
   if (isEditable && !isMobile()) setTimeout(() => placeCursorAtEnd(ed), 40);
   if (isMobile()) closeDrawer();
   else if (!sidebarMinimized && window.matchMedia('(orientation: portrait)').matches) setSidebarMinimized(true);
+  if (typeof recordAppNavigationState === 'function') recordAppNavigationState();
 }

@@ -51,11 +51,20 @@ service cloud.firestore {
         && canConverseOnNote(conversationNoteId(conversationId));
     }
 
-    function canDeleteConversation(conversationId) {
-      return canReadConversation(conversationId)
+    function canDeleteExistingConversation(noteId, createdBy) {
+      return signedIn()
         && (
-          get(/databases/$(database)/documents/noteConversations/$(conversationId)).data.createdBy == request.auth.uid
-          || isNoteOwner(conversationNoteId(conversationId))
+          createdBy == request.auth.uid
+          || isNoteOwner(noteId)
+        );
+    }
+
+    function canDeleteConversation(conversationId) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/noteConversations/$(conversationId))
+        && canDeleteExistingConversation(
+          conversationNoteId(conversationId),
+          get(/databases/$(database)/documents/noteConversations/$(conversationId)).data.createdBy
         );
     }
 
@@ -235,10 +244,11 @@ service cloud.firestore {
           "resolved"
         ]);
 
-      allow delete: if canDeleteConversation(conversationId);
+      allow delete: if canDeleteExistingConversation(resource.data.noteId, resource.data.createdBy);
 
       match /messages/{messageId} {
-        allow read: if canReadConversation(conversationId);
+        allow read: if canReadConversation(conversationId)
+          || canDeleteConversation(conversationId);
 
         allow create: if canReadConversation(conversationId)
           && request.resource.data.authorUid == request.auth.uid

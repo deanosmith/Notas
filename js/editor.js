@@ -3500,7 +3500,7 @@ async function clearSentReminder(reminderId) {
   let cloudSynced = true;
   let deliveryDeleted = true;
   try {
-    await setDoc(_getUserDocRef(), { sentReminders: { [reminderId]: null } }, { merge: true });
+    await updateDoc(_getUserDocRef(), { ['sentReminders.' + reminderId]: deleteField() });
   } catch (err) {
     cloudSynced = false;
     console.error('clear sent reminder:', err);
@@ -3512,6 +3512,9 @@ async function clearSentReminder(reminderId) {
     console.warn('delete sent reminder delivery:', err);
   }
   if (cloudSynced && deliveryDeleted) {
+    showToast('Reminder Cleared', 'success');
+  } else if (cloudSynced) {
+    console.warn('sent reminder cleared, recipient cleanup incomplete:', reminderId);
     showToast('Reminder Cleared', 'success');
   } else {
     showToast('Reminder cleared locally; cloud sync failed', 'error');
