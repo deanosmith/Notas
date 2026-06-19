@@ -431,6 +431,141 @@ function updateRailActiveState() {
   });
 }
 
+const APP_NAV_STACK_LIMIT = 80;
+
+function normalizeAppNavigationState(state = {}) {
+  const view = SIDEBAR_VIEWS.has(state.sidebarView) ? state.sidebarView : 'notes';
+  const noteId = state.noteId && notes[state.noteId] ? state.noteId : '';
+  return {
+    sidebarView: view,
+    noteId,
+    sidebarOpen: state.sidebarOpen !== false
+  };
+}
+
+function currentAppNavigationState() {
+  return normalizeAppNavigationState({
+    sidebarView,
+    noteId: activeId || '',
+    sidebarOpen: isSidebarPanelVisible()
+  });
+}
+
+function appNavigationKey(state) {
+  const normalized = normalizeAppNavigationState(state);
+  return [normalized.sidebarView, normalized.noteId, normalized.sidebarOpen ? 'open' : 'closed'].join('|');
+}
+
+function trimAppNavigationStack(stack) {
+  if (stack.length > APP_NAV_STACK_LIMIT) stack.splice(0, stack.length - APP_NAV_STACK_LIMIT);
+}
+
+function updateAppNavigationButtons() {
+  const backBtn = document.getElementById('app-back-btn');
+  const forwardBtn = document.getElementById('app-forward-btn');
+  if (backBtn) {
+    backBtn.disabled = appNavBackStack.length === 0;
+    backBtn.setAttribute('aria-disabled', backBtn.disabled ? 'true' : 'false');
+  }
+  if (forwardBtn) {
+    forwardBtn.disabled = appNavForwardStack.length === 0;
+    forwardBtn.setAttribute('aria-disabled', forwardBtn.disabled ? 'true' : 'false');
+  }
+}
+
+function resetAppNavigationState() {
+  appNavBackStack = [];
+  appNavForwardStack = [];
+  appNavCurrentState = null;
+  appNavCurrentKey = '';
+  appNavApplying = false;
+  updateAppNavigationButtons();
+}
+
+function recordAppNavigationState() {
+  const next = currentAppNavigationState();
+  const nextKey = appNavigationKey(next);
+  if (appNavApplying) {
+    updateAppNavigationButtons();
+    return;
+  }
+  if (!appNavCurrentKey) {
+    appNavCurrentState = next;
+    appNavCurrentKey = nextKey;
+    updateAppNavigationButtons();
+    return;
+  }
+  if (nextKey === appNavCurrentKey) {
+    updateAppNavigationButtons();
+    return;
+  }
+  appNavBackStack.push(appNavCurrentState);
+  trimAppNavigationStack(appNavBackStack);
+  appNavForwardStack = [];
+  appNavCurrentState = next;
+  appNavCurrentKey = nextKey;
+  updateAppNavigationButtons();
+}
+
+function noteVisibleForNavigation(noteId, view) {
+  const note = noteId ? notes[noteId] : null;
+  if (!note) return false;
+  return view === 'trash' || !isTrashedNote(note);
+}
+
+function applyAppNavigationState(state) {
+  const target = normalizeAppNavigationState(state);
+  appNavApplying = true;
+  try {
+    sidebarView = target.sidebarView;
+    if (target.sidebarOpen) {
+      setSidebarView(target.sidebarView);
+    } else {
+      renderSidebar();
+      if (isMobile()) closeDrawer();
+      else setSidebarMinimized(true);
+    }
+
+    if (noteVisibleForNavigation(target.noteId, target.sidebarView)) {
+      openNote(target.noteId);
+    } else if (!activeId || !notes[activeId] || (isTrashedNote(notes[activeId]) && target.sidebarView !== 'trash')) {
+      const ids = sortedIds();
+      ids.length ? openNote(ids[0]) : showEditorView(false);
+    }
+
+    if (!target.sidebarOpen) {
+      if (isMobile()) closeDrawer();
+      else setSidebarMinimized(true);
+    }
+  } finally {
+    const actual = currentAppNavigationState();
+    appNavCurrentState = actual;
+    appNavCurrentKey = appNavigationKey(actual);
+    appNavApplying = false;
+    updateRailActiveState();
+    updateAppNavigationButtons();
+  }
+}
+
+function navigateAppHistory(direction) {
+  const stack = direction === 'forward' ? appNavForwardStack : appNavBackStack;
+  const target = stack.pop();
+  if (!target) {
+    updateAppNavigationButtons();
+    return;
+  }
+
+  const current = appNavCurrentState || currentAppNavigationState();
+  if (direction === 'forward') appNavBackStack.push(current);
+  else appNavForwardStack.push(current);
+  trimAppNavigationStack(appNavBackStack);
+  trimAppNavigationStack(appNavForwardStack);
+
+  appNavCurrentState = normalizeAppNavigationState(target);
+  appNavCurrentKey = appNavigationKey(appNavCurrentState);
+  applyAppNavigationState(appNavCurrentState);
+}
+
 function setSidebarView(view) {
   sidebarView = SIDEBAR_VIEWS.has(view) ? view : 'notes';
   if (sidebarMinimized && !isMobile()) setSidebarMinimized(false);
@@ -441,6 +576,7 @@ function setSidebarView(view) {
     activeId ? openNote(activeId) : showEditorView(false);
   }
   renderSidebar();
+  recordAppNavigationState();
 }
 
 function toggleSidebarView(view) {
@@ -1214,9 +1350,9 @@ function applyAccentColor(value) {
   b.setProperty('--border', lm ? p.lightBorder : brightenDarkUiColor(p.border, .18));
   b.setProperty('--note-subtext', lm ? 'rgba(12, 28, 44, .68)' : 'rgba(232, 240, 255, .78)');
   // Ambient glows adapt in both modes
-  b.setProperty('--ambient-a', `rgba(${p.r},${p.g},${p.b},${lm ? '.14' : '.18'})`);
-  b.setProperty('--ambient-b', `rgba(${p.r2},${p.g2},${p.b2},.12)`);
-  b.setProperty('--ambient-c', `rgba(${Math.min(p.r+90,255)},${Math.min(p.g+30,255)},${Math.min(p.b+10,255)},${lm ? '.1' : '.08'})`);
+  b.setProperty('--ambient-a', `rgba(${p.r},${p.g},${p.b},${lm ? '.24' : '.18'})`);
+  b.setProperty('--ambient-b', `rgba(${p.r2},${p.g2},${p.b2},${lm ? '.2' : '.12'})`);
+  b.setProperty('--ambient-c', `rgba(${Math.min(p.r+90,255)},${Math.min(p.g+30,255)},${Math.min(p.b+10,255)},${lm ? '.18' : '.08'})`);
 
   updateColorPickerUI(normalized);
 }
@@ -1277,6 +1413,15 @@ function applyTheme() {
   isLightMode = resolveLightMode();
   document.body.classList.toggle('light-mode', isLightMode);
   applyAccentColor(accentColor);
+  updateThemeToggleUI();
+}
+
+function updateThemeToggleUI() {
+  document.querySelectorAll('[data-theme-mode]').forEach(btn => {
+    const active = btn.dataset.themeMode === themeMode;
+    btn.classList.toggle('active', active);
+    btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+  });
 }
 
 function applyFontSize() {
@@ -1321,7 +1466,7 @@ function initSettings() {
 
   document.getElementById('profile-settings-btn').addEventListener('click', () => {
     if (isMobile()) closeDrawer();
-    document.getElementById('theme-select').value = themeMode;
+    updateThemeToggleUI();
     const sidebarPreviewToggle = document.getElementById('sidebar-preview-toggle');
     if (sidebarPreviewToggle) sidebarPreviewToggle.checked = sidebarNotePreviewMode === 'title-text';
     updateColorPickerUI(accentColor);
@@ -1337,10 +1482,14 @@ function initSettings() {
     closeColorPopover();
     settingsModal.classList.remove('open');
   });
-  document.getElementById('theme-select').addEventListener('change', e => {
-    themeMode = e.target.value;
-    localStorage.setItem('notas_theme', themeMode);
-    applyTheme();
+  document.querySelectorAll('[data-theme-mode]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const nextMode = btn.dataset.themeMode;
+      if (!['light', 'dark', 'system'].includes(nextMode) || nextMode === themeMode) return;
+      themeMode = nextMode;
+      localStorage.setItem('notas_theme', themeMode);
+      applyTheme();
+    });
   });
   document.getElementById('sidebar-preview-toggle')?.addEventListener('change', e => {
     sidebarNotePreviewMode = e.target.checked ? 'title-text' : 'title-only';

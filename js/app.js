@@ -53,6 +53,8 @@ showEditorView(false);
 document.getElementById('drawer-btn').addEventListener('click',     toggleDrawer);
 document.getElementById('mob-logo-btn').addEventListener('click',   toggleDrawer);
 document.getElementById('sidebar-logo-btn').addEventListener('click', toggleSidebarFromLogo);
+document.getElementById('app-back-btn')?.addEventListener('click', () => navigateAppHistory('back'));
+document.getElementById('app-forward-btn')?.addEventListener('click', () => navigateAppHistory('forward'));
 document.getElementById('sidebar').addEventListener('click', () => { if (sidebarMinimized && !isMobile()) setSidebarMinimized(false); });
 document.querySelectorAll('[data-sidebar-view]').forEach(btn => {
   btn.addEventListener('click', () => toggleSidebarView(btn.dataset.sidebarView));
@@ -690,6 +692,7 @@ initFolderColorPicker();
 renderNotificationButton();
 renderAlarmButton();
 renderProfileConnectionUI();
+updateAppNavigationButtons();
 // Apply persisted sidebar collapsed state (desktop only)
 sidebarMinimized = localStorage.getItem('notas_sidebar_minimized') === '1';
 if (sidebarMinimized && !isMobile()) setSidebarMinimized(true);
