@@ -35,10 +35,11 @@ function listenToNotes() {
         if (document.activeElement !== ed && document.activeElement !== titleEl) {
           titleEl.value = d.title || 'Untitled Note';
           ed.innerHTML  = renderMarkdownContent(d.content || '');
+          normalizeCodeThemeStyles(ed);
           linkifyTextNodes(ed); ensureLinkAttrs(ed);
           restoreChecklistState(ed); restoreAlarmMarks(ed);
           if (typeof restoreConversationAnchorMarks === 'function') restoreConversationAnchorMarks(ed);
-          decorateTables(ed); refreshEmpty(ed); updateCounts();
+          decorateTables(ed); decorateNoteImages(ed); refreshEmpty(ed); updateCounts();
         }
       }
     });

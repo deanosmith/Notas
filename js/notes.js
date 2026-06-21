@@ -143,12 +143,14 @@ function openNote(id) {
   const ed = document.getElementById('editor');
   ed.contentEditable = isEditable ? 'true' : 'false';
   ed.innerHTML = renderMarkdownContent(note.content || '');
+  normalizeCodeThemeStyles(ed);
   const linkified = linkifyTextNodes(ed);
   ensureLinkAttrs(ed);
   restoreChecklistState(ed);
   restoreAlarmMarks(ed);
   if (typeof restoreConversationAnchorMarks === 'function') restoreConversationAnchorMarks(ed);
   decorateTables(ed);
+  decorateNoteImages(ed);
   restoreCollapsedState(id);
   const cleanContent = getCleanHTML();
   if (linkified || cleanContent !== (note.content || '')) note.content = cleanContent;

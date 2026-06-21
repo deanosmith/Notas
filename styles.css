@@ -178,6 +178,7 @@ html, body {
 }
 
 body {
+  background-color: var(--bg);
   background:
     radial-gradient(circle at 16% 18%, var(--ambient-a), transparent 28%),
     radial-gradient(circle at 82% 10%, var(--ambient-c), transparent 24%),
@@ -185,6 +186,14 @@ body {
     linear-gradient(180deg, #08131e 0%, var(--bg) 58%, #03070d 100%);
   position: relative;
   isolation: isolate;
+  transition: background-color .18s ease, color .18s ease;
+}
+
+body.accent-scrubbing,
+body.accent-scrubbing *,
+body.accent-scrubbing *::before,
+body.accent-scrubbing *::after {
+  transition-property: color, border-color, box-shadow, opacity, transform !important;
 }
 
 body::before,
@@ -377,7 +386,7 @@ body.light-mode .rail-btn.rail-primary.active {
   content: '';
   position: absolute;
   right: -104%;
-  bottom: -32%;
+  bottom: -24%;
   width: 210%;
   height: 108%;
   pointer-events: none;
@@ -391,7 +400,7 @@ body.light-mode .rail-btn.rail-primary.active {
 }
 body.light-mode #sidebar::after {
   right: -104%;
-  bottom: -32%;
+  bottom: -24%;
   width: 210%;
   height: 110%;
   background:
@@ -703,10 +712,18 @@ body.light-mode #main::before {
 .editor ul, .editor ol { margin: 0 0 12px 22px; }
 .editor li { margin: 4px 0; }
 .editor blockquote { border-left: 3px solid var(--accent); padding: 3px 0 3px 18px; color: var(--muted); margin: 0 0 12px; font-style: italic; }
-.editor code { font-family: var(--mono); background: var(--surface2); color: var(--accent-h); padding: 2px 6px; border-radius: 5px; }
-.editor pre { background: var(--surface2); border: 1px solid var(--border); padding: 16px 20px; border-radius: var(--radius-sm); overflow-x: auto; margin: 0 0 12px; }
-.editor pre code { background: none; padding: 0; color: var(--text2); }
+.editor code { font-family: var(--mono); background: rgba(var(--orb-r),var(--orb-g),var(--orb-b),.14); color: var(--accent-ink, var(--accent)); padding: 2px 6px; border: 1px solid rgba(var(--orb-r),var(--orb-g),var(--orb-b),.24); border-radius: 5px; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+.editor pre { background: linear-gradient(180deg, rgba(var(--orb-r),var(--orb-g),var(--orb-b),.08), rgba(255,255,255,.025)); border: 1px solid var(--border); padding: 16px 20px; border-radius: var(--radius-sm); overflow-x: auto; margin: 0 0 12px; }
+.editor pre code { background: none; border: 0; padding: 0; color: var(--text2); }
 .editor hr { border: none; border-top: 1px solid var(--border); margin: 24px 0; }
+.editor .note-image-block { position: relative; display: block; width: fit-content; max-width: 100%; margin: 0 0 14px; line-height: 0; white-space: normal; }
+.editor .note-image { display: block; max-width: 100%; height: auto; border-radius: var(--radius-sm); border: 1px solid var(--glass-border); background: rgba(255,255,255,.035); box-shadow: 0 10px 26px rgba(0,0,0,.18); }
+.editor .note-image-block.has-image-controls { -webkit-user-select: none; user-select: none; }
+.editor .note-image-resize-handle { position: absolute; right: -7px; bottom: -7px; width: 16px; height: 16px; border-radius: 50%; border: 1px solid rgba(var(--orb-r),var(--orb-g),var(--orb-b),.46); background: linear-gradient(135deg, var(--accent-h), var(--accent)); box-shadow: 0 5px 14px rgba(0,0,0,.24), inset 0 1px 0 rgba(255,255,255,.28); cursor: nwse-resize; touch-action: none; }
+.editor .note-image-resize-handle::before { content: ''; position: absolute; inset: 4px; border-right: 2px solid var(--accent-text); border-bottom: 2px solid var(--accent-text); opacity: .72; }
+body.light-mode .editor code { background: rgba(var(--orb-r),var(--orb-g),var(--orb-b),.11); color: var(--accent-ink, var(--accent)); border-color: rgba(var(--orb-r),var(--orb-g),var(--orb-b),.24); }
+body.light-mode .editor pre { background: rgba(var(--orb-r),var(--orb-g),var(--orb-b),.06); }
+body.light-mode .editor .note-image { background: rgba(0,0,0,.035); box-shadow: 0 10px 24px rgba(12,28,44,.12); }
 
 /* Checklist */
 .editor ul.checklist { --checklist-indent: 48px; display: flow-root; list-style: none; margin: 0 0 12px; padding-left: 0; }

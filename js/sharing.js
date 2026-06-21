@@ -3253,8 +3253,9 @@ function _subscribeSharedNote(noteId) {
       if (document.activeElement !== ed && document.activeElement !== titleEl) {
         titleEl.value = d.title || 'Untitled Note';
         ed.innerHTML  = renderMarkdownContent(d.content || '');
+        normalizeCodeThemeStyles(ed);
         linkifyTextNodes(ed); ensureLinkAttrs(ed);
-        restoreChecklistState(ed); restoreAlarmMarks(ed); decorateTables(ed); refreshEmpty(ed); updateCounts();
+        restoreChecklistState(ed); restoreAlarmMarks(ed); decorateTables(ed); decorateNoteImages(ed); refreshEmpty(ed); updateCounts();
         openNote(noteId);
       }
     }
