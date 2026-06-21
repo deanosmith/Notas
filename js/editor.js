@@ -94,9 +94,11 @@ function restoreUndoSnapshot(snapshot) {
   const ed = getEd();
   if (!ed || !snapshot) return;
   ed.innerHTML = snapshot.html;
+  normalizeCodeThemeStyles(ed);
   restoreChecklistState(ed);
   restoreAlarmMarks(ed);
   decorateTables(ed);
+  decorateNoteImages(ed);
   refreshEmpty(ed);
   restoreEditorSelection(ed, snapshot.selection);
   ed.scrollTop = Math.min(snapshot.scrollTop || 0, ed.scrollHeight);
@@ -167,6 +169,325 @@ function renderMarkdownContent(content) {
   if (looksLikeHtml(content)) return content;
   if (window.marked?.parse) return window.marked.parse(content);
   return esc(content).replace(/\n/g, '<br>');
+}
+
+const NOTE_IMAGE_MAX_SOURCE_BYTES = 12 * 1024 * 1024;
+const NOTE_IMAGE_MAX_EMBED_BYTES = 760 * 1024;
+const NOTE_IMAGE_MAX_DIMENSION = 1600;
+const NOTE_IMAGE_DEFAULT_WIDTH = 720;
+const NOTE_IMAGE_MIN_WIDTH = 120;
+
+function clipboardImageFile(data) {
+  if (!data) return null;
+  const items = Array.from(data.items || []);
+  for (const item of items) {
+    if (item.kind === 'file' && /^image\//i.test(item.type || '')) {
+      const file = item.getAsFile?.();
+      if (file) return file;
+    }
+  }
+  return Array.from(data.files || []).find(file => /^image\//i.test(file.type || '')) || null;
+}
+
+function dataUrlByteLength(dataUrl) {
+  const base64 = String(dataUrl || '').split(',')[1] || '';
+  return Math.ceil(base64.length * 3 / 4);
+}
+
+function fileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(reader.error || new Error('image-read-failed'));
+    reader.readAsDataURL(file);
+  });
+}
+
+function blobToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(reader.error || new Error('image-read-failed'));
+    reader.readAsDataURL(blob);
+  });
+}
+
+function loadImageDataUrl(dataUrl) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('image-load-failed'));
+    img.src = dataUrl;
+  });
+}
+
+function canvasToImageDataUrl(canvas, type, quality) {
+  return new Promise(resolve => {
+    if (!canvas.toBlob) {
+      resolve(canvas.toDataURL(type, quality));
+      return;
+    }
+    canvas.toBlob(blob => {
+      if (!blob) {
+        resolve(canvas.toDataURL(type, quality));
+        return;
+      }
+      blobToDataUrl(blob).then(resolve, () => resolve(canvas.toDataURL(type, quality)));
+    }, type, quality);
+  });
+}
+
+function drawImageToCanvas(image, maxDimension) {
+  const sourceWidth = image.naturalWidth || image.width || NOTE_IMAGE_DEFAULT_WIDTH;
+  const sourceHeight = image.naturalHeight || image.height || sourceWidth;
+  const scale = Math.min(1, maxDimension / Math.max(sourceWidth, sourceHeight));
+  const width = Math.max(1, Math.round(sourceWidth * scale));
+  const height = Math.max(1, Math.round(sourceHeight * scale));
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(image, 0, 0, width, height);
+  return { canvas, width, height };
+}
+
+async function preparePastedImage(file) {
+  if (!file || !/^image\//i.test(file.type || '')) throw new Error('image-unsupported');
+  if (file.size > NOTE_IMAGE_MAX_SOURCE_BYTES) throw new Error('image-source-too-large');
+  const original = await fileToDataUrl(file);
+  const originalBytes = dataUrlByteLength(original);
+  if (/^image\/gif$/i.test(file.type || '')) {
+    if (originalBytes <= NOTE_IMAGE_MAX_EMBED_BYTES) return { src: original, width: null, height: null };
+    throw new Error('image-too-large');
+  }
+  const image = await loadImageDataUrl(original);
+  const naturalWidth = image.naturalWidth || image.width || NOTE_IMAGE_DEFAULT_WIDTH;
+  const naturalHeight = image.naturalHeight || image.height || naturalWidth;
+  if (originalBytes <= NOTE_IMAGE_MAX_EMBED_BYTES && Math.max(naturalWidth, naturalHeight) <= NOTE_IMAGE_MAX_DIMENSION) {
+    return { src: original, width: naturalWidth, height: naturalHeight };
+  }
+
+  for (const maxDimension of [NOTE_IMAGE_MAX_DIMENSION, 1280, 1024, 860]) {
+    const { canvas, width, height } = drawImageToCanvas(image, maxDimension);
+    for (const quality of [.86, .74, .62]) {
+      const src = await canvasToImageDataUrl(canvas, 'image/webp', quality);
+      if (dataUrlByteLength(src) <= NOTE_IMAGE_MAX_EMBED_BYTES) return { src, width, height };
+    }
+  }
+  throw new Error('image-too-large');
+}
+
+function safeNoteImageSrc(src) {
+  return /^(https?:\/\/|data:image\/(?:png|jpe?g|gif|webp);base64,)/i.test(String(src || '').trim());
+}
+
+function normalizedImageWidth(value) {
+  const width = Math.round(parseFloat(value));
+  return Number.isFinite(width) && width >= NOTE_IMAGE_MIN_WIDTH ? width : null;
+}
+
+function normalizeNoteImageElement(img) {
+  if (!img) return null;
+  const src = img.getAttribute('src') || '';
+  if (!safeNoteImageSrc(src)) {
+    img.remove();
+    return null;
+  }
+  const styledWidth = normalizedImageWidth(img.style?.width);
+  if (styledWidth && !img.getAttribute('width')) img.setAttribute('width', String(styledWidth));
+  img.classList.add('note-image');
+  img.dataset.noteImage = '1';
+  img.removeAttribute('height');
+  img.removeAttribute('contenteditable');
+  img.setAttribute('draggable', 'false');
+  return img;
+}
+
+function createNoteImageElement(src, name, width) {
+  const img = document.createElement('img');
+  img.src = src;
+  img.alt = name ? 'Pasted image: ' + name : 'Pasted image';
+  normalizeNoteImageElement(img);
+  const displayWidth = normalizedImageWidth(width) || NOTE_IMAGE_DEFAULT_WIDTH;
+  img.setAttribute('width', String(Math.min(displayWidth, NOTE_IMAGE_DEFAULT_WIDTH)));
+  return img;
+}
+
+function createNoteImageBlock(img) {
+  const block = document.createElement('span');
+  block.className = 'note-image-block';
+  block.appendChild(img);
+  return block;
+}
+
+function editorContainsRange(ed, range) {
+  if (!ed || !range) return false;
+  const common = range.commonAncestorContainer;
+  return common === ed || ed.contains(common.nodeType === Node.ELEMENT_NODE ? common : common.parentNode);
+}
+
+function insertNoteImageElement(img, range) {
+  const ed = getEd();
+  if (!ed || !img) return false;
+  const targetRange = editorContainsRange(ed, range) ? range : getEditorSelectionRange();
+  if (!targetRange) return false;
+  const block = createNoteImageBlock(img);
+  const marker = document.createTextNode('\u200b');
+  const frag = document.createDocumentFragment();
+  frag.appendChild(block);
+  frag.appendChild(marker);
+  targetRange.deleteContents();
+  targetRange.insertNode(frag);
+  decorateNoteImages(ed);
+  const caret = document.createRange();
+  caret.setStart(marker, 1);
+  caret.collapse(true);
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(caret);
+  ed.focus();
+  return true;
+}
+
+async function insertPastedImageFile(file, range = null, noteId = activeId) {
+  if (isSelectionInTable()) {
+    showToast('Tables Support Simple Text Only', 'error');
+    return false;
+  }
+  try {
+    const prepared = await preparePastedImage(file);
+    if (noteId && activeId !== noteId) return false;
+    const img = createNoteImageElement(prepared.src, file.name || '', prepared.width);
+    if (!insertNoteImageElement(img, range)) return false;
+    getEd().dispatchEvent(new Event('input'));
+    return true;
+  } catch (err) {
+    console.error('paste image:', err);
+    const message = err?.message === 'image-too-large' || err?.message === 'image-source-too-large'
+      ? 'Image Too Large For This Note'
+      : 'Could Not Paste Image';
+    showToast(message, 'error');
+    return false;
+  }
+}
+
+function ensureNoteImageBlock(img) {
+  let block = img.closest('.note-image-block');
+  if (block && block.contains(img)) return block;
+  block = document.createElement('span');
+  block.className = 'note-image-block';
+  img.before(block);
+  block.appendChild(img);
+  return block;
+}
+
+function createNoteImageResizeHandle() {
+  const handle = document.createElement('span');
+  handle.className = 'note-image-resize-handle';
+  handle.dataset.noteImageResize = '1';
+  handle.setAttribute('contenteditable', 'false');
+  handle.setAttribute('aria-hidden', 'true');
+  return handle;
+}
+
+function decorateNoteImages(root = getEd()) {
+  if (!root) return false;
+  let changed = false;
+  const editable = root.isContentEditable || root.getAttribute?.('contenteditable') === 'true';
+  [...root.querySelectorAll('img')].forEach(img => {
+    if (img.closest('.note-image-resize-handle')) return;
+    const normalized = normalizeNoteImageElement(img);
+    if (!normalized) {
+      changed = true;
+      return;
+    }
+    const existingBlock = img.closest('.note-image-block');
+    const block = existingBlock && existingBlock.contains(img) ? existingBlock : ensureNoteImageBlock(img);
+    if (!existingBlock) changed = true;
+    block.classList.add('note-image-block');
+    block.classList.toggle('has-image-controls', editable);
+    if (editable) block.setAttribute('contenteditable', 'false');
+    else block.removeAttribute('contenteditable');
+    block.querySelectorAll(':scope > .note-image-resize-handle').forEach((handle, index) => {
+      if (index > 0 || !editable) {
+        handle.remove();
+        changed = true;
+      }
+    });
+    if (editable && !block.querySelector(':scope > .note-image-resize-handle')) {
+      block.appendChild(createNoteImageResizeHandle());
+      changed = true;
+    }
+  });
+  return changed;
+}
+
+function stripNoteImageEditorChrome(root) {
+  root.querySelectorAll('.note-image-resize-handle').forEach(el => el.remove());
+  root.querySelectorAll('img').forEach(img => {
+    normalizeNoteImageElement(img);
+    img.removeAttribute('draggable');
+  });
+  root.querySelectorAll('.note-image-block').forEach(block => {
+    block.classList.remove('has-image-controls');
+    block.removeAttribute('contenteditable');
+    if (!block.querySelector('img')) {
+      block.remove();
+    }
+  });
+}
+
+function startNoteImageResize(e, handle) {
+  if (!activeId || !canEditNote(notes[activeId])) return;
+  const block = handle?.closest?.('.note-image-block');
+  const img = block?.querySelector?.('img.note-image');
+  if (!block || !img) return;
+  e.preventDefault();
+  e.stopPropagation();
+  pushUndo();
+  const startRect = img.getBoundingClientRect();
+  const editorRect = getEd().getBoundingClientRect();
+  const startWidth = Math.max(NOTE_IMAGE_MIN_WIDTH, startRect.width || normalizedImageWidth(img.getAttribute('width')) || NOTE_IMAGE_DEFAULT_WIDTH);
+  const maxWidth = Math.max(NOTE_IMAGE_MIN_WIDTH, Math.min(NOTE_IMAGE_DEFAULT_WIDTH * 2, editorRect.width - 42));
+  document.body.style.cursor = 'nwse-resize';
+  document.body.style.userSelect = 'none';
+  block.classList.add('image-resizing');
+  try { handle.setPointerCapture?.(e.pointerId); } catch (_) {}
+
+  const move = evt => {
+    evt.preventDefault();
+    const delta = evt.clientX - e.clientX;
+    const width = Math.max(NOTE_IMAGE_MIN_WIDTH, Math.min(maxWidth, Math.round(startWidth + delta)));
+    img.setAttribute('width', String(width));
+  };
+
+  const finish = () => {
+    document.removeEventListener('pointermove', move);
+    document.removeEventListener('pointerup', finish);
+    document.removeEventListener('pointercancel', finish);
+    try { handle.releasePointerCapture?.(e.pointerId); } catch (_) {}
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+    block.classList.remove('image-resizing');
+    getEd().dispatchEvent(new Event('input'));
+    scheduleUndoSnapshot();
+  };
+
+  document.addEventListener('pointermove', move, { passive: false });
+  document.addEventListener('pointerup', finish);
+  document.addEventListener('pointercancel', finish);
+}
+
+function normalizeCodeThemeStyles(root = getEd()) {
+  root.querySelectorAll?.('code, pre, code [style], pre [style]').forEach(el => {
+    el.style.color = '';
+    el.style.background = '';
+    el.style.backgroundColor = '';
+    el.style.borderColor = '';
+    el.style.fontFamily = '';
+    el.style.fontSize = '';
+    if (!el.getAttribute('style')) el.removeAttribute('style');
+  });
 }
 
 function restoreChecklistState(root) {
@@ -935,8 +1256,10 @@ function getCleanHTML() {
   });
   cleanupInlineCodePlaceholders(clone);
   stripZeroWidthText(clone);
+  normalizeCodeThemeStyles(clone);
   normalizeChecklistStructure(clone);
   stripTableEditorChrome(clone);
+  stripNoteImageEditorChrome(clone);
   sanitizeEditorTables(clone);
   clone.querySelectorAll('[style]').forEach(el => { el.style.display = ''; if (!el.getAttribute('style')) el.removeAttribute('style'); });
   return clone.innerHTML;

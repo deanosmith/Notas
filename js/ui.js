@@ -1071,6 +1071,7 @@ const ACCENT_PALETTES = {
 };
 const DEFAULT_ACCENT = ACCENT_PALETTES.blue.accent;
 let accentColor = localStorage.getItem('notas_accent') || DEFAULT_ACCENT;
+let _accentApplyFrame = 0;
 
 function clampColor(n) {
   return Math.max(0, Math.min(255, Math.round(n)));
@@ -1360,7 +1361,11 @@ function applyAccentColor(value) {
 function setAccentColor(value) {
   accentColor = normalizeAccentColor(value);
   localStorage.setItem('notas_accent', accentColor);
-  applyAccentColor(accentColor);
+  if (_accentApplyFrame) cancelAnimationFrame(_accentApplyFrame);
+  _accentApplyFrame = requestAnimationFrame(() => {
+    _accentApplyFrame = 0;
+    applyAccentColor(accentColor);
+  });
 }
 
 let pickerHsv = rgbToHsv(hexToRgb(normalizeAccentColor(accentColor)) || hexToRgb(DEFAULT_ACCENT));
@@ -1412,6 +1417,10 @@ function resolveLightMode() {
 function applyTheme() {
   isLightMode = resolveLightMode();
   document.body.classList.toggle('light-mode', isLightMode);
+  if (_accentApplyFrame) {
+    cancelAnimationFrame(_accentApplyFrame);
+    _accentApplyFrame = 0;
+  }
   applyAccentColor(accentColor);
   updateThemeToggleUI();
 }
@@ -1447,11 +1456,24 @@ function initSettings() {
   const colorSv = document.getElementById('color-sv');
   const colorHue = document.getElementById('color-hue');
   const colorInputs = ['color-r', 'color-g', 'color-b'].map(id => document.getElementById(id)).filter(Boolean);
+  let accentScrubTimer = 0;
 
   function closeColorPopover() {
     if (!colorPopover) return;
     colorPopover.hidden = true;
     pickerBtn?.setAttribute('aria-expanded', 'false');
+    setAccentScrubbing(false);
+  }
+
+  function setAccentScrubbing(active) {
+    clearTimeout(accentScrubTimer);
+    if (active) {
+      document.body.classList.add('accent-scrubbing');
+      return;
+    }
+    accentScrubTimer = setTimeout(() => {
+      document.body.classList.remove('accent-scrubbing');
+    }, 90);
   }
 
   function updateFromSaturationValueEvent(e) {
@@ -1517,6 +1539,7 @@ function initSettings() {
 
   colorSv?.addEventListener('pointerdown', e => {
     e.preventDefault();
+    setAccentScrubbing(true);
     colorSv.setPointerCapture(e.pointerId);
     updateFromSaturationValueEvent(e);
   });
@@ -1525,10 +1548,13 @@ function initSettings() {
     updateFromSaturationValueEvent(e);
   });
 
+  colorHue?.addEventListener('pointerdown', () => setAccentScrubbing(true));
   colorHue?.addEventListener('input', e => {
     pickerHsv.h = Number(e.target.value) || 0;
     setAccentColor(colorFromPickerHsv());
   });
+  document.addEventListener('pointerup', () => setAccentScrubbing(false));
+  document.addEventListener('pointercancel', () => setAccentScrubbing(false));
 
   colorInputs.forEach(input => {
     input.addEventListener('input', setPickerFromRgbInputs);

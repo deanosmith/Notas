@@ -181,6 +181,7 @@ editorEl.addEventListener('input', e => {
   }
   cleanupLiveInlineCodeBoundaries(editorEl, e);
   decorateTables(editorEl);
+  decorateNoteImages(editorEl);
   refreshEmpty(editorEl);
   if (!syncActiveNoteFromEditor()) return;
   renderAlarmButton();
@@ -219,6 +220,11 @@ editorEl.addEventListener('scroll', hideConversationSelectionPopover);
 document.addEventListener('selectionchange', scheduleConversationSelectionPopover);
 
 editorEl.addEventListener('pointerdown', e => {
+  const imageResizeHandle = e.target.closest?.('[data-note-image-resize]');
+  if (imageResizeHandle && editorEl.contains(imageResizeHandle)) {
+    startNoteImageResize(e, imageResizeHandle);
+    return;
+  }
   const reorderHandle = e.target.closest?.('[data-table-reorder]');
   if (reorderHandle && editorEl.contains(reorderHandle)) {
     startTableReorder(e, reorderHandle);
@@ -238,6 +244,12 @@ editorEl.addEventListener('mousedown', e => {
 });
 
 editorEl.addEventListener('click', e => {
+  const imageResizeHandle = e.target.closest?.('[data-note-image-resize]');
+  if (imageResizeHandle && editorEl.contains(imageResizeHandle)) {
+    e.preventDefault();
+    e.stopPropagation();
+    return;
+  }
   const reorderHandle = e.target.closest?.('[data-table-reorder]');
   if (reorderHandle && editorEl.contains(reorderHandle)) {
     e.preventDefault();
@@ -540,6 +552,17 @@ editorEl.addEventListener('keydown', e => {
 });
 
 editorEl.addEventListener('paste', e => {
+  const imageFile = clipboardImageFile(e.clipboardData);
+  if (imageFile) {
+    e.preventDefault();
+    const range = getEditorSelectionRange()?.cloneRange();
+    const pastedNoteId = activeId;
+    pushUndo();
+    insertPastedImageFile(imageFile, range, pastedNoteId).then(ok => {
+      if (!ok) scheduleUndoSnapshot();
+    });
+    return;
+  }
   e.preventDefault();
   pushUndo();
   const html = e.clipboardData.getData('text/html');
