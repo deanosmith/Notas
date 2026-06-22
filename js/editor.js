@@ -99,6 +99,7 @@ function restoreUndoSnapshot(snapshot) {
   restoreAlarmMarks(ed);
   decorateTables(ed);
   decorateNoteImages(ed);
+  recomputeCollapsedSections();
   refreshEmpty(ed);
   restoreEditorSelection(ed, snapshot.selection);
   ed.scrollTop = Math.min(snapshot.scrollTop || 0, ed.scrollHeight);
@@ -1062,6 +1063,62 @@ function removeEmptyListItem(li) {
   return true;
 }
 
+function fragmentHasMeaningfulContent(fragment) {
+  if (!fragment) return false;
+  if (fragment.textContent.replace(/\u00a0/g, ' ').replace(/\u200b/g, '').trim()) return true;
+  return !!fragment.querySelector?.('img, table, hr, pre, blockquote, .note-image-block, .note-alarm, .mention, .note-conversation-anchor');
+}
+
+function isCaretAtStartOfListItem(li) {
+  const sel = window.getSelection();
+  if (!li || !sel || !sel.rangeCount || !sel.isCollapsed) return false;
+  const range = sel.getRangeAt(0);
+  const owner = range.startContainer.nodeType === Node.ELEMENT_NODE
+    ? range.startContainer
+    : range.startContainer.parentElement;
+  if (!owner || !li.contains(owner)) return false;
+
+  const beforeCaret = document.createRange();
+  beforeCaret.selectNodeContents(li);
+  try {
+    beforeCaret.setEnd(range.startContainer, range.startOffset);
+  } catch (_) {
+    return false;
+  }
+  return !fragmentHasMeaningfulContent(beforeCaret.cloneContents());
+}
+
+function unlistLeadingListItem(li) {
+  const list = li?.parentElement;
+  if (!list || !/^(UL|OL)$/.test(list.tagName) || list.classList.contains('checklist')) return false;
+  if (list.parentElement !== getEd()) return false;
+  if (li.previousElementSibling) return false;
+
+  const p = document.createElement('p');
+  const trailingLists = [];
+  while (li.firstChild) {
+    const child = li.firstChild;
+    if (child.nodeType === Node.ELEMENT_NODE && /^(UL|OL)$/.test(child.tagName)) {
+      trailingLists.push(child);
+      child.remove();
+    } else {
+      p.appendChild(child);
+    }
+  }
+  if (!fragmentHasMeaningfulContent(p)) p.appendChild(document.createElement('br'));
+
+  const inserts = [p, ...trailingLists];
+  if (list.children.length === 1) {
+    list.replaceWith(...inserts);
+  } else {
+    list.before(...inserts);
+    li.remove();
+  }
+
+  placeCursorAtStart(p);
+  return true;
+}
+
 function decorateLink(link, href) {
   link.href = href;
   link.target = '_blank';
@@ -1198,12 +1255,59 @@ function showEditorView(show) {
 
 /* Delete Modal */
 
+const HEADER_DOMAIN_END_ATTR = 'data-header-domain-end';
+
+function headingLevel(el) {
+  return /^H[1-4]$/.test(el?.tagName || '') ? parseInt(el.tagName[1], 10) : null;
+}
+
+function outsideCollapseLevel(el) {
+  const level = parseInt(el?.getAttribute?.('data-outside-collapse') || '', 10);
+  return Number.isFinite(level) ? level : null;
+}
+
+function clearHeaderDomainEnds(root = getEd()) {
+  root?.querySelectorAll?.('[' + HEADER_DOMAIN_END_ATTR + ']').forEach(el => {
+    el.removeAttribute(HEADER_DOMAIN_END_ATTR);
+  });
+}
+
+function addHeaderDomainEnds(root = getEd()) {
+  if (!root) return;
+  const children = [...root.children];
+  children.forEach((heading, index) => {
+    const level = headingLevel(heading);
+    if (!level || heading.hasAttribute('data-collapsed')) return;
+
+    let lastVisible = null;
+    for (let i = index + 1; i < children.length; i++) {
+      const child = children[i];
+      const childLevel = headingLevel(child);
+      if (childLevel && childLevel <= level) break;
+      const childOutsideLevel = outsideCollapseLevel(child);
+      if (childOutsideLevel && childOutsideLevel <= level) break;
+      if (child.style.display !== 'none') lastVisible = child;
+    }
+    if (!lastVisible) return;
+
+    const levels = new Set(
+      String(lastVisible.getAttribute(HEADER_DOMAIN_END_ATTR) || '')
+        .split(/\s+/)
+        .filter(Boolean)
+    );
+    levels.add(String(level));
+    lastVisible.setAttribute(HEADER_DOMAIN_END_ATTR, [...levels].sort().join(' '));
+  });
+}
+
 function recomputeCollapsedSections() {
+  const ed = getEd();
+  if (!ed) return;
+  clearHeaderDomainEnds(ed);
   let collapsedLevel = Infinity;
-  for (const el of getEd().children) {
-    const tag = el.tagName;
-    const isHeading = /^H[1-4]$/.test(tag);
-    const level = isHeading ? parseInt(tag[1]) : null;
+  for (const el of ed.children) {
+    const level = headingLevel(el);
+    const isHeading = !!level;
     if (el.hasAttribute('data-outside-collapse')) {
       const outsideLevel = parseInt(el.getAttribute('data-outside-collapse'));
       if (collapsedLevel >= outsideLevel) {
@@ -1222,6 +1326,86 @@ function recomputeCollapsedSections() {
       el.style.display = collapsedLevel < Infinity ? 'none' : '';
     }
   }
+  addHeaderDomainEnds(ed);
+}
+
+function parseHeaderDomainEndLevels(el) {
+  return String(el?.getAttribute?.(HEADER_DOMAIN_END_ATTR) || '')
+    .split(/\s+/)
+    .map(value => parseInt(value, 10))
+    .filter(Number.isFinite);
+}
+
+function headerDomainEndFromSelection(range) {
+  const ed = getEd();
+  const node = range?.startContainer;
+  const owner = node?.nodeType === Node.ELEMENT_NODE ? node : node?.parentElement;
+  const marker = owner?.closest?.('[' + HEADER_DOMAIN_END_ATTR + ']');
+  return marker && ed?.contains(marker) ? marker : null;
+}
+
+function rangeRect(range) {
+  if (!range) return null;
+  const rects = [...range.getClientRects()].filter(rect => rect.width || rect.height);
+  if (rects.length) return rects[rects.length - 1];
+  const rect = range.getBoundingClientRect?.();
+  return rect && (rect.width || rect.height) ? rect : null;
+}
+
+function isCaretAtEndOfElement(el, range) {
+  if (!el || !range?.collapsed) return false;
+  const afterCaret = document.createRange();
+  afterCaret.selectNodeContents(el);
+  try {
+    afterCaret.setStart(range.startContainer, range.startOffset);
+  } catch (_) {
+    return false;
+  }
+  return !fragmentHasMeaningfulContent(afterCaret.cloneContents());
+}
+
+function isCaretOnLastVisualLineOfElement(el, range) {
+  if (!el || !range?.collapsed) return false;
+  const contentRange = document.createRange();
+  contentRange.selectNodeContents(el);
+  const contentRects = [...contentRange.getClientRects()].filter(rect => rect.width || rect.height);
+  const caret = rangeRect(range);
+  if (!caret || !contentRects.length) return isCaretAtEndOfElement(el, range);
+  const lastBottom = Math.max(...contentRects.map(rect => rect.bottom));
+  return caret.bottom >= lastBottom - 4;
+}
+
+function nextOutsideHeaderDomainTarget(el, level) {
+  const next = el?.nextElementSibling;
+  if (!next || next.style.display === 'none') return null;
+  const nextOutsideLevel = outsideCollapseLevel(next);
+  return nextOutsideLevel && nextOutsideLevel <= level ? next : null;
+}
+
+function moveCaretBeyondHeaderDomainEnd() {
+  const sel = window.getSelection();
+  if (!sel || !sel.rangeCount || !sel.isCollapsed) return false;
+  const range = sel.getRangeAt(0);
+  const marker = headerDomainEndFromSelection(range);
+  if (!marker || !isCaretOnLastVisualLineOfElement(marker, range)) return false;
+
+  const levels = parseHeaderDomainEndLevels(marker);
+  if (!levels.length) return false;
+  const exitLevel = Math.max(...levels);
+  const existingTarget = nextOutsideHeaderDomainTarget(marker, exitLevel);
+  if (existingTarget) {
+    placeCursorAtStart(existingTarget);
+    return true;
+  }
+
+  pushUndo();
+  const p = createEmptyBlock('p');
+  p.setAttribute('data-outside-collapse', String(exitLevel));
+  marker.after(p);
+  recomputeCollapsedSections();
+  placeCursorAtStart(p);
+  getEd().dispatchEvent(new Event('input'));
+  return true;
 }
 
 function saveCollapsedState(noteId) {
@@ -1233,20 +1417,21 @@ function saveCollapsedState(noteId) {
 }
 
 function restoreCollapsedState(noteId) {
-  if (!noteId) return;
-  const raw = localStorage.getItem('notas_col_' + noteId);
-  if (!raw) return;
-  try {
-    const indices = JSON.parse(raw);
-    const headings = [...getEd().querySelectorAll('h1,h2,h3,h4')];
-    indices.forEach(i => { if (headings[i]) headings[i].setAttribute('data-collapsed', ''); });
-    recomputeCollapsedSections();
-  } catch (_) {}
+  const raw = noteId ? localStorage.getItem('notas_col_' + noteId) : null;
+  if (raw) {
+    try {
+      const indices = JSON.parse(raw);
+      const headings = [...getEd().querySelectorAll('h1,h2,h3,h4')];
+      indices.forEach(i => { if (headings[i]) headings[i].setAttribute('data-collapsed', ''); });
+    } catch (_) {}
+  }
+  recomputeCollapsedSections();
 }
 
 function getCleanHTML() {
   const clone = getEd().cloneNode(true);
   clone.querySelectorAll('[data-collapsed]').forEach(el => el.removeAttribute('data-collapsed'));
+  clone.querySelectorAll('[' + HEADER_DOMAIN_END_ATTR + ']').forEach(el => el.removeAttribute(HEADER_DOMAIN_END_ATTR));
   clone.querySelectorAll('.note-alarm').forEach(el => {
     el.classList.remove('alarm-due');
     if (!el.classList.length) el.removeAttribute('class');

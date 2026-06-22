@@ -708,8 +708,40 @@ body.light-mode #main::before {
 .editor h3[data-collapsed]::before, .editor h4[data-collapsed]::before {
   transform: translateY(-50%) rotate(-90deg);
 }
+.editor [data-header-domain-end]::after {
+  content: '';
+  display: block;
+  width: 80%;
+  height: 3px;
+  margin: 12px auto 2px;
+  background-image: radial-gradient(circle, rgba(var(--orb-r), var(--orb-g), var(--orb-b), .34) 0 1.35px, transparent 2px);
+  background-repeat: repeat-x;
+  background-size: 20px 3px;
+  background-position: center;
+  opacity: .78;
+  pointer-events: none;
+}
+body.light-mode .editor [data-header-domain-end]::after {
+  background-image: radial-gradient(circle, rgba(var(--orb-r), var(--orb-g), var(--orb-b), .28) 0 2px, transparent 4px);
+}
 .editor p  { margin: 0 0 12px; }
 .editor ul, .editor ol { margin: 0 0 12px 22px; }
+.editor ul:not(.checklist) { list-style-type: disc; }
+.editor ul:not(.checklist) ul:not(.checklist) { list-style-type: circle; }
+.editor ul:not(.checklist) ul:not(.checklist) ul:not(.checklist) { list-style-type: square; }
+.editor ul:not(.checklist) ul:not(.checklist) ul:not(.checklist) ul:not(.checklist) { list-style-type: '◻ '; }
+.editor ul:not(.checklist) ul:not(.checklist) ul:not(.checklist) ul:not(.checklist) ul:not(.checklist) { list-style-type: '⬥ '; }
+.editor ul:not(.checklist) ul:not(.checklist) ul:not(.checklist) ul:not(.checklist) ul:not(.checklist) ul:not(.checklist) { list-style-type: '⬦ '; }
+.editor ul:not(.checklist) > li::marker,
+.editor ul:not(.checklist) ul:not(.checklist) > li::marker,
+.editor ul:not(.checklist) ul:not(.checklist) ul:not(.checklist) > li::marker {
+  font-size: .9em;
+}
+.editor ul:not(.checklist) ul:not(.checklist) ul:not(.checklist) ul:not(.checklist) > li::marker,
+.editor ul:not(.checklist) ul:not(.checklist) ul:not(.checklist) ul:not(.checklist) ul:not(.checklist) > li::marker,
+.editor ul:not(.checklist) ul:not(.checklist) ul:not(.checklist) ul:not(.checklist) ul:not(.checklist) ul:not(.checklist) > li::marker {
+  font-size: .9em;
+}
 .editor li { margin: 4px 0; }
 .editor blockquote { border-left: 3px solid var(--accent); padding: 3px 0 3px 18px; color: var(--muted); margin: 0 0 12px; font-style: italic; }
 .editor code { font-family: var(--mono); background: rgba(var(--orb-r),var(--orb-g),var(--orb-b),.14); color: var(--accent-ink, var(--accent)); padding: 2px 6px; border: 1px solid rgba(var(--orb-r),var(--orb-g),var(--orb-b),.24); border-radius: 5px; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
