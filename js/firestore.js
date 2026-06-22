@@ -39,7 +39,7 @@ function listenToNotes() {
           linkifyTextNodes(ed); ensureLinkAttrs(ed);
           restoreChecklistState(ed); restoreAlarmMarks(ed);
           if (typeof restoreConversationAnchorMarks === 'function') restoreConversationAnchorMarks(ed);
-          decorateTables(ed); decorateNoteImages(ed); refreshEmpty(ed); updateCounts();
+          decorateTables(ed); decorateNoteImages(ed); recomputeCollapsedSections(); refreshEmpty(ed); updateCounts();
         }
       }
     });

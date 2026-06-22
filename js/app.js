@@ -182,6 +182,7 @@ editorEl.addEventListener('input', e => {
   cleanupLiveInlineCodeBoundaries(editorEl, e);
   decorateTables(editorEl);
   decorateNoteImages(editorEl);
+  recomputeCollapsedSections();
   refreshEmpty(editorEl);
   if (!syncActiveNoteFromEditor()) return;
   renderAlarmButton();
@@ -328,6 +329,13 @@ editorEl.addEventListener('keydown', e => {
   if (handleMentionKeydown(e)) return;
   const inTable = isSelectionInTable();
 
+  if (!inTable && e.key === 'ArrowDown' && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey && !e.isComposing) {
+    if (moveCaretBeyondHeaderDomainEnd()) {
+      e.preventDefault();
+      return;
+    }
+  }
+
   if (!e.metaKey && !e.ctrlKey && !e.altKey && e.key === ' ' && !e.isComposing) {
     if (inTable) return;
     if (applyMarkdownShortcut()) {
@@ -364,6 +372,19 @@ editorEl.addEventListener('keydown', e => {
         e.preventDefault();
         pushUndo();
         if (removeEmptyListItem(li)) editorEl.dispatchEvent(new Event('input'));
+        return;
+      }
+
+      const list = li?.parentElement;
+      const firstRegularListItem = li &&
+        /^(UL|OL)$/.test(list?.tagName || '') &&
+        !list.classList.contains('checklist') &&
+        list.parentElement === editorEl &&
+        !li.previousElementSibling;
+      if (firstRegularListItem && isCaretAtStartOfListItem(li)) {
+        e.preventDefault();
+        pushUndo();
+        if (unlistLeadingListItem(li)) editorEl.dispatchEvent(new Event('input'));
         return;
       }
 
