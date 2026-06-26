@@ -68,6 +68,25 @@ service cloud.firestore {
         );
     }
 
+    function messageThumbs(data) {
+      return data.thumbsUp is map ? data.thumbsUp : {};
+    }
+
+    function validMessageThumbUpdate(conversationId) {
+      return canReadConversation(conversationId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasAny(["thumbsUp"])
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "thumbsUp",
+          "modifiedIso",
+          "modified"
+        ])
+        && messageThumbs(request.resource.data).diff(messageThumbs(resource.data)).affectedKeys().hasOnly([request.auth.uid])
+        && (
+          !messageThumbs(request.resource.data).keys().hasAny([request.auth.uid])
+          || messageThumbs(request.resource.data)[request.auth.uid] == true
+        );
+    }
+
     function ownsProfileEmail(emailId) {
       return signedIn()
         && exists(/databases/$(database)/documents/profileEmails/$(emailId))
@@ -255,7 +274,7 @@ service cloud.firestore {
           && request.resource.data.conversationId == conversationId
           && request.resource.data.noteId == conversationNoteId(conversationId);
 
-        allow update: if false;
+        allow update: if validMessageThumbUpdate(conversationId);
 
         allow delete: if canDeleteConversation(conversationId);
       }

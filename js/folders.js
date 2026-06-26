@@ -17,6 +17,13 @@ function sortedFolders() {
   return Object.values(folders).sort(compareFolders);
 }
 
+function folderOrderHistorySnapshot(list = sortedFolders()) {
+  return list.map(folder => ({
+    id: folder.id,
+    order: Number.isFinite(Number(folder.order)) ? Number(folder.order) : null
+  }));
+}
+
 function nextFolderOrderValue() {
   const ordered = sortedFolders();
   if (!ordered.length) return 1;
@@ -49,6 +56,12 @@ async function renameFolder(folderId, title) {
       title: nextTitle,
       modified: serverTimestamp()
     }, { merge: true });
+    recordAppHistoryAction({
+      type: 'folder-rename',
+      folderId,
+      beforeTitle: previousTitle,
+      afterTitle: nextTitle
+    });
     showToast('Folder Renamed', 'success');
   } catch (err) {
     console.error('rename folder:', err);
@@ -61,6 +74,7 @@ async function renameFolder(folderId, title) {
 async function reorderFolder(draggedId, targetId, position) {
   if (!draggedId || !targetId || draggedId === targetId || !folders[draggedId] || !folders[targetId]) return;
   const ordered = sortedFolders();
+  const beforeOrder = folderOrderHistorySnapshot(ordered);
   const withoutDragged = ordered.filter(folder => folder.id !== draggedId);
   const targetIndex = withoutDragged.findIndex(folder => folder.id === targetId);
   if (targetIndex < 0) return;
@@ -79,6 +93,11 @@ async function reorderFolder(draggedId, targetId, position) {
       order: folder.order,
       modified: serverTimestamp()
     }, { merge: true })));
+    recordAppHistoryAction({
+      type: 'folder-move',
+      beforeOrder,
+      afterOrder: folderOrderHistorySnapshot()
+    });
     showToast('Folders Reordered', 'success');
   } catch (err) {
     console.error('reorder folders:', err);
@@ -318,6 +337,12 @@ async function moveNoteToFolder(noteId, folderId) {
     } else {
       cloudSynced = await _setSharedNoteFolder(noteId, folderId);
     }
+    recordAppHistoryAction({
+      type: 'note-move',
+      noteId,
+      beforeFolderId: prev || null,
+      afterFolderId: note.folderId || null
+    });
     showToast(cloudSynced ? 'Note Moved' : 'Note moved locally; cloud sync failed', cloudSynced ? 'success' : 'error');
   } catch (err) {
     console.error('moveNoteToFolder:', err);

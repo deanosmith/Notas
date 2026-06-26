@@ -319,10 +319,12 @@
 
   <div class="modal-overlay" id="notifications-modal">
     <div class="modal wide">
-      <div class="modal-title"><i class="fa-solid fa-bell" style="margin-right:8px;opacity:.7;"></i>Notifications</div>
+      <div class="modal-title notification-modal-title">
+        <span><i class="fa-solid fa-bell" style="margin-right:8px;opacity:.7;"></i>Notifications</span>
+        <button class="modal-btn compact" id="notifications-mark-read" type="button"><i class="fa-solid fa-check-double"></i> All Read</button>
+      </div>
       <div class="notifications-list" id="notifications-list"></div>
       <div class="modal-actions">
-        <button class="modal-btn" id="notifications-mark-read">Mark All Read</button>
         <button class="modal-btn primary" id="notifications-close">Done</button>
       </div>
     </div>

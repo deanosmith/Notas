@@ -183,6 +183,8 @@ function openCtxMenu(anchorEl, items) {
       sub.className = 'ctx-submenu';
       item.children.forEach(child => sub.appendChild(buildCtxRow(child)));
       row.appendChild(sub);
+      row.addEventListener('mouseenter', () => row.classList.add('submenu-open'));
+      row.addEventListener('mouseleave', () => row.classList.remove('submenu-open'));
       row.addEventListener('click', e => {
         if (e.target.closest('.ctx-submenu')) return;
         e.stopPropagation();
@@ -297,6 +299,7 @@ function makeSidebarNoteEl(note, { inFolder = false } = {}) {
     el.classList.remove('dragging');
     _draggingNoteId = null;
     document.querySelectorAll('.drag-over').forEach(d => d.classList.remove('drag-over'));
+    document.querySelectorAll('.pinned-notes-section.drag-over').forEach(d => d.classList.remove('drag-over'));
     document.querySelectorAll('.pin-drop-before,.pin-drop-after').forEach(d => d.classList.remove('pin-drop-before', 'pin-drop-after'));
     document.querySelectorAll('.folder-drop-before,.folder-drop-after').forEach(d => d.classList.remove('folder-drop-before', 'folder-drop-after'));
   });
@@ -390,6 +393,30 @@ function attachPinnedReorderHandlers(el, note, group) {
     const position = e.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
     el.classList.remove('pin-drop-before', 'pin-drop-after');
     reorderPinnedNote(e.dataTransfer.getData('text/plain') || _draggingNoteId, note.id, position, group);
+  });
+}
+
+function attachPinnedSectionDropHandlers(section) {
+  if (!section) return;
+  section.addEventListener('dragover', e => {
+    const note = _draggingNoteId ? notes[_draggingNoteId] : null;
+    if (!note || isTrashedNote(note) || isMajorPinnedNote(note)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = 'move';
+    section.classList.add('drag-over');
+  });
+  section.addEventListener('dragleave', e => {
+    if (!section.contains(e.relatedTarget)) section.classList.remove('drag-over');
+  });
+  section.addEventListener('drop', e => {
+    const noteId = e.dataTransfer.getData('text/plain') || _draggingNoteId;
+    const note = noteId ? notes[noteId] : null;
+    if (!note || isTrashedNote(note) || isMajorPinnedNote(note)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    section.classList.remove('drag-over');
+    setNotePinned(noteId, true, 'major');
   });
 }
 
@@ -621,8 +648,8 @@ function renderSidebarPage(view) {
 
   if (view === 'notifications') {
     content.innerHTML =
-      '<div class="notifications-list" id="sidebar-notifications-list"></div>' +
-      '<button class="sidebar-page-action" id="sidebar-notifications-mark-read" type="button"><i class="fa-solid fa-check-double"></i><span>Mark All Read</span></button>';
+      '<button class="sidebar-page-action compact" id="sidebar-notifications-mark-read" type="button"><i class="fa-solid fa-check-double"></i><span>All Read</span></button>' +
+      '<div class="notifications-list" id="sidebar-notifications-list"></div>';
     renderNotificationsList(document.getElementById('sidebar-notifications-list'));
     document.getElementById('sidebar-notifications-mark-read')?.addEventListener('click', markAllNotificationsRead);
     return;
@@ -731,6 +758,7 @@ function renderSidebar(filter) {
     lbl.className = 'sidebar-section-label';
     lbl.textContent = 'Pinned';
     pinnedWrap.appendChild(lbl);
+    attachPinnedSectionDropHandlers(pinnedWrap);
     pinnedLooseNotes.forEach(note => {
       const el = makeSidebarNoteEl(note);
       attachPinnedReorderHandlers(el, note, 'major');

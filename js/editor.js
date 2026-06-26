@@ -21,6 +21,13 @@ function pushUndoState(stack, snapshot) {
   }
 }
 
+function markEditorHistoryTouched() {
+  if (_appHistoryApplying) return;
+  _lastUndoDomain = 'editor';
+  _lastRedoDomain = '';
+  appRedoStack.length = 0;
+}
+
 function refreshUndoSnapshotSelection() {
   const ed = getEd();
   if (!ed) return;
@@ -35,6 +42,7 @@ function pushUndo() {
   if (!ed) return;
   clearTimeout(_undoDebounceTimer);
   const current = makeUndoSnapshot(ed);
+  markEditorHistoryTouched();
   if (!_lastUndoSnapshot) {
     _lastUndoSnapshot = current;
   } else if (current.html !== _lastUndoSnapshot.html) {
@@ -74,6 +82,7 @@ function commitUndoSnapshot() {
     _undoTransactionOpen = false;
     return;
   }
+  markEditorHistoryTouched();
   if (_undoTransactionOpen) {
     _lastUndoSnapshot = current;
     redoStack.length = 0;
@@ -113,6 +122,8 @@ function performUndo() {
   restoreUndoSnapshot(undoStack.pop());
   _lastUndoSnapshot = makeUndoSnapshot(ed);
   _undoTransactionOpen = false;
+  _lastUndoDomain = 'editor';
+  _lastRedoDomain = 'editor';
   if (syncActiveNoteFromEditor()) scheduleSave();
 }
 
@@ -124,7 +135,187 @@ function performRedo() {
   restoreUndoSnapshot(redoStack.pop());
   _lastUndoSnapshot = makeUndoSnapshot(ed);
   _undoTransactionOpen = false;
+  _lastUndoDomain = 'editor';
+  _lastRedoDomain = 'editor';
   if (syncActiveNoteFromEditor()) scheduleSave();
+}
+
+function recordAppHistoryAction(action) {
+  if (_appHistoryApplying || !action?.type) return;
+  const normalized = { ...action };
+  if (normalized.type === 'note-rename' || normalized.type === 'folder-rename') {
+    const fallbackTitle = normalized.type === 'folder-rename' ? 'Untitled Folder' : 'Untitled Note';
+    normalized.beforeTitle = String(normalized.beforeTitle || '').trim() || fallbackTitle;
+    normalized.afterTitle = String(normalized.afterTitle || '').trim() || fallbackTitle;
+    if (normalized.beforeTitle === normalized.afterTitle) return;
+  }
+  if (normalized.type === 'note-move') {
+    normalized.beforeFolderId = normalized.beforeFolderId || null;
+    normalized.afterFolderId = normalized.afterFolderId || null;
+    if (normalized.beforeFolderId === normalized.afterFolderId) return;
+  }
+  if (normalized.type === 'folder-move') {
+    if (!Array.isArray(normalized.beforeOrder) || !Array.isArray(normalized.afterOrder)) return;
+    const before = JSON.stringify(normalized.beforeOrder);
+    const after = JSON.stringify(normalized.afterOrder);
+    if (before === after) return;
+  }
+  appUndoStack.push(normalized);
+  if (appUndoStack.length > APP_UNDO_LIMIT) appUndoStack.shift();
+  appRedoStack.length = 0;
+  _lastUndoDomain = 'app';
+  _lastRedoDomain = '';
+}
+
+async function applyNoteTitleHistory(action, title) {
+  const note = notes[action.noteId];
+  if (!note || !canEditNote(note)) return false;
+  if (activeId === note.id) syncActiveNoteFromEditor();
+  note.title = String(title || '').trim() || 'Untitled Note';
+  note.modified = new Date().toISOString();
+  if (activeId === note.id) {
+    const titleEl = document.getElementById('doc-title');
+    if (titleEl) titleEl.value = note.title;
+  }
+  renderSidebar();
+  updateActiveNoteAccessAvatars();
+  return await saveDoc(note);
+}
+
+async function applyFolderTitleHistory(action, title) {
+  const folder = folders[action.folderId];
+  if (!folder || !isOwnedFolder(folder)) return false;
+  const previousTitle = folder.title;
+  const previousModified = folder.modified;
+  folder.title = String(title || '').trim() || 'Untitled Folder';
+  folder.modified = new Date().toISOString();
+  renderSidebar();
+  try {
+    await setDoc(doc(fsDb, 'folders', folder.id), {
+      title: folder.title,
+      modified: serverTimestamp()
+    }, { merge: true });
+    return true;
+  } catch (err) {
+    folder.title = previousTitle;
+    folder.modified = previousModified;
+    renderSidebar();
+    throw err;
+  }
+}
+
+async function applyNoteMoveHistory(action, folderId) {
+  if (!notes[action.noteId]) return false;
+  const targetFolderId = folderId || null;
+  if ((notes[action.noteId].folderId || null) === targetFolderId) return true;
+  if (targetFolderId && !folders[targetFolderId]) {
+    showToast('Folder No Longer Exists', 'error');
+    return false;
+  }
+  await moveNoteToFolder(action.noteId, targetFolderId);
+  return (notes[action.noteId]?.folderId || null) === targetFolderId;
+}
+
+async function applyFolderOrderHistory(entries) {
+  const available = (entries || []).filter(entry => folders[entry.id]);
+  if (!available.length) return false;
+  const previous = available.map(entry => ({
+    id: entry.id,
+    order: folders[entry.id].order,
+    modified: folders[entry.id].modified
+  }));
+  available.forEach(entry => {
+    const folder = folders[entry.id];
+    folder.order = Number.isFinite(Number(entry.order)) ? Number(entry.order) : null;
+    folder.modified = new Date().toISOString();
+  });
+  renderSidebar();
+  try {
+    await Promise.all(available.map(entry => {
+      const order = Number.isFinite(Number(entry.order)) ? Number(entry.order) : deleteField();
+      return setDoc(doc(fsDb, 'folders', entry.id), {
+        order,
+        modified: serverTimestamp()
+      }, { merge: true });
+    }));
+    return true;
+  } catch (err) {
+    previous.forEach(entry => {
+      if (!folders[entry.id]) return;
+      folders[entry.id].order = entry.order;
+      folders[entry.id].modified = entry.modified;
+    });
+    renderSidebar();
+    throw err;
+  }
+}
+
+async function applyAppHistoryAction(action, direction) {
+  if (action.type === 'note-rename') {
+    return applyNoteTitleHistory(action, direction === 'undo' ? action.beforeTitle : action.afterTitle);
+  }
+  if (action.type === 'folder-rename') {
+    return applyFolderTitleHistory(action, direction === 'undo' ? action.beforeTitle : action.afterTitle);
+  }
+  if (action.type === 'note-move') {
+    return applyNoteMoveHistory(action, direction === 'undo' ? action.beforeFolderId : action.afterFolderId);
+  }
+  if (action.type === 'folder-move') {
+    return applyFolderOrderHistory(direction === 'undo' ? action.beforeOrder : action.afterOrder);
+  }
+  return false;
+}
+
+async function performAppUndo() {
+  if (_appHistoryBusy || !appUndoStack.length) return false;
+  const action = appUndoStack.pop();
+  _appHistoryBusy = true;
+  _appHistoryApplying = true;
+  try {
+    const ok = await applyAppHistoryAction(action, 'undo');
+    if (ok) {
+      appRedoStack.push(action);
+      _lastUndoDomain = 'app';
+      _lastRedoDomain = 'app';
+      return true;
+    }
+    appUndoStack.push(action);
+    return false;
+  } catch (err) {
+    console.error('app undo:', err);
+    appUndoStack.push(action);
+    showToast('Could Not Undo', 'error');
+    return false;
+  } finally {
+    _appHistoryApplying = false;
+    _appHistoryBusy = false;
+  }
+}
+
+async function performAppRedo() {
+  if (_appHistoryBusy || !appRedoStack.length) return false;
+  const action = appRedoStack.pop();
+  _appHistoryBusy = true;
+  _appHistoryApplying = true;
+  try {
+    const ok = await applyAppHistoryAction(action, 'redo');
+    if (ok) {
+      appUndoStack.push(action);
+      _lastUndoDomain = 'app';
+      _lastRedoDomain = 'app';
+      return true;
+    }
+    appRedoStack.push(action);
+    return false;
+  } catch (err) {
+    console.error('app redo:', err);
+    appRedoStack.push(action);
+    showToast('Could Not Redo', 'error');
+    return false;
+  } finally {
+    _appHistoryApplying = false;
+    _appHistoryBusy = false;
+  }
 }
 
 // Debounced snapshot for regular typing — captures state periodically
@@ -1966,12 +2157,22 @@ function setTableCaptionText(table, text) {
   caption.textContent = value;
 }
 
+function tableTitleInputHTML(title = '') {
+  const cleanTitle = String(title || '').trim();
+  return '<input class="table-title-input" data-table-title-input type="text" value="' + esc(cleanTitle) + '" aria-label="Table header" />';
+}
+
+function tableTitleButtonHTML() {
+  return '<button class="table-title-add-btn" data-table-action="edit-title" type="button" title="Add Table Header" aria-label="Add Table Header"><i class="fa-solid fa-heading"></i></button>';
+}
+
 function createTableControls(title = '') {
+  const cleanTitle = String(title || '').trim();
   const controls = document.createElement('div');
   controls.className = 'table-controls';
   controls.setAttribute('contenteditable', 'false');
   controls.innerHTML =
-    '<input class="table-title-input" data-table-title-input type="text" placeholder="Table header" value="' + esc(title) + '" aria-label="Table header" />' +
+    (cleanTitle ? tableTitleInputHTML(cleanTitle) : tableTitleButtonHTML()) +
     '<button class="table-delete-btn" data-table-action="delete-table" type="button" title="Delete Table" aria-label="Delete Table"><i class="fa-solid fa-xmark"></i></button>' +
     '<div class="table-axis-controls table-row-controls" aria-label="Row controls">' +
       '<button class="table-btn" data-table-action="add-row" type="button" title="Add Row" aria-label="Add Row"><i class="fa-solid fa-plus"></i></button>' +
@@ -1982,6 +2183,52 @@ function createTableControls(title = '') {
       '<button class="table-btn" data-table-action="remove-column" type="button" title="Remove Column" aria-label="Remove Column"><i class="fa-solid fa-minus"></i></button>' +
     '</div>';
   return controls;
+}
+
+function syncTableControls(wrap, table) {
+  const controls = wrap?.querySelector?.(':scope > .table-controls');
+  if (!controls || !table) return false;
+  let changed = false;
+  const caption = tableCaptionText(table);
+  let titleInput = controls.querySelector('[data-table-title-input]');
+  let titleBtn = controls.querySelector('[data-table-action="edit-title"]');
+  if (titleInput && !tableCaptionText(table) && !String(titleInput.value || titleInput.getAttribute('value') || '').trim()) {
+    titleInput.remove();
+    titleInput = null;
+    changed = true;
+  }
+  if (caption && !titleInput) {
+    titleBtn?.remove();
+    controls.insertAdjacentHTML('afterbegin', tableTitleInputHTML(caption));
+    changed = true;
+  } else if (!caption && !titleInput && !titleBtn) {
+    controls.insertAdjacentHTML('afterbegin', tableTitleButtonHTML());
+    changed = true;
+  }
+  return changed;
+}
+
+function showTableTitleInput(table) {
+  const controls = table?.closest?.('.note-table-wrap')?.querySelector(':scope > .table-controls');
+  if (!controls) return;
+  let input = controls.querySelector('[data-table-title-input]');
+  if (!input) {
+    controls.querySelector('[data-table-action="edit-title"]')?.remove();
+    controls.insertAdjacentHTML('afterbegin', tableTitleInputHTML(tableCaptionText(table)));
+    input = controls.querySelector('[data-table-title-input]');
+  }
+  if (!input) return;
+  input.addEventListener('blur', () => {
+    if (String(input.value || '').trim() || tableCaptionText(table)) return;
+    input.remove();
+    if (!controls.querySelector('[data-table-action="edit-title"]')) {
+      controls.insertAdjacentHTML('afterbegin', tableTitleButtonHTML());
+    }
+  }, { once: true });
+  setTimeout(() => {
+    input.focus();
+    input.select();
+  }, 0);
 }
 
 const TABLE_MIN_COLUMN_WIDTH = 72;
@@ -2537,6 +2784,7 @@ function decorateTables(root = getEd()) {
       wrap.insertBefore(createTableControls(tableCaptionText(table)), wrap.firstChild);
       changed = true;
     }
+    if (syncTableControls(wrap, table)) changed = true;
     updateTableResizeHandles(table);
     updateTableReorderHandles(table);
   });
@@ -2917,6 +3165,10 @@ function handleTableControl(btn) {
   const action = btn.dataset.tableAction;
   if (action === 'delete-table') {
     openTableDeleteModal(table);
+    return;
+  }
+  if (action === 'edit-title') {
+    showTableTitleInput(table);
     return;
   }
   pushUndo();
@@ -3370,10 +3622,13 @@ function updateAlarmMarkDisplay(mark) {
   const alarmAt = normalizeAlarmAt(mark.dataset.alarmAt);
   if (!alarmAt) return false;
   if (!mark.dataset.alarmId) mark.dataset.alarmId = makeAlarmId();
+  const isSent = mark.dataset.alarmDirection === 'sent';
+  const sentTarget = mark.dataset.alarmTargetName || 'Friend';
   mark.dataset.alarmAt = alarmAt;
   mark.classList.add('note-alarm');
-  mark.classList.toggle('alarm-due', new Date(alarmAt).getTime() <= Date.now());
-  mark.title = 'Reminder: ' + formatAlarmDateTime(alarmAt);
+  mark.classList.toggle('alarm-sent', isSent);
+  mark.classList.toggle('alarm-due', !isSent && new Date(alarmAt).getTime() <= Date.now());
+  mark.title = (isSent ? 'Sent Reminder To ' + sentTarget + ': ' : 'Reminder: ') + formatAlarmDateTime(alarmAt);
   return true;
 }
 
@@ -3431,6 +3686,7 @@ function alarmItemsFromNote(note) {
   root.innerHTML = note.content || '';
   return [...root.querySelectorAll('.note-alarm')]
     .map((mark, index) => {
+      if (mark.dataset.alarmDirection === 'sent') return null;
       const alarmAt = normalizeAlarmAt(mark.dataset.alarmAt);
       if (!alarmAt) return null;
       return {
@@ -3482,9 +3738,10 @@ function getAlarmItems() {
       due: new Date(alarmAt).getTime() <= Date.now()
     });
   });
-  Object.values(sentReminders || {}).forEach(reminder => {
-    const normalized = normalizeSentReminder(reminder?.id, reminder);
+  Object.keys(sentReminders || {}).forEach(reminderId => {
+    const normalized = normalizeSentReminder(reminderId, sentReminders[reminderId]);
     if (!normalized) return;
+    if (!sentReminders[normalized.id]?.id) sentReminders[normalized.id] = normalized;
     items.push({
       kind: 'sent',
       direction: 'sent',
@@ -3603,7 +3860,7 @@ async function openAlarmFromList(noteId, alarmId, kind) {
     return;
   }
   openNote(noteId);
-  if (kind === 'inline' && alarmId) {
+  if ((kind === 'inline' || kind === 'sent') && alarmId) {
     setTimeout(() => {
       const mark = findAlarmMark(getEd(), alarmId);
       if (mark) selectAlarmMarkText(mark);
@@ -3763,7 +4020,7 @@ function populateAlarmRecipientOptions(note, selectedUid = '') {
 function updateAlarmRecipientState() {
   const clearBtn = document.getElementById('alarm-clear');
   if (!clearBtn || !_alarmContext) return;
-  clearBtn.style.display = _alarmContext.alarmId && !selectedAlarmRecipientUid() ? '' : 'none';
+  clearBtn.style.display = _alarmContext.alarmId && (_alarmContext.direction === 'sent' || !selectedAlarmRecipientUid()) ? '' : 'none';
 }
 
 function getEditorRangeOrEnd() {
@@ -3791,6 +4048,8 @@ function openNoteAlarmModal(noteId = activeId) {
   const existingMark = alarmMarkForRange(range);
   if (existingMark && !existingMark.dataset.alarmId) existingMark.dataset.alarmId = makeAlarmId();
   const existingAt = normalizeAlarmAt(existingMark?.dataset.alarmAt);
+  const existingDirection = existingMark?.dataset.alarmDirection || '';
+  const existingTargetUid = existingMark?.dataset.alarmTargetUid || '';
   const parts = existingAt ? localDateParts(new Date(existingAt)) : defaultAlarmParts();
   const dateInput = document.getElementById('alarm-date-input');
   const timeInput = document.getElementById('alarm-time-input');
@@ -3805,6 +4064,8 @@ function openNoteAlarmModal(noteId = activeId) {
     noteId,
     range,
     alarmId: existingMark?.dataset.alarmId || '',
+    direction: existingDirection,
+    targetUid: existingTargetUid,
     targetText: selectedText,
     mode: existingMark ? 'update' : (range.collapsed ? 'insert' : 'wrap')
   };
@@ -3812,7 +4073,7 @@ function openNoteAlarmModal(noteId = activeId) {
   dateInput.value = parts.date;
   timeInput.value = parts.time;
   targetText.textContent = selectedText;
-  populateAlarmRecipientOptions(notes[noteId]);
+  populateAlarmRecipientOptions(notes[noteId], existingDirection === 'sent' ? existingTargetUid : '');
   clearBtn.style.display = existingMark ? '' : 'none';
   updateAlarmRecipientState();
   updateAlarmSummary();
@@ -3834,8 +4095,12 @@ function restoreAlarmContextRange() {
   return _alarmContext.range;
 }
 
-function applyAlarmToRange(range, alarmAt) {
-  const mark = createAlarmMark(alarmAt, _alarmContext?.alarmId || makeAlarmId());
+function applyAlarmToRange(range, alarmAt, options = {}) {
+  const mark = createAlarmMark(alarmAt, options.alarmId || _alarmContext?.alarmId || makeAlarmId());
+  if (options.direction) mark.dataset.alarmDirection = options.direction;
+  if (options.targetUid) mark.dataset.alarmTargetUid = options.targetUid;
+  if (options.targetName) mark.dataset.alarmTargetName = options.targetName;
+  updateAlarmMarkDisplay(mark);
   if (range.collapsed) {
     mark.textContent = 'Reminder';
     range.insertNode(mark);
@@ -3847,6 +4112,43 @@ function applyAlarmToRange(range, alarmAt) {
   range.insertNode(mark);
   placeCursorAfterNode(mark);
   return mark;
+}
+
+function applySentReminderTextMark(reminderId, alarmAt, targetUid) {
+  if (!reminderId || !_alarmContext?.noteId || !notes[_alarmContext.noteId]) return false;
+  if (activeId !== _alarmContext.noteId) openNote(_alarmContext.noteId);
+  const ed = getEd();
+  if (!ed) return false;
+  const targetName = alarmRecipientName(targetUid);
+  pushUndo();
+  let mark = findAlarmMark(ed, reminderId);
+  if (mark) {
+    mark.dataset.alarmAt = alarmAt;
+    mark.dataset.alarmDirection = 'sent';
+    mark.dataset.alarmTargetUid = targetUid || '';
+    mark.dataset.alarmTargetName = targetName;
+    updateAlarmMarkDisplay(mark);
+    placeCursorAfterNode(mark);
+  } else {
+    const range = restoreAlarmContextRange();
+    if (!range) return false;
+    mark = applyAlarmToRange(range, alarmAt, {
+      alarmId: reminderId,
+      direction: 'sent',
+      targetUid,
+      targetName
+    });
+  }
+  restoreAlarmMarks(ed);
+  refreshEmpty(ed);
+  if (syncActiveNoteFromEditor()) {
+    renderAlarmButton();
+    if (document.getElementById('alarms-modal')?.classList.contains('open')) renderAlarmsList();
+    refreshOpenSidebarPage('alarms');
+    scheduleUndoSnapshot();
+    scheduleSave();
+  }
+  return true;
 }
 
 function friendReminderErrorMessage(reason) {
@@ -3887,6 +4189,11 @@ async function saveNoteAlarm() {
     if (!result?.ok) {
       showToast(friendReminderErrorMessage(result?.reason), 'error');
       return;
+    }
+    try {
+      applySentReminderTextMark(result.id, alarmAt, targetUid);
+    } catch (err) {
+      console.warn('mark sent reminder in text:', err);
     }
     renderAlarmButton();
     if (document.getElementById('alarms-modal')?.classList.contains('open')) renderAlarmsList();
@@ -3997,7 +4304,7 @@ async function deleteReminderDeliveryCopies(reminder, fallbackUid = '', fallback
   return true;
 }
 
-async function clearSentReminder(reminderId) {
+async function clearSentReminder(reminderId, fallbackNoteId = '') {
   if (!reminderId) return;
   const reminder = sentReminders[reminderId];
   delete sentReminders[reminderId];
@@ -4007,6 +4314,14 @@ async function clearSentReminder(reminderId) {
   refreshOpenSidebarPage('alarms');
   let cloudSynced = true;
   let deliveryDeleted = true;
+  const markerNoteId = reminder?.noteId || fallbackNoteId;
+  if (markerNoteId) {
+    try {
+      await removeInlineAlarm(markerNoteId, reminderId);
+    } catch (err) {
+      console.warn('remove sent reminder text marker:', err);
+    }
+  }
   try {
     await updateDoc(_getUserDocRef(), { ['sentReminders.' + reminderId]: deleteField() });
   } catch (err) {
@@ -4053,7 +4368,12 @@ async function clearReceivedReminder(reminderId) {
 
 async function clearNoteAlarm(noteId = _alarmContext?.noteId || _alarmNoteId, alarmId = _alarmContext?.alarmId || '', kind = '') {
   if (kind === 'sent') {
-    await clearSentReminder(alarmId);
+    await clearSentReminder(alarmId, noteId);
+    return;
+  }
+  if (_alarmContext?.direction === 'sent' && (_alarmContext.alarmId || alarmId)) {
+    await clearSentReminder(_alarmContext.alarmId || alarmId, noteId);
+    closeNoteAlarmModal();
     return;
   }
   if (kind === 'received') {

@@ -189,8 +189,8 @@ function _readSentRemindersFromLocal() {
 function _writeSentRemindersToLocal() {
   if (!userId) return;
   try {
-    const entries = Object.values(sentReminders || {})
-      .map(reminder => normalizeSentReminder(reminder?.id, reminder))
+    const entries = Object.keys(sentReminders || {})
+      .map(id => normalizeSentReminder(id, sentReminders[id]))
       .filter(Boolean)
       .sort((a, b) => new Date(a.reminderAt) - new Date(b.reminderAt));
     if (entries.length) localStorage.setItem(_sentRemindersStorageKey(), JSON.stringify(entries.reduce((acc, reminder) => {
@@ -216,8 +216,8 @@ function _readSentReminders(data) {
 function _mergeSentReminders(...states) {
   const out = {};
   states.forEach(state => {
-    Object.values(state || {}).forEach(reminder => {
-      const normalized = normalizeSentReminder(reminder?.id, reminder);
+    Object.keys(state || {}).forEach(id => {
+      const normalized = normalizeSentReminder(id, state[id]);
       if (!normalized) return;
       const existing = out[normalized.id];
       if (!existing || new Date(normalized.created) >= new Date(existing.created)) out[normalized.id] = normalized;
