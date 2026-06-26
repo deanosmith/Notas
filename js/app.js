@@ -185,6 +185,7 @@ editorEl.addEventListener('input', e => {
   recomputeCollapsedSections();
   refreshEmpty(editorEl);
   if (!syncActiveNoteFromEditor()) return;
+  markEditorHistoryTouched();
   renderAlarmButton();
   if (document.getElementById('alarms-modal')?.classList.contains('open')) renderAlarmsList();
   refreshOpenSidebarPage('alarms');
@@ -655,6 +656,11 @@ document.getElementById('toolbar').addEventListener('touchend', e => {
   if (!['link', 'alarm', 'conversation'].includes(btn.dataset.action)) scheduleUndoSnapshot();
 });
 
+document.getElementById('doc-title').addEventListener('focus', () => {
+  _docTitleUndoState = activeId && notes[activeId]
+    ? { noteId: activeId, title: notes[activeId].title || 'Untitled Note' }
+    : null;
+});
 document.getElementById('doc-title').addEventListener('input', () => {
   if (!activeId || !notes[activeId]) return;
   if (!canEditNote(notes[activeId])) return;
@@ -665,13 +671,28 @@ document.getElementById('doc-title').addEventListener('input', () => {
   scheduleSave();
 });
 document.getElementById('doc-title').addEventListener('blur', () => {
-  if (!activeId || !notes[activeId]) return;
-  if (!canEditNote(notes[activeId])) return;
+  if (!activeId || !notes[activeId]) {
+    _docTitleUndoState = null;
+    return;
+  }
+  if (!canEditNote(notes[activeId])) {
+    _docTitleUndoState = null;
+    return;
+  }
   const titled = document.getElementById('doc-title').value.trim() || 'Untitled Note';
   document.getElementById('doc-title').value = titled;
   notes[activeId].title = titled;
   const el = document.querySelector('.sidebar-item.active .item-name');
   if (el) el.textContent = titled;
+  if (_docTitleUndoState?.noteId === activeId) {
+    recordAppHistoryAction({
+      type: 'note-rename',
+      noteId: activeId,
+      beforeTitle: _docTitleUndoState.title,
+      afterTitle: titled
+    });
+  }
+  _docTitleUndoState = null;
   scheduleSave();
 });
 
@@ -686,14 +707,53 @@ document.addEventListener('keydown', e => {
   const mod = /Mac/.test(navigator.platform) ? e.metaKey : e.ctrlKey;
   if (!mod) return;
   const key = e.key.toLowerCase();
+  const activeEl = document.activeElement;
+  const isNativeTextUndoTarget = activeEl && activeEl !== editorEl && (
+    activeEl.isContentEditable ||
+    ['INPUT', 'TEXTAREA', 'SELECT'].includes(activeEl.tagName)
+  );
   if (document.activeElement === editorEl) {
-    if (key === 'z' && !e.shiftKey) { e.preventDefault(); performUndo(); return; }
-    if (key === 'z' && e.shiftKey)  { e.preventDefault(); performRedo(); return; }
-    if (key === 'y')                { e.preventDefault(); performRedo(); return; }
+    if (key === 'z' && !e.shiftKey) {
+      e.preventDefault();
+      if (_lastUndoDomain === 'app' && appUndoStack.length) performAppUndo();
+      else performUndo();
+      return;
+    }
+    if (key === 'z' && e.shiftKey) {
+      e.preventDefault();
+      if (_lastRedoDomain === 'app' && appRedoStack.length) performAppRedo();
+      else performRedo();
+      return;
+    }
+    if (key === 'y') {
+      e.preventDefault();
+      if (_lastRedoDomain === 'app' && appRedoStack.length) performAppRedo();
+      else performRedo();
+      return;
+    }
     if (key === 'b') { e.preventDefault(); pushUndo(); cmd('bold'); scheduleUndoSnapshot(); }
     if (key === 'i') { e.preventDefault(); pushUndo(); cmd('italic'); scheduleUndoSnapshot(); }
     if (key === 'e') { e.preventDefault(); pushUndo(); ACTIONS.code(); scheduleUndoSnapshot(); return; }
     if (key === 's' && e.shiftKey) { e.preventDefault(); pushUndo(); cmd('strikeThrough'); scheduleUndoSnapshot(); }
+  } else if (!isNativeTextUndoTarget) {
+    if (key === 'z' && !e.shiftKey) {
+      e.preventDefault();
+      if (_lastUndoDomain === 'editor' && undoStack.length) performUndo();
+      else performAppUndo();
+      return;
+    }
+    if (key === 'z' && e.shiftKey) {
+      e.preventDefault();
+      if (_lastRedoDomain === 'editor' && redoStack.length) performRedo();
+      else performAppRedo();
+      return;
+    }
+    if (key === 'y') {
+      e.preventDefault();
+      if (_lastRedoDomain === 'editor' && redoStack.length) performRedo();
+      else performAppRedo();
+      return;
+    }
   }
   if (key === 'n') { e.preventDefault(); openModal(); }
 });

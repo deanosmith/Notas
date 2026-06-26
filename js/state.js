@@ -95,6 +95,14 @@ const UNDO_LIMIT = 100;
 let _lastUndoSnapshot = null;
 let _undoDebounceTimer = null;
 let _undoTransactionOpen = false;
+const appUndoStack = [];
+const appRedoStack = [];
+const APP_UNDO_LIMIT = 80;
+let _appHistoryApplying = false;
+let _appHistoryBusy = false;
+let _lastUndoDomain = 'editor';
+let _lastRedoDomain = '';
+let _docTitleUndoState = null;
 
 const _sharedNoteId   = new URLSearchParams(location.search).get('note');
 const _sharedFolderId = new URLSearchParams(location.search).get('folder');

@@ -74,8 +74,38 @@ function normalizeConversationMessage(id, data = {}) {
     authorPhotoURL: authorPhotos.photoURL,
     authorPhotoURLCandidates: authorPhotos.photoURLCandidates,
     body: String(data.body || ''),
-    created
+    created,
+    thumbsUp: normalizeConversationThumbs(data.thumbsUp)
   };
+}
+
+function normalizeConversationThumbs(value) {
+  const out = {};
+  if (!value || typeof value !== 'object') return out;
+  Object.keys(value).forEach(uid => {
+    if (uid && value[uid]) out[uid] = true;
+  });
+  return out;
+}
+
+function conversationThumbUids(message) {
+  return Object.keys(message?.thumbsUp || {}).filter(uid => message.thumbsUp[uid]);
+}
+
+function conversationThumbCount(message) {
+  return conversationThumbUids(message).length;
+}
+
+function conversationThumbedByMe(message) {
+  return !!(userId && message?.thumbsUp?.[userId]);
+}
+
+function conversationThumbTitle(message, conversation) {
+  const uids = conversationThumbUids(message);
+  if (!uids.length) return 'Thumbs Up';
+  const names = uids.slice(0, 3).map(uid => uid === userId ? 'You' : (conversationProfileByUid(uid, conversation).displayName || 'Friend'));
+  const extra = uids.length - names.length;
+  return names.join(', ') + (extra > 0 ? ' +' + extra : '');
 }
 
 function clearConversationMessageSubscriptions() {
@@ -183,6 +213,10 @@ function listenToConversationsForNote(noteId) {
       allConversations[id] = conversation;
       subscribeConversationMessages(id);
     });
+    if (activeId === normalizedNoteId && restoreConversationAnchorMarks(getEd())) {
+      refreshEmpty(getEd());
+      if (syncActiveNoteFromEditor()) scheduleSave();
+    }
     updateConversationRailBadge();
     renderConversationsSidebar();
     settleInitial();
@@ -790,10 +824,16 @@ function createConversationAnchorMark(conversationId, anchor = {}) {
   return mark;
 }
 
+function shouldDisplayConversationAnchor(conversationId) {
+  const conversation = conversationById(conversationId);
+  return !conversation?.resolved;
+}
+
 function updateConversationAnchorMarkDisplay(mark) {
   if (!mark) return false;
   const conversationId = mark.dataset.conversationId || mark.getAttribute('data-conversation-id') || '';
   if (!conversationId) return false;
+  if (!shouldDisplayConversationAnchor(conversationId)) return false;
   const mode = mark.dataset.conversationMode === 'cursor' ? 'cursor' : 'selection';
   mark.classList.add('note-conversation-anchor');
   mark.dataset.conversationId = conversationId;
@@ -817,10 +857,15 @@ function unwrapConversationAnchorMark(mark) {
 }
 
 function restoreConversationAnchorMarks(root = getEd()) {
-  if (!root) return;
+  if (!root) return false;
+  let changed = false;
   root.querySelectorAll('.note-conversation-anchor').forEach(mark => {
-    if (!updateConversationAnchorMarkDisplay(mark)) unwrapConversationAnchorMark(mark);
+    if (!updateConversationAnchorMarkDisplay(mark)) {
+      unwrapConversationAnchorMark(mark);
+      changed = true;
+    }
   });
+  return changed;
 }
 
 function conversationAnchorMarkForConversation(root, conversationId) {
@@ -1024,39 +1069,8 @@ function renderConversationAnchor(anchorOrConversation, options = {}) {
   return '<div class="' + cardClass + '" title="' + conversationEsc(title) + '">' + inner + '</div>';
 }
 
-function renderConversationNoteOverview(body) {
-  const conversations = sortedAllConversations();
-  const noteGroups = conversationNoteGroups(conversations);
-  const rows = noteGroups.map(group => {
-    const latest = group.latest;
-    const preview = latest ? conversationPreviewForConversation(latest) : conversationCountLabel(group.conversations.length);
-    const sub = group.folderTitle + ' · ' + preview;
-    const unreadCount = conversationGroupUnreadCount(group.conversations);
-    const unreadLabel = unreadCount + ' unread message' + (unreadCount === 1 ? '' : 's');
-    return '<button class="conversation-scope-row" data-conversation-note="' + conversationEsc(group.id) + '" type="button">' +
-      '<span class="conversation-scope-icon folder" style="--conversation-folder-color:' + conversationEsc(group.folderColor || DEFAULT_FOLDER_ICON_COLOR) + ';"><i class="fa-solid fa-folder"></i></span>' +
-      '<span class="conversation-scope-main">' +
-        '<span class="conversation-scope-title">' + conversationEsc(group.title) + '</span>' +
-        '<span class="conversation-scope-sub">' + conversationEsc(sub) + '</span>' +
-      '</span>' +
-      '<span class="conversation-scope-trailing">' +
-        (unreadCount ? '<span class="conversation-scope-count unread" title="' + conversationEsc(unreadLabel) + '" aria-label="' + conversationEsc(unreadLabel) + '">' + conversationEsc(unreadCount > 99 ? '99+' : String(unreadCount)) + '</span>' : '') +
-        '<span class="conversation-scope-chevron"><i class="fa-solid fa-chevron-right"></i></span>' +
-      '</span>' +
-    '</button>';
-  }).join('');
-
-  body.innerHTML =
-    '<div class="conversation-list">' +
-      (rows
-        ? '<div class="conversation-scope-list">' + rows + '</div>'
-        : '<div class="conversation-empty"><i class="fa-regular fa-comments"></i><span>No Conversations Yet</span></div>') +
-    '</div>';
-}
-
-function renderConversationList(body, conversations, options = {}) {
-  const note = options.noteId ? (notes[options.noteId] || (conversations[0] ? conversationNoteForDisplay(conversations[0]) : conversationNoteForDisplay({ noteId: options.noteId, noteTitle: '' }))) : null;
-  const rows = conversations.map(conv => {
+function renderConversationThreadRows(conversations = []) {
+  return conversations.map(conv => {
     const messages = conversationMessages[conv.id] || [];
     const last = messages[messages.length - 1];
     const profile = conversationProfileByUid(last?.authorUid || conv.lastMessageBy || conv.createdBy, conv);
@@ -1086,6 +1100,56 @@ function renderConversationList(body, conversations, options = {}) {
         : '') +
     '</div>';
   }).join('');
+}
+
+function renderResolvedConversationSection(conversations = []) {
+  if (!conversations.length) return '';
+  return '<div class="conversation-section conversation-resolved-section">' +
+    '<div class="conversation-section-title"><span>Resolved</span><small>' + conversationEsc(conversationCountLabel(conversations.length)) + '</small></div>' +
+    '<div class="conversation-thread-list">' + renderConversationThreadRows(conversations) + '</div>' +
+  '</div>';
+}
+
+function renderConversationNoteOverview(body) {
+  const conversations = sortedAllConversations();
+  const activeConversations = conversations.filter(conv => !conv.resolved);
+  const resolvedConversations = conversations.filter(conv => conv.resolved);
+  const noteGroups = conversationNoteGroups(activeConversations);
+  const rows = noteGroups.map(group => {
+    const latest = group.latest;
+    const preview = latest ? conversationPreviewForConversation(latest) : conversationCountLabel(group.conversations.length);
+    const sub = group.folderTitle + ' · ' + preview;
+    const unreadCount = conversationGroupUnreadCount(group.conversations);
+    const unreadLabel = unreadCount + ' unread message' + (unreadCount === 1 ? '' : 's');
+    return '<button class="conversation-scope-row" data-conversation-note="' + conversationEsc(group.id) + '" type="button">' +
+      '<span class="conversation-scope-icon folder" style="--conversation-folder-color:' + conversationEsc(group.folderColor || DEFAULT_FOLDER_ICON_COLOR) + ';"><i class="fa-solid fa-folder"></i></span>' +
+      '<span class="conversation-scope-main">' +
+        '<span class="conversation-scope-title">' + conversationEsc(group.title) + '</span>' +
+        '<span class="conversation-scope-sub">' + conversationEsc(sub) + '</span>' +
+      '</span>' +
+      '<span class="conversation-scope-trailing">' +
+        (unreadCount ? '<span class="conversation-scope-count unread" title="' + conversationEsc(unreadLabel) + '" aria-label="' + conversationEsc(unreadLabel) + '">' + conversationEsc(unreadCount > 99 ? '99+' : String(unreadCount)) + '</span>' : '') +
+        '<span class="conversation-scope-chevron"><i class="fa-solid fa-chevron-right"></i></span>' +
+      '</span>' +
+    '</button>';
+  }).join('');
+
+  body.innerHTML =
+    '<div class="conversation-list">' +
+      (rows ? '<div class="conversation-scope-list">' + rows + '</div>' : '') +
+      renderResolvedConversationSection(resolvedConversations) +
+      (!rows && !resolvedConversations.length
+        ? '<div class="conversation-empty"><i class="fa-regular fa-comments"></i><span>No Conversations Yet</span></div>'
+        : '') +
+    '</div>';
+}
+
+function renderConversationList(body, conversations, options = {}) {
+  const note = options.noteId ? (notes[options.noteId] || (conversations[0] ? conversationNoteForDisplay(conversations[0]) : conversationNoteForDisplay({ noteId: options.noteId, noteTitle: '' }))) : null;
+  const activeConversations = conversations.filter(conv => !conv.resolved);
+  const resolvedConversations = conversations.filter(conv => conv.resolved);
+  const rows = renderConversationThreadRows(activeConversations);
+  const resolvedSection = renderResolvedConversationSection(resolvedConversations);
 
   body.innerHTML =
     '<div class="conversation-list">' +
@@ -1096,9 +1160,11 @@ function renderConversationList(body, conversations, options = {}) {
             '<span class="conversation-subheader-spacer"></span>' +
           '</div>'
         : '') +
-      (conversations.length
-        ? '<div class="conversation-thread-list">' + rows + '</div>'
-        : '<div class="conversation-empty"><i class="fa-regular fa-comments"></i><span>No Conversations Yet</span></div>') +
+      (rows ? '<div class="conversation-thread-list">' + rows + '</div>' : '') +
+      resolvedSection +
+      (!rows && !resolvedConversations.length
+        ? '<div class="conversation-empty"><i class="fa-regular fa-comments"></i><span>No Conversations Yet</span></div>'
+        : '') +
     '</div>';
 }
 
@@ -1146,11 +1212,22 @@ function renderConversationDetail(body, conv) {
   const messageRows = messages.map(message => {
     const mine = message.authorUid === userId;
     const profile = conversationProfileByUid(message.authorUid, conv);
+    const thumbCount = conversationThumbCount(message);
+    const thumbed = conversationThumbedByMe(message);
+    const thumbLabel = thumbed ? 'Liked' : 'Like';
+    const thumbCountLabel = thumbCount ? String(thumbCount) : '';
     return '<div class="conversation-message' + (mine ? ' mine' : '') + '">' +
       renderProfileAvatar({ ...profile, displayName: message.authorName || profile.displayName, photoURL: message.authorPhotoURL || profile.photoURL, photoURLCandidates: message.authorPhotoURLCandidates || profile.photoURLCandidates || [] }) +
       '<div class="conversation-bubble">' +
         '<div class="conversation-message-meta">' + conversationEsc(mine ? 'You' : (message.authorName || profile.displayName || 'Friend')) + ' &middot; ' + conversationEsc(relativeNotificationTime(message.created)) + '</div>' +
         '<div class="conversation-message-body">' + conversationEsc(message.body) + '</div>' +
+        '<div class="conversation-message-actions">' +
+          '<button class="conversation-reaction-btn' + (thumbed ? ' active' : '') + '" data-conversation-thumb="' + conversationEsc(conv.id) + '" data-conversation-message="' + conversationEsc(message.id) + '" type="button" title="' + conversationEsc(thumbCount ? conversationThumbTitle(message, conv) : 'Like Message') + '" aria-label="' + conversationEsc(thumbed ? 'Remove Thumbs Up' : 'Thumbs Up') + '">' +
+            '<i class="fa-solid fa-thumbs-up"></i>' +
+            '<span class="conversation-reaction-label">' + conversationEsc(thumbLabel) + '</span>' +
+            (thumbCountLabel ? '<span class="conversation-reaction-count">' + conversationEsc(thumbCountLabel) + '</span>' : '') +
+          '</button>' +
+        '</div>' +
       '</div>' +
     '</div>';
   }).join('');
@@ -1244,6 +1321,13 @@ function attachConversationSidebarEvents(body) {
       e.preventDefault();
       e.stopPropagation();
       openConversationSubjectDeleteModal(btn.dataset.conversationDeleteSubject);
+    });
+  });
+  body.querySelectorAll('[data-conversation-thumb]').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      toggleConversationMessageThumb(btn.dataset.conversationThumb, btn.dataset.conversationMessage);
     });
   });
   document.getElementById('conversation-create-btn')?.addEventListener('click', createConversationFromComposer);
@@ -1481,6 +1565,37 @@ async function sendActiveConversationReply() {
   }
 }
 
+async function toggleConversationMessageThumb(conversationId, messageId) {
+  if (!userId || !conversationId || !messageId) return;
+  const conversation = conversationById(conversationId);
+  const messages = conversationMessages[conversationId] || [];
+  const message = messages.find(item => item.id === messageId);
+  if (!conversation || !message) return;
+
+  const wasThumbed = conversationThumbedByMe(message);
+  const previousThumbs = { ...(message.thumbsUp || {}) };
+  const nextThumbs = { ...previousThumbs };
+  if (wasThumbed) delete nextThumbs[userId];
+  else nextThumbs[userId] = true;
+  message.thumbsUp = nextThumbs;
+  renderConversationsSidebar();
+
+  try {
+    await updateDoc(
+      doc(fsDb, 'noteConversations', conversationId, 'messages', messageId),
+      new FieldPath('thumbsUp', userId), wasThumbed ? deleteField() : true,
+      'modifiedIso', new Date().toISOString(),
+      'modified', serverTimestamp()
+    );
+  } catch (err) {
+    console.error('toggle conversation thumbs up:', err);
+    const current = (conversationMessages[conversationId] || []).find(item => item.id === messageId);
+    if (current) current.thumbsUp = previousThumbs;
+    renderConversationsSidebar();
+    showToast('Could Not Update Message', 'error');
+  }
+}
+
 function canDeleteConversationSubject(conversation) {
   if (!conversation?.id) return false;
   const note = conversation?.noteId ? notes[conversation.noteId] : null;
@@ -1616,6 +1731,15 @@ async function setConversationResolved(conversationId, resolved) {
       modifiedIso: modified,
       modified: serverTimestamp()
     }, { merge: true });
+    if (resolved) {
+      try {
+        const anchorRemoved = await removeConversationAnchorFromNote(conversation);
+        if (!anchorRemoved) console.warn('resolved conversation marker cleanup skipped:', conversationId);
+      } catch (err) {
+        console.warn('resolved conversation marker cleanup:', err);
+      }
+    }
+    renderConversationsSidebar();
   } catch (err) {
     console.error('resolve conversation:', err);
     if (noteConversations[conversationId]) noteConversations[conversationId].resolved = previousResolved;
