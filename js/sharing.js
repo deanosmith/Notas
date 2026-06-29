@@ -1,4 +1,4 @@
-/* Profiles, sharing, notifications, shared-note library, and shared URL handling - extracted from index.original.html. */
+/* Profiles, sharing, notifications, shared-note library, and shared URL handling. */
 function renderProfileConnectionUI(options = {}) {
   const list = document.getElementById(options.listId || 'linked-profiles-list');
   if (!list) return;

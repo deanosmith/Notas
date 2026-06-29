@@ -1,4 +1,4 @@
-/* Rendering, modals, sidebar, drawer, and settings UI - extracted from index.original.html. */
+/* Rendering, modals, sidebar, drawer, and settings UI. */
 function openDeleteModal(type, id) {
   const item = type === 'note' || type === 'trash-note' ? notes[id] : folders[id];
   const name = item?.title;

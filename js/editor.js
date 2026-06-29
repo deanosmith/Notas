@@ -1,4 +1,4 @@
-/* Editor helpers, toolbar actions, alarms, and mentions - extracted from index.original.html. */
+/* Editor helpers, toolbar actions, reminders, and mentions. */
 function makeUndoSnapshot(ed = getEd()) {
   if (!ed) return null;
   return {

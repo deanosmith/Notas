@@ -1,4 +1,4 @@
-/* Folder CRUD, moving, and pinning - extracted from index.original.html. */
+/* Folder CRUD, moving, sharing cleanup, and pinning. */
 function folderOrderValue(folder) {
   if (Number.isFinite(Number(folder?.order))) return Number(folder.order);
   const created = new Date(folder?.created || 0).getTime();

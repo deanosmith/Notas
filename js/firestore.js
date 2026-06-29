@@ -1,4 +1,4 @@
-/* Firestore listeners, writes, migration, and offline persistence - extracted from index.original.html. */
+/* Firestore listeners, writes, migration, and offline persistence. */
 function listenToNotes() {
   if (unsubscribe) unsubscribe();
   let initialSettled = false;

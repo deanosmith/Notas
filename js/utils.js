@@ -1,4 +1,4 @@
-/* Utility and profile normalization helpers - extracted from index.original.html. */
+/* Utility and profile normalization helpers for the modular Notas app. */
 function normalizeEmail(email) {
   return String(email || '').trim().toLowerCase();
 }

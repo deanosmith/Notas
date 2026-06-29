@@ -1,4 +1,4 @@
-/* Note CRUD and current-note loading - extracted from index.original.html. */
+/* Note CRUD and current-note loading. */
 async function createNote(title, folderId) {
   if (folderId && !isOwnedFolder(folders[folderId])) folderId = null;
   const id  = 'note_' + Date.now();
