@@ -41,6 +41,7 @@ let conversationListeningNoteId = null;
 let conversationBrowseView = 'all';
 let conversationBrowseFolderId = null;
 let conversationBrowseNoteId = null;
+let conversationOverviewLoading = false;
 let saveTimer     = null;
 let unsubscribe   = null;
 let unsubFolders  = null;

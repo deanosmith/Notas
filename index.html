@@ -38,7 +38,7 @@
           <i class="fa-solid fa-bell"></i>
           <span class="notification-badge" id="notification-badge" hidden>0</span>
         </button>
-        <button class="rail-btn" id="conversation-toggle-btn" type="button" title="Toggle Conversations" aria-label="Toggle Conversations" aria-pressed="false">
+        <button class="rail-btn" id="conversation-toggle-btn" data-sidebar-view="conversations" type="button" title="Toggle Conversations" aria-label="Toggle Conversations" aria-pressed="false">
           <i class="fa-solid fa-comments"></i>
           <span class="notification-badge conversation-notification-icon" id="conversation-badge" hidden><i class="fa-solid fa-bell"></i></span>
         </button>
@@ -240,7 +240,7 @@
         </div>
         <div class="settings-row">
           <span class="settings-label"><i class="fa-solid fa-tag"></i>Version</span>
-          <span style="font-size:12px;color:var(--muted);">1.1</span>
+          <span style="font-size:12px;color:var(--muted);">2</span>
         </div>
         <div class="settings-row" id="signout-row" style="display:none;">
           <span class="settings-label"><i class="fa-solid fa-arrow-right-from-bracket"></i>Sign Out</span>
@@ -321,7 +321,24 @@
     <div class="modal wide">
       <div class="modal-title notification-modal-title">
         <span><i class="fa-solid fa-bell" style="margin-right:8px;opacity:.7;"></i>Notifications</span>
-        <button class="modal-btn compact" id="notifications-mark-read" type="button"><i class="fa-solid fa-check-double"></i> All Read</button>
+        <div class="notification-modal-actions">
+          <button class="modal-btn compact" id="notifications-mark-read" type="button"><i class="fa-solid fa-check-double"></i>Read All</button>
+          <button class="modal-btn compact" id="notifications-delete-read" type="button"><i class="fa-solid fa-trash"></i>Delete Read</button>
+          <button class="modal-btn compact sidebar-selection-toggle" data-selection-toggle-for="notifications-list" type="button" title="Select items" aria-label="Select items" aria-pressed="false"><i class="fa-solid fa-list-check"></i></button>
+        </div>
+      </div>
+      <div class="sidebar-selection-bar modal-selection-bar" data-selection-tools-for="notifications-list">
+        <div class="sidebar-selection-tools-left">
+          <label class="sidebar-selection-master" title="Select all" aria-label="Select all">
+            <input type="checkbox" data-selection-master-for="notifications-list" />
+            <span class="sidebar-selection-master-label"><i class="fa-solid fa-check-double"></i><span>Select All</span></span>
+          </label>
+          <span class="sidebar-selection-count" data-selection-count-for="notifications-list" aria-live="polite" hidden></span>
+        </div>
+        <div class="sidebar-selection-actions">
+          <button class="sidebar-selection-action" data-selection-unread-for="notifications-list" type="button" disabled><i class="fa-solid fa-envelope"></i><span>Unread</span></button>
+          <button class="sidebar-selection-action danger" data-selection-delete-for="notifications-list" type="button" disabled><i class="fa-solid fa-trash"></i><span>Delete</span></button>
+        </div>
       </div>
       <div class="notifications-list" id="notifications-list"></div>
       <div class="modal-actions">
@@ -332,7 +349,27 @@
 
   <div class="modal-overlay" id="alarms-modal">
     <div class="modal wide">
-      <div class="modal-title"><i class="fa-solid fa-clock" style="margin-right:8px;opacity:.7;"></i>Reminders</div>
+      <div class="modal-title notification-modal-title">
+        <span><i class="fa-solid fa-clock" style="margin-right:8px;opacity:.7;"></i>Reminders</span>
+        <div class="notification-modal-actions">
+          <button class="modal-btn compact" id="alarms-mark-read" type="button"><i class="fa-solid fa-check-double"></i>Read All</button>
+          <button class="modal-btn compact" id="alarms-delete-read" type="button"><i class="fa-solid fa-trash"></i>Delete Read</button>
+          <button class="modal-btn compact sidebar-selection-toggle" data-selection-toggle-for="alarms-list" type="button" title="Select items" aria-label="Select items" aria-pressed="false"><i class="fa-solid fa-list-check"></i></button>
+        </div>
+      </div>
+      <div class="sidebar-selection-bar modal-selection-bar" data-selection-tools-for="alarms-list">
+        <div class="sidebar-selection-tools-left">
+          <label class="sidebar-selection-master" title="Select all" aria-label="Select all">
+            <input type="checkbox" data-selection-master-for="alarms-list" />
+            <span class="sidebar-selection-master-label"><i class="fa-solid fa-check-double"></i><span>Select All</span></span>
+          </label>
+          <span class="sidebar-selection-count" data-selection-count-for="alarms-list" aria-live="polite" hidden></span>
+        </div>
+        <div class="sidebar-selection-actions">
+          <button class="sidebar-selection-action" data-selection-unread-for="alarms-list" type="button" disabled><i class="fa-solid fa-envelope"></i><span>Unread</span></button>
+          <button class="sidebar-selection-action danger" data-selection-delete-for="alarms-list" type="button" disabled><i class="fa-solid fa-trash"></i><span>Delete</span></button>
+        </div>
+      </div>
       <div class="notifications-list" id="alarms-list"></div>
       <div class="modal-actions">
         <button class="modal-btn primary" id="alarms-close">Done</button>

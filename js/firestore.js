@@ -46,7 +46,7 @@ function listenToNotes() {
     purgeExpiredTrashNotes();
     renderSidebar();
     if (typeof renderConversationsSidebar === 'function') renderConversationsSidebar();
-    if (conversationsOpen && typeof scheduleConversationOverviewRefresh === 'function') scheduleConversationOverviewRefresh();
+    if ((conversationsOpen || sidebarView === 'conversations') && typeof scheduleConversationOverviewRefresh === 'function') scheduleConversationOverviewRefresh();
     if (!activeId || !notes[activeId] || (isTrashedNote(notes[activeId]) && sidebarView !== 'trash')) {
       const ids = sortedIds();
       if (ids.length) openNote(ids[0]);
@@ -111,6 +111,7 @@ function listenToFolders() {
     });
     renderSidebar();
     if (typeof renderConversationsSidebar === 'function') renderConversationsSidebar();
+    if (sidebarView === 'conversations' && typeof scheduleConversationOverviewRefresh === 'function') scheduleConversationOverviewRefresh();
     settleInitial();
   }, err => {
     console.error('onSnapshot folders:', err);
