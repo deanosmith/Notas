@@ -139,6 +139,7 @@ function clearConversationState(options = {}) {
   conversationBrowseView = 'all';
   conversationBrowseFolderId = null;
   conversationBrowseNoteId = null;
+  conversationOverviewLoading = false;
   hideConversationSelectionPopover();
   if (options.close) closeConversationsSidebar();
   updateConversationRailBadge();
@@ -249,8 +250,18 @@ function listenToAllConversations() {
   });
 }
 
+function setConversationOverviewLoading(loading) {
+  const next = !!loading;
+  if (conversationOverviewLoading === next) return;
+  conversationOverviewLoading = next;
+  if (sidebarView === 'conversations' && typeof refreshOpenSidebarPage === 'function') {
+    refreshOpenSidebarPage('conversations');
+  }
+}
+
 function scheduleConversationOverviewRefresh(delay = 160) {
   if (!userId) return;
+  setConversationOverviewLoading(true);
   if (_conversationOverviewRefreshTimer) clearTimeout(_conversationOverviewRefreshTimer);
   _conversationOverviewRefreshTimer = setTimeout(() => {
     _conversationOverviewRefreshTimer = null;
@@ -278,43 +289,48 @@ async function loadConversationsForOverviewNote(noteId) {
 async function refreshConversationOverviewFromNotes() {
   if (!userId) return;
   const scanId = ++_conversationOverviewRefreshSeq;
-  const noteIds = [...new Set(conversationOverviewNoteCandidates().map(note => note.id))];
-  if (!noteIds.length) {
-    updateConversationRailBadge();
-    if (conversationsOpen && conversationBrowseView === 'all' && !activeConversationId && !conversationComposeAnchor) renderConversationsSidebar();
-    return;
-  }
+  setConversationOverviewLoading(true);
+  try {
+    const noteIds = [...new Set(conversationOverviewNoteCandidates().map(note => note.id))];
+    if (!noteIds.length) {
+      updateConversationRailBadge();
+      if (conversationsOpen && conversationBrowseView === 'all' && !activeConversationId && !conversationComposeAnchor) renderConversationsSidebar();
+      return;
+    }
 
-  const successfulNoteIds = new Set();
-  const discoveredConversationIds = new Set();
-  const batchSize = 8;
+    const successfulNoteIds = new Set();
+    const discoveredConversationIds = new Set();
+    const batchSize = 8;
 
-  for (let i = 0; i < noteIds.length; i += batchSize) {
-    const batch = noteIds.slice(i, i + batchSize);
-    const results = await Promise.allSettled(batch.map(loadConversationsForOverviewNote));
-    if (scanId !== _conversationOverviewRefreshSeq) return;
+    for (let i = 0; i < noteIds.length; i += batchSize) {
+      const batch = noteIds.slice(i, i + batchSize);
+      const results = await Promise.allSettled(batch.map(loadConversationsForOverviewNote));
+      if (scanId !== _conversationOverviewRefreshSeq) return;
 
-    results.forEach(result => {
-      if (result.status !== 'fulfilled') {
-        console.warn('conversation overview note scan:', result.reason);
-        return;
-      }
-      successfulNoteIds.add(result.value.noteId);
-      result.value.records.forEach(({ id, conversation }) => {
-        discoveredConversationIds.add(id);
-        allConversations[id] = conversation;
-        if (conversationListeningNoteId && conversation.noteId === conversationListeningNoteId) noteConversations[id] = conversation;
+      results.forEach(result => {
+        if (result.status !== 'fulfilled') {
+          console.warn('conversation overview note scan:', result.reason);
+          return;
+        }
+        successfulNoteIds.add(result.value.noteId);
+        result.value.records.forEach(({ id, conversation }) => {
+          discoveredConversationIds.add(id);
+          allConversations[id] = conversation;
+          if (conversationListeningNoteId && conversation.noteId === conversationListeningNoteId) noteConversations[id] = conversation;
+        });
       });
+    }
+
+    Object.keys(allConversations || {}).forEach(id => {
+      const noteId = allConversations[id]?.noteId || '';
+      if (successfulNoteIds.has(noteId) && !discoveredConversationIds.has(id)) delete allConversations[id];
     });
+
+    updateConversationRailBadge();
+    if (conversationsOpen && !activeConversationId && !conversationComposeAnchor) renderConversationsSidebar();
+  } finally {
+    if (scanId === _conversationOverviewRefreshSeq) setConversationOverviewLoading(false);
   }
-
-  Object.keys(allConversations || {}).forEach(id => {
-    const noteId = allConversations[id]?.noteId || '';
-    if (successfulNoteIds.has(noteId) && !discoveredConversationIds.has(id)) delete allConversations[id];
-  });
-
-  updateConversationRailBadge();
-  if (conversationsOpen && !activeConversationId && !conversationComposeAnchor) renderConversationsSidebar();
 }
 
 function conversationTimeValue(conversation) {
@@ -343,6 +359,7 @@ function updateConversationRailBadge() {
   badge.title = label;
   badge.setAttribute('aria-label', label);
   badge.hidden = unreadCount <= 0;
+  if (typeof refreshOpenSidebarPage === 'function') refreshOpenSidebarPage('conversations');
 }
 
 function canStartConversationOnNote(note) {
@@ -1168,6 +1185,195 @@ function renderConversationList(body, conversations, options = {}) {
     '</div>';
 }
 
+function conversationSidebarNoteKey(noteId) {
+  return 'note::' + (noteId || '');
+}
+
+function conversationSidebarTopicKey(conversationId) {
+  return 'conversation::' + (conversationId || '');
+}
+
+function conversationSidebarConversationsForKeys(keys = []) {
+  const selected = new Set((keys || []).filter(Boolean));
+  if (!selected.size) {
+    return conversationBrowseView === 'note' && conversationBrowseNoteId
+      ? conversationsForNote(conversationBrowseNoteId)
+      : sortedAllConversations();
+  }
+  const byId = {};
+  selected.forEach(key => {
+    if (key.startsWith('note::')) {
+      conversationsForNote(key.slice(6)).forEach(conv => { byId[conv.id] = conv; });
+      return;
+    }
+    if (key.startsWith('conversation::')) {
+      const conv = conversationById(key.slice(14));
+      if (conv) byId[conv.id] = conv;
+    }
+  });
+  return Object.values(byId);
+}
+
+function renderConversationSidebarNoteRow(group) {
+  const latest = group.latest;
+  const preview = latest ? conversationPreviewForConversation(latest) : conversationCountLabel(group.conversations.length);
+  const unreadCount = conversationGroupUnreadCount(group.conversations);
+  const unreadLabel = unreadCount + ' unread message' + (unreadCount === 1 ? '' : 's');
+  return '<div class="profile-row notification-row conversation-sidebar-row sidebar-selectable-row" data-conversation-note-row="' + conversationEsc(group.id) + '">' +
+    (typeof renderSidebarSelectionCheckbox === 'function' ? renderSidebarSelectionCheckbox(conversationSidebarNoteKey(group.id), 'Select note conversations') : '') +
+    '<span class="conversation-sidebar-icon" style="--conversation-folder-color:' + conversationEsc(group.folderColor || DEFAULT_FOLDER_ICON_COLOR) + ';"><i class="fa-solid fa-folder"></i></span>' +
+    '<button class="conversation-sidebar-main" data-conversation-note="' + conversationEsc(group.id) + '" type="button">' +
+      '<span class="profile-name">' + conversationEsc(group.folderTitle || 'Notes') + ' / ' + conversationEsc(group.title || 'Untitled Note') + '</span>' +
+      '<span class="profile-sub">' + conversationEsc(preview) + '</span>' +
+    '</button>' +
+    '<span class="conversation-scope-trailing">' +
+      (unreadCount ? '<span class="conversation-scope-count unread" title="' + conversationEsc(unreadLabel) + '" aria-label="' + conversationEsc(unreadLabel) + '">' + conversationEsc(unreadCount > 99 ? '99+' : String(unreadCount)) + '</span>' : '') +
+      '<span class="conversation-scope-chevron"><i class="fa-solid fa-chevron-right"></i></span>' +
+    '</span>' +
+  '</div>';
+}
+
+function renderConversationSidebarTopicRow(conv) {
+  const messages = conversationMessages[conv.id] || [];
+  const last = messages[messages.length - 1];
+  const sender = conversationSenderName(conv, last);
+  const preview = conversationText(last?.body || conv.lastMessagePreview || conversationAnchorCopy(conv) || 'Conversation', 120);
+  const unread = conversationHasUnread(conv.id);
+  const canDelete = canDeleteConversationSubject(conv);
+  return '<div class="profile-row notification-row conversation-sidebar-row sidebar-selectable-row' + (unread ? ' unread' : '') + (conv.resolved ? ' resolved' : '') + '" data-conversation-topic-row="' + conversationEsc(conv.id) + '">' +
+    (typeof renderSidebarSelectionCheckbox === 'function' ? renderSidebarSelectionCheckbox(conversationSidebarTopicKey(conv.id), 'Select conversation topic') : '') +
+    '<span class="conversation-sidebar-icon topic"><i class="fa-solid fa-comments"></i></span>' +
+    '<button class="conversation-sidebar-main" data-conversation-open="' + conversationEsc(conv.id) + '" type="button">' +
+      '<span class="profile-name">' + conversationEsc(sender) + '</span>' +
+      '<span class="profile-sub">' + conversationEsc(preview) + '</span>' +
+      '<span class="notification-time">' + conversationEsc(relativeNotificationTime(conv.modified || conv.lastMessageAt || conv.created)) + '</span>' +
+    '</button>' +
+    (unread ? '<span class="conversation-unread-dot"></span>' : '') +
+    (canDelete ? '<button class="sidebar-row-icon-btn danger" data-conversation-delete-subject="' + conversationEsc(conv.id) + '" type="button" title="Delete Conversation" aria-label="Delete Conversation"' + (_conversationDeletingSubject ? ' disabled' : '') + '><i class="fa-solid fa-trash"></i></button>' : '') +
+  '</div>';
+}
+
+function renderConversationLoadingRow(label = 'Loading conversations') {
+  return '<div class="profile-empty conversation-loading-row">' +
+    '<span class="conversation-loading-spinner" aria-hidden="true"></span>' +
+    '<span>' + conversationEsc(label) + '</span>' +
+  '</div>';
+}
+
+function renderConversationSidebarPage(target = 'sidebar-conversations-list') {
+  const list = typeof target === 'string' ? document.getElementById(target) : target;
+  if (!list) return;
+  const conversations = sortedAllConversations();
+  const activeConversations = conversations.filter(conv => !conv.resolved);
+  if (!conversations.length) {
+    list.innerHTML = conversationOverviewLoading
+      ? renderConversationLoadingRow()
+      : '<div class="profile-empty">No conversations yet. Conversation topics will appear here by folder and note.</div>';
+    if (typeof attachSidebarSelectionHandlers === 'function') attachSidebarSelectionHandlers(list);
+    return;
+  }
+
+  if (conversationBrowseView === 'note' && conversationBrowseNoteId) {
+    const noteConvs = conversationsForNote(conversationBrowseNoteId);
+    const note = notes[conversationBrowseNoteId] || (noteConvs[0] ? conversationNoteForDisplay(noteConvs[0]) : null);
+    const activeRows = noteConvs.filter(conv => !conv.resolved).map(renderConversationSidebarTopicRow).join('');
+    const resolvedRows = noteConvs.filter(conv => conv.resolved).map(renderConversationSidebarTopicRow).join('');
+    list.innerHTML =
+      '<button class="sidebar-page-action compact conversation-sidebar-back" data-conversation-back type="button"><i class="fa-solid fa-chevron-left"></i><span>Back To Notes</span></button>' +
+      '<div class="sidebar-section-label">' + conversationEsc(conversationFolderLabel(note)) + ' / ' + conversationEsc(note?.title || 'Untitled Note') + '</div>' +
+      (activeRows || '') +
+      (resolvedRows ? '<div class="sidebar-section-label">Resolved</div>' + resolvedRows : '') +
+      (!activeRows && !resolvedRows ? '<div class="profile-empty">No conversations for this note.</div>' : '');
+  } else {
+    const rows = conversationNoteGroups(activeConversations).map(renderConversationSidebarNoteRow).join('');
+    const resolvedRows = conversationNoteGroups(conversations.filter(conv => conv.resolved)).map(renderConversationSidebarNoteRow).join('');
+    list.innerHTML =
+      (conversationOverviewLoading ? renderConversationLoadingRow('Refreshing conversations') : '') +
+      (rows || '') +
+      (resolvedRows ? '<div class="sidebar-section-label">Resolved</div>' + resolvedRows : '') +
+      (!rows && !resolvedRows ? '<div class="profile-empty">No conversations yet.</div>' : '');
+  }
+
+  if (typeof attachSidebarSelectionHandlers === 'function') attachSidebarSelectionHandlers(list);
+  list.querySelectorAll('[data-conversation-note]').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      setConversationBrowseScope('note', { noteId: btn.dataset.conversationNote });
+      renderConversationSidebarPage(list);
+    });
+  });
+  list.querySelectorAll('[data-conversation-open]').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      selectConversation(btn.dataset.conversationOpen);
+    });
+  });
+  list.querySelectorAll('[data-conversation-back]').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      setConversationBrowseScope('all');
+      renderConversationSidebarPage(list);
+    });
+  });
+  list.querySelectorAll('[data-conversation-delete-subject]').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      openConversationSubjectDeleteModal(btn.dataset.conversationDeleteSubject);
+    });
+  });
+}
+
+async function markSidebarConversationsRead(keys = []) {
+  const conversations = conversationSidebarConversationsForKeys(keys);
+  const unread = conversations.flatMap(conv => conversationUnreadItems(conv.id));
+  if (!unread.length || typeof persistNotificationReads !== 'function') {
+    showToast(keys?.length ? 'No Selected Conversations To Read' : 'No Unread Conversations', 'success');
+    return;
+  }
+  await persistNotificationReads(unread.flatMap(notificationReadKeys));
+  refreshOpenSidebarPage('conversations');
+}
+
+async function markSidebarConversationsUnread(keys = []) {
+  if (typeof getMentionItems !== 'function' || typeof persistNotificationUnreads !== 'function') return;
+  const selected = (keys || []).filter(Boolean);
+  if (!selected.length) {
+    showToast('No Selected Conversations', 'success');
+    return;
+  }
+  const conversationIds = new Set(conversationSidebarConversationsForKeys(selected).map(conv => conv.id));
+  const alerts = getMentionItems().filter(item =>
+    item.type === 'conversation' &&
+    conversationIds.has(item.conversationId)
+  );
+  const readKeys = alerts.flatMap(notificationReadKeys);
+  if (!readKeys.length) {
+    showToast('No Selected Conversation Alerts', 'success');
+    return;
+  }
+  await persistNotificationUnreads(readKeys);
+  refreshOpenSidebarPage('conversations');
+  showToast(alerts.length === 1 ? 'Conversation Marked Unread' : 'Conversations Marked Unread', 'success');
+}
+
+async function deleteReadSidebarConversationAlerts(keys = []) {
+  if (typeof getMentionItems !== 'function' || typeof deleteReadNotifications !== 'function') return;
+  const selected = (keys || []).filter(Boolean);
+  const conversationIds = new Set(conversationSidebarConversationsForKeys(selected).map(conv => conv.id));
+  const alerts = getMentionItems().filter(item =>
+    item.type === 'conversation' &&
+    conversationIds.has(item.conversationId) &&
+    (selected.length || item.read)
+  );
+  if (!alerts.length) {
+    showToast(selected.length ? 'No Selected Conversation Alerts' : 'No Read Conversation Alerts', 'success');
+    return;
+  }
+  await deleteReadNotifications(alerts.map(item => item.id));
+  refreshOpenSidebarPage('conversations');
+}
+
 function renderConversationComposer(body, anchor) {
   const recipients = conversationRecipientOptions();
   const defaultRecipient = recipients[0]?.uid || '';
@@ -1355,8 +1561,12 @@ function renderConversationsSidebar() {
     : (activeConversationId ? 'detail' : (conversationBrowseView === 'note' ? 'note' : 'overview'));
   document.getElementById('app')?.classList.toggle('conversations-open', !!conversationsOpen);
   const toggleBtn = document.getElementById('conversation-toggle-btn');
-  toggleBtn?.classList.toggle('active', !!conversationsOpen);
-  toggleBtn?.setAttribute('aria-pressed', conversationsOpen ? 'true' : 'false');
+  const conversationPageActive = toggleBtn?.dataset.sidebarView === 'conversations' &&
+    sidebarView === 'conversations' &&
+    (typeof isSidebarPanelVisible !== 'function' || isSidebarPanelVisible());
+  const toggleActive = !!conversationsOpen || !!conversationPageActive;
+  toggleBtn?.classList.toggle('active', toggleActive);
+  toggleBtn?.setAttribute('aria-pressed', toggleActive ? 'true' : 'false');
 
   if (panelTitle) panelTitle.textContent = conversationPanelTitle();
   if (noteTitle) noteTitle.textContent = conversationScopeTitle();
@@ -1573,6 +1783,7 @@ async function toggleConversationMessageThumb(conversationId, messageId) {
   if (!conversation || !message) return;
 
   const wasThumbed = conversationThumbedByMe(message);
+  const shouldThumb = !wasThumbed;
   const previousThumbs = { ...(message.thumbsUp || {}) };
   const nextThumbs = { ...previousThumbs };
   if (wasThumbed) delete nextThumbs[userId];
@@ -1581,12 +1792,30 @@ async function toggleConversationMessageThumb(conversationId, messageId) {
   renderConversationsSidebar();
 
   try {
-    await updateDoc(
-      doc(fsDb, 'noteConversations', conversationId, 'messages', messageId),
-      new FieldPath('thumbsUp', userId), wasThumbed ? deleteField() : true,
-      'modifiedIso', new Date().toISOString(),
-      'modified', serverTimestamp()
-    );
+    const messageRef = doc(fsDb, 'noteConversations', conversationId, 'messages', messageId);
+    let committedThumbs = nextThumbs;
+    await runTransaction(fsDb, async transaction => {
+      const snap = await transaction.get(messageRef);
+      if (!snap.exists()) throw new Error('message-missing');
+      const latestThumbs = normalizeConversationThumbs(snap.data()?.thumbsUp);
+      if (!!latestThumbs[userId] === shouldThumb) {
+        committedThumbs = latestThumbs;
+        return;
+      }
+      if (shouldThumb) latestThumbs[userId] = true;
+      else delete latestThumbs[userId];
+      committedThumbs = latestThumbs;
+      transaction.update(messageRef, {
+        thumbsUp: Object.keys(latestThumbs).length ? latestThumbs : deleteField(),
+        modifiedIso: new Date().toISOString(),
+        modified: serverTimestamp()
+      });
+    });
+    const current = (conversationMessages[conversationId] || []).find(item => item.id === messageId);
+    if (current) {
+      current.thumbsUp = committedThumbs;
+      renderConversationsSidebar();
+    }
   } catch (err) {
     console.error('toggle conversation thumbs up:', err);
     const current = (conversationMessages[conversationId] || []).find(item => item.id === messageId);

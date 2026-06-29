@@ -1,4 +1,4 @@
-/* Authentication and auth-state lifecycle - extracted from index.original.html. */
+/* Authentication and auth-state lifecycle. */
 function closeTransientSurfaces() {
   [
     'settings-modal',

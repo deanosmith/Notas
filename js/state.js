@@ -1,4 +1,4 @@
-/* Global state - extracted from index.original.html. */
+/* Shared application state for the modular Notas app. */
 let notes         = {};
 let folders       = {};
 let activeId      = null;
@@ -41,6 +41,7 @@ let conversationListeningNoteId = null;
 let conversationBrowseView = 'all';
 let conversationBrowseFolderId = null;
 let conversationBrowseNoteId = null;
+let conversationOverviewLoading = false;
 let saveTimer     = null;
 let unsubscribe   = null;
 let unsubFolders  = null;

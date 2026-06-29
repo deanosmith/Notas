@@ -1,4 +1,4 @@
-/* Profiles, sharing, notifications, shared-note library, and shared URL handling - extracted from index.original.html. */
+/* Profiles, sharing, notifications, shared-note library, and shared URL handling. */
 function renderProfileConnectionUI(options = {}) {
   const list = document.getElementById(options.listId || 'linked-profiles-list');
   if (!list) return;
@@ -2676,6 +2676,19 @@ function isNotificationRead(notification) {
   return notificationReadKeys(notification).some(key => !!readNotifications[key]);
 }
 
+function notificationDeletedReadKey(notification) {
+  if (!notification) return '';
+  const baseKey = notification.readKey ||
+    notificationReadKeyForParts(notification.type, notificationTargetId(notification), notification.fromUid) ||
+    notification.id;
+  return baseKey ? 'notif_deleted_' + _safeDocFragment(baseKey) : '';
+}
+
+function isNotificationDeleted(notification) {
+  const key = notificationDeletedReadKey(notification);
+  return !!(key && readNotifications[key]);
+}
+
 function reminderClearedReadKey(reminderId) {
   return 'reminder_cleared_' + _safeDocFragment(reminderId || 'reminder');
 }
@@ -2701,6 +2714,29 @@ async function persistNotificationReads(keys) {
     await setDoc(_getUserDocRef(), { readNotifications: updates }, { merge: true });
   } catch (err) {
     console.error('persist notification reads:', err);
+  }
+}
+
+async function persistNotificationUnreads(keys = []) {
+  const updates = {};
+  keys.filter(Boolean).forEach(key => {
+    delete readNotifications[key];
+    updates[key] = false;
+  });
+  _writeNotificationStateToLocal();
+  renderNotificationButton();
+  if (typeof renderAlarmButton === 'function') renderAlarmButton();
+  if (typeof renderConversationsSidebar === 'function') renderConversationsSidebar();
+  if (document.getElementById('notifications-modal')?.classList.contains('open')) renderNotificationsList();
+  if (document.getElementById('alarms-modal')?.classList.contains('open') && typeof renderAlarmsList === 'function') renderAlarmsList();
+  refreshOpenSidebarPage('notifications');
+  refreshOpenSidebarPage('alarms');
+  refreshOpenSidebarPage('conversations');
+  if (!Object.keys(updates).length) return;
+  try {
+    await setDoc(_getUserDocRef(), { readNotifications: updates }, { merge: true });
+  } catch (err) {
+    console.error('persist notification unreads:', err);
   }
 }
 
@@ -3000,6 +3036,7 @@ function getNotificationItems() {
     };
   });
   return Object.values(byReadKey)
+    .filter(item => !isNotificationDeleted(item))
     .sort((a, b) => new Date(b.created) - new Date(a.created));
 }
 
@@ -3037,6 +3074,7 @@ function getMentionItems() {
       readKey,
       source: 'note'
     };
+    if (isNotificationDeleted(item)) return;
     byReadKey[readKey] = { ...item, read: isNotificationRead(item) };
   });
 
@@ -3079,20 +3117,24 @@ function renderNotificationsList(target = 'notifications-list') {
   const items = getMentionItems();
   if (notificationsUnavailable) {
     list.innerHTML = '<div class="profile-empty">Notifications are unavailable right now. Direct sharing can still be retried after Firestore profile-share access is enabled.</div>';
+    if (typeof attachSidebarSelectionHandlers === 'function') attachSidebarSelectionHandlers(list);
     return;
   }
   if (!items.length) {
     list.innerHTML = '<div class="profile-empty">No notifications yet. Mentions, shares, and conversation replies from friends will appear here.</div>';
+    if (typeof attachSidebarSelectionHandlers === 'function') attachSidebarSelectionHandlers(list);
     return;
   }
 
   list.innerHTML = items.map(n =>
-    '<div class="profile-row notification-row' + (n.read ? '' : ' unread') + '" data-notification-id="' + esc(n.id) + '">' +
+    '<div class="profile-row notification-row sidebar-selectable-row' + (n.read ? '' : ' unread') + '" data-notification-id="' + esc(n.id) + '">' +
+      (typeof renderSidebarSelectionCheckbox === 'function' ? renderSidebarSelectionCheckbox(n.id, 'Select notification') : '') +
       renderProfileAvatar({ displayName: n.fromName, photoURL: n.fromPhotoURL, photoURLCandidates: n.fromPhotoURLCandidates || [] }) +
       '<div class="profile-main"><div class="profile-name">' + esc(notificationText(n)) + '</div><div class="notification-time">' + esc(relativeNotificationTime(n.created)) + '</div></div>' +
       (n.read ? '' : '<span class="profile-avatar" style="width:9px;height:9px;min-width:9px;background:var(--accent);padding:0;"></span>') +
     '</div>'
   ).join('');
+  if (typeof attachSidebarSelectionHandlers === 'function') attachSidebarSelectionHandlers(list);
 
   list.querySelectorAll('[data-notification-id]').forEach(row => {
     row.addEventListener('click', () => openNotification(row.dataset.notificationId));
@@ -3105,10 +3147,79 @@ async function markNotificationRead(id) {
   await persistNotificationReads(notificationReadKeys(item || { id }));
 }
 
-async function markAllNotificationsRead() {
-  const unread = getMentionItems().filter(n => !n.read);
+async function markAllNotificationsRead(ids = []) {
+  const selected = new Set((ids || []).filter(Boolean));
+  const unread = getMentionItems().filter(n => selected.size ? selected.has(n.id) : !n.read);
   if (!unread.length) return;
   await persistNotificationReads(unread.flatMap(notificationReadKeys));
+}
+
+async function markNotificationsUnread(ids = []) {
+  const selected = new Set((ids || []).filter(Boolean));
+  if (!selected.size) {
+    showToast('No Selected Notifications', 'success');
+    return;
+  }
+  const targets = getMentionItems().filter(n => selected.has(n.id));
+  const readKeys = targets.flatMap(notificationReadKeys);
+  if (!readKeys.length) {
+    showToast('No Selected Notifications', 'success');
+    return;
+  }
+  await persistNotificationUnreads(readKeys);
+  showToast(targets.length === 1 ? 'Notification Marked Unread' : 'Notifications Marked Unread', 'success');
+}
+
+async function deleteReadNotifications(ids = []) {
+  const selected = new Set((ids || []).filter(Boolean));
+  const read = getMentionItems().filter(n => selected.size ? selected.has(n.id) : n.read);
+  if (!read.length) {
+    showToast(selected.size ? 'No Selected Notifications' : 'No Read Notifications', 'success');
+    return;
+  }
+  const commitDelete = async () => {
+    const updates = {};
+    read.forEach(item => {
+      notificationReadKeys(item).forEach(key => {
+        readNotifications[key] = true;
+        updates[key] = true;
+      });
+      const deletedKey = notificationDeletedReadKey(item);
+      if (deletedKey) {
+        readNotifications[deletedKey] = true;
+        updates[deletedKey] = true;
+      }
+    });
+
+    _writeNotificationStateToLocal();
+    renderNotificationButton();
+    if (typeof renderConversationsSidebar === 'function') renderConversationsSidebar();
+    if (document.getElementById('notifications-modal')?.classList.contains('open')) renderNotificationsList();
+    refreshOpenSidebarPage('notifications');
+    refreshOpenSidebarPage('conversations');
+
+    try {
+      await setDoc(_getUserDocRef(), { readNotifications: updates }, { merge: true });
+      showToast(selected.size ? 'Notifications Deleted' : 'Read Notifications Deleted', 'success');
+    } catch (err) {
+      console.error('delete read notifications:', err);
+      showToast('Deleted Locally; Sync Failed', 'error');
+    }
+  };
+  if (typeof openDeleteConfirmationModal === 'function') {
+    const conversationOnly = read.every(item => item.type === 'conversation');
+    const singular = conversationOnly ? 'Conversation Alert' : 'Notification';
+    const plural = conversationOnly ? 'Conversation Alerts' : 'Notifications';
+    openDeleteConfirmationModal({
+      title: selected.size ? 'Delete Selected ' + plural + '?' : 'Delete Read ' + plural + '?',
+      target: read.length === 1 ? notificationText(read[0]) : read.length + ' ' + plural,
+      copy: (conversationOnly ? 'Deletes these conversation alerts.' : 'Deletes these notifications.') + ' Shared notes and conversations stay available.',
+      confirmLabel: read.length === 1 ? 'Delete ' + singular : 'Delete ' + plural,
+      onConfirm: commitDelete
+    });
+    return;
+  }
+  await commitDelete();
 }
 
 async function openNotification(id) {
@@ -3201,7 +3312,7 @@ function _subscribeSharedNote(noteId) {
         if (sharedNoteUnsubs[noteId]) { sharedNoteUnsubs[noteId](); delete sharedNoteUnsubs[noteId]; delete sharedNoteInitialLoads[noteId]; }
         if (activeId === noteId) { activeId = null; }
         renderSidebar();
-        if (conversationsOpen && typeof scheduleConversationOverviewRefresh === 'function') scheduleConversationOverviewRefresh();
+        if ((conversationsOpen || sidebarView === 'conversations') && typeof scheduleConversationOverviewRefresh === 'function') scheduleConversationOverviewRefresh();
         if (!activeId) { const ids = sortedIds(); ids.length ? openNote(ids[0]) : showEditorView(false); }
       }
       settleInitial();
@@ -3222,7 +3333,7 @@ function _subscribeSharedNote(noteId) {
       if (sharedNoteUnsubs[noteId]) { sharedNoteUnsubs[noteId](); delete sharedNoteUnsubs[noteId]; delete sharedNoteInitialLoads[noteId]; }
       if (activeId === noteId) { activeId = null; }
       renderSidebar();
-      if (conversationsOpen && typeof scheduleConversationOverviewRefresh === 'function') scheduleConversationOverviewRefresh();
+      if ((conversationsOpen || sidebarView === 'conversations') && typeof scheduleConversationOverviewRefresh === 'function') scheduleConversationOverviewRefresh();
       if (!activeId) { const ids = sortedIds(); ids.length ? openNote(ids[0]) : showEditorView(false); }
       showToast('A shared note is no longer available', 'error');
       settleInitial();
@@ -3244,7 +3355,7 @@ function _subscribeSharedNote(noteId) {
     });
 
     renderSidebar();
-    if (conversationsOpen && typeof scheduleConversationOverviewRefresh === 'function') scheduleConversationOverviewRefresh();
+    if ((conversationsOpen || sidebarView === 'conversations') && typeof scheduleConversationOverviewRefresh === 'function') scheduleConversationOverviewRefresh();
 
     // If this note is currently open and the editor is idle, sync it
     if (activeId === noteId && prevContent !== undefined && prevContent !== d.content) {
@@ -3269,7 +3380,7 @@ function _subscribeSharedNote(noteId) {
       if (sharedNoteUnsubs[noteId]) { sharedNoteUnsubs[noteId](); delete sharedNoteUnsubs[noteId]; delete sharedNoteInitialLoads[noteId]; }
       if (activeId === noteId) { activeId = null; }
       renderSidebar();
-      if (conversationsOpen && typeof scheduleConversationOverviewRefresh === 'function') scheduleConversationOverviewRefresh();
+      if ((conversationsOpen || sidebarView === 'conversations') && typeof scheduleConversationOverviewRefresh === 'function') scheduleConversationOverviewRefresh();
       if (!activeId) { const ids = sortedIds(); ids.length ? openNote(ids[0]) : showEditorView(false); }
     }
     settleInitial();

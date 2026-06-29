@@ -1,4 +1,4 @@
-/* Rendering, modals, sidebar, drawer, and settings UI - extracted from index.original.html. */
+/* Rendering, modals, sidebar, drawer, and settings UI. */
 function openDeleteModal(type, id) {
   const item = type === 'note' || type === 'trash-note' ? notes[id] : folders[id];
   const name = item?.title;
@@ -36,6 +36,35 @@ function openDeleteModal(type, id) {
     : '<i class="fa-solid fa-xmark" style="margin-right:6px;"></i>Remove';
   document.getElementById('delete-modal').classList.add('open');
 }
+function openDeleteConfirmationModal(options = {}) {
+  const {
+    title = 'Delete Items?',
+    target = '',
+    copy = 'This action cannot be undone.',
+    confirmLabel = 'Delete',
+    confirmIcon = 'fa-solid fa-trash',
+    onConfirm = null,
+    mode = 'delete'
+  } = options || {};
+  _deletePending = {
+    type: 'custom',
+    mode,
+    action: typeof onConfirm === 'function' ? onConfirm : null
+  };
+
+  const titleEl = document.getElementById('delete-modal-title');
+  const bodyEl = document.getElementById('delete-modal-body');
+  const confirmBtn = document.getElementById('delete-modal-confirm');
+  if (!titleEl || !bodyEl || !confirmBtn) return;
+
+  titleEl.textContent = title;
+  bodyEl.className = 'delete-message';
+  bodyEl.innerHTML =
+    (target ? '<strong class="delete-target">' + esc(target) + '</strong>' : '') +
+    '<div class="delete-copy">' + esc(copy) + '</div>';
+  confirmBtn.innerHTML = '<i class="' + esc(confirmIcon) + '" style="margin-right:6px;"></i>' + esc(confirmLabel);
+  document.getElementById('delete-modal').classList.add('open');
+}
 function closeDeleteModal() {
   document.getElementById('delete-modal').classList.remove('open');
   _deletePending = null;
@@ -50,6 +79,7 @@ async function confirmDelete() {
   else if (type === 'profile') await removeLinkedProfile(id);
   else if (type === 'table') confirmTableDelete(pending.table);
   else if (type === 'conversation-subject') await deleteConversationSubject(pending.conversationId);
+  else if (type === 'custom' && typeof pending.action === 'function') await pending.action();
   else await _execDeleteFolder(id);
 }
 
@@ -442,7 +472,7 @@ function attachFolderReorderHandlers(row, folder) {
   });
 }
 
-const SIDEBAR_VIEWS = new Set(['notes', 'notifications', 'alarms', 'friends', 'trash']);
+const SIDEBAR_VIEWS = new Set(['notes', 'notifications', 'alarms', 'conversations', 'friends', 'trash']);
 
 function isSidebarPanelVisible() {
   const sidebar = document.getElementById('sidebar');
@@ -602,7 +632,11 @@ function setSidebarView(view) {
     activeId = ids.length ? ids[0] : null;
     activeId ? openNote(activeId) : showEditorView(false);
   }
+  if (sidebarView === 'conversations') conversationOverviewLoading = true;
   renderSidebar();
+  if (sidebarView === 'conversations' && typeof scheduleConversationOverviewRefresh === 'function') {
+    scheduleConversationOverviewRefresh(0);
+  }
   recordAppNavigationState();
 }
 
@@ -620,6 +654,153 @@ function refreshOpenSidebarPage(view) {
   if (sidebarView === view) renderSidebarPage(view);
 }
 
+function renderSidebarActionButtons(readId, deleteId, listId = '') {
+  const selectionToggle = listId
+    ? '<button class="sidebar-page-action compact icon-only sidebar-selection-toggle" data-selection-toggle-for="' + esc(listId) + '" type="button" title="Select items" aria-label="Select items" aria-pressed="false"><i class="fa-solid fa-list-check"></i></button>'
+    : '';
+  return '<div class="sidebar-page-actions' + (listId ? ' with-selection-toggle' : '') + '">' +
+    '<button class="sidebar-page-action compact" id="' + esc(readId) + '" type="button"><i class="fa-solid fa-check-double"></i><span>Read All</span></button>' +
+    '<button class="sidebar-page-action compact" id="' + esc(deleteId) + '" type="button"><i class="fa-solid fa-trash"></i><span>Delete Read</span></button>' +
+    selectionToggle +
+  '</div>';
+}
+
+function renderSidebarSelectionBar(listId) {
+  return '<div class="sidebar-selection-bar" data-selection-tools-for="' + esc(listId) + '">' +
+    '<div class="sidebar-selection-tools-left">' +
+      '<label class="sidebar-selection-master" title="Select all" aria-label="Select all">' +
+        '<input type="checkbox" data-selection-master-for="' + esc(listId) + '" />' +
+        '<span class="sidebar-selection-master-label"><i class="fa-solid fa-check-double"></i><span>Select All</span></span>' +
+      '</label>' +
+      '<span class="sidebar-selection-count" data-selection-count-for="' + esc(listId) + '" aria-live="polite" hidden></span>' +
+    '</div>' +
+    '<div class="sidebar-selection-actions">' +
+      '<button class="sidebar-selection-action" data-selection-unread-for="' + esc(listId) + '" type="button" disabled><i class="fa-solid fa-envelope"></i><span>Unread</span></button>' +
+      '<button class="sidebar-selection-action danger" data-selection-delete-for="' + esc(listId) + '" type="button" disabled><i class="fa-solid fa-trash"></i><span>Delete</span></button>' +
+    '</div>' +
+  '</div>';
+}
+
+function renderSidebarSelectionCheckbox(key, label = 'Select item') {
+  return '<label class="sidebar-select-control" title="' + esc(label) + '" aria-label="' + esc(label) + '">' +
+    '<input type="checkbox" data-select-key="' + esc(key) + '" />' +
+    '<span></span>' +
+  '</label>';
+}
+
+function sidebarListFromTarget(target) {
+  return typeof target === 'string' ? document.getElementById(target) : target;
+}
+
+function selectedSidebarKeys(target) {
+  const list = sidebarListFromTarget(target);
+  if (!list) return [];
+  return [...list.querySelectorAll('[data-select-key]:checked')]
+    .map(input => input.dataset.selectKey)
+    .filter(Boolean);
+}
+
+function setSidebarSelectionMode(target, active) {
+  const list = sidebarListFromTarget(target);
+  if (!list?.id) return;
+  const enabled = !!active;
+  list.classList.toggle('selection-mode', enabled);
+  if (!enabled) {
+    list.querySelectorAll('[data-select-key]').forEach(input => { input.checked = false; });
+  }
+  document.querySelectorAll('[data-selection-toggle-for]').forEach(toggle => {
+    if (toggle.dataset.selectionToggleFor !== list.id) return;
+    toggle.classList.toggle('active', enabled);
+    toggle.setAttribute('aria-pressed', enabled ? 'true' : 'false');
+  });
+  document.querySelectorAll('[data-selection-tools-for]').forEach(tools => {
+    if (tools.dataset.selectionToolsFor !== list.id) return;
+    tools.classList.toggle('selection-mode', enabled);
+  });
+  syncSidebarSelectionState(list);
+}
+
+function syncSidebarSelectionState(target) {
+  const list = sidebarListFromTarget(target);
+  if (!list?.id) return;
+  const boxes = [...list.querySelectorAll('[data-select-key]')];
+  const checked = boxes.filter(box => box.checked);
+  const selectionMode = list.classList.contains('selection-mode');
+  document.querySelectorAll('[data-selection-master-for]').forEach(master => {
+    if (master.dataset.selectionMasterFor !== list.id) return;
+    master.checked = !!boxes.length && checked.length === boxes.length;
+    master.indeterminate = checked.length > 0 && checked.length < boxes.length;
+    master.disabled = !selectionMode || !boxes.length;
+  });
+  document.querySelectorAll('[data-selection-count-for]').forEach(count => {
+    if (count.dataset.selectionCountFor !== list.id) return;
+    count.textContent = checked.length ? String(checked.length) : '';
+    count.hidden = !selectionMode || !checked.length;
+    count.setAttribute('aria-label', checked.length ? checked.length + ' selected' : 'No items selected');
+  });
+  document.querySelectorAll('[data-selection-unread-for], [data-selection-delete-for]').forEach(button => {
+    const targetId = button.dataset.selectionUnreadFor || button.dataset.selectionDeleteFor;
+    if (targetId !== list.id) return;
+    button.disabled = !selectionMode || !checked.length;
+  });
+}
+
+function attachSidebarSelectionHandlers(target) {
+  const list = sidebarListFromTarget(target);
+  if (!list?.id) return;
+  document.querySelectorAll('[data-selection-toggle-for]').forEach(toggle => {
+    if (toggle.dataset.selectionToggleFor !== list.id) return;
+    if (toggle.dataset.selectionToggleHandlerFor !== list.id) {
+      toggle.dataset.selectionToggleHandlerFor = list.id;
+      toggle.addEventListener('click', e => {
+        e.preventDefault();
+        e.stopPropagation();
+        const targetList = document.getElementById(toggle.dataset.selectionToggleFor || '');
+        setSidebarSelectionMode(targetList, !targetList?.classList.contains('selection-mode'));
+      });
+    }
+  });
+  list.querySelectorAll('.sidebar-select-control').forEach(label => {
+    label.addEventListener('click', e => e.stopPropagation());
+  });
+  list.querySelectorAll('[data-select-key]').forEach(input => {
+    input.addEventListener('click', e => e.stopPropagation());
+    input.addEventListener('change', () => syncSidebarSelectionState(list));
+  });
+  list.querySelectorAll('.sidebar-selectable-row').forEach(row => {
+    if (row.dataset.selectionRowHandlerFor === list.id) return;
+    row.dataset.selectionRowHandlerFor = list.id;
+    row.addEventListener('click', e => {
+      if (!list.classList.contains('selection-mode')) return;
+      if (e.target.closest('.sidebar-select-control, [data-clear-alarm-note], [data-conversation-delete-subject]')) return;
+      const box = row.querySelector('[data-select-key]');
+      if (!box) return;
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+      box.checked = !box.checked;
+      box.dispatchEvent(new Event('change', { bubbles: true }));
+    }, true);
+  });
+  document.querySelectorAll('[data-selection-master-for]').forEach(master => {
+    if (master.dataset.selectionMasterFor !== list.id) return;
+    if (master.dataset.selectionHandlerFor !== list.id) {
+      master.dataset.selectionHandlerFor = list.id;
+      master.addEventListener('change', () => {
+        const targetList = document.getElementById(master.dataset.selectionMasterFor || '');
+        targetList?.querySelectorAll('[data-select-key]').forEach(input => {
+          input.checked = master.checked;
+          input.dispatchEvent(new Event('change', { bubbles: true }));
+        });
+        syncSidebarSelectionState(targetList);
+      });
+    }
+  });
+  const keepSelectionMode = [...document.querySelectorAll('[data-selection-toggle-for]')]
+    .some(toggle => toggle.dataset.selectionToggleFor === list.id && toggle.getAttribute('aria-pressed') === 'true');
+  setSidebarSelectionMode(list, keepSelectionMode);
+}
+
 function renderSidebarPage(view) {
   const list = document.getElementById('sidebar-list');
   const sidebar = document.getElementById('sidebar');
@@ -631,6 +812,7 @@ function renderSidebarPage(view) {
     create:        { icon: 'fa-solid fa-plus',       label: 'Create' },
     notifications: { icon: 'fa-solid fa-bell',       label: 'Notifications' },
     alarms:        { icon: 'fa-solid fa-clock',      label: 'Reminders' },
+    conversations: { icon: 'fa-solid fa-comments',   label: 'Conversations' },
     friends:       { icon: 'fa-solid fa-user-group', label: 'Friends' },
     trash:         { icon: 'fa-solid fa-trash',      label: 'Trash' }
   }[view] || { icon: 'fa-solid fa-note-sticky', label: 'Notes' };
@@ -648,16 +830,42 @@ function renderSidebarPage(view) {
 
   if (view === 'notifications') {
     content.innerHTML =
-      '<button class="sidebar-page-action compact" id="sidebar-notifications-mark-read" type="button"><i class="fa-solid fa-check-double"></i><span>All Read</span></button>' +
+      renderSidebarActionButtons('sidebar-notifications-mark-read', 'sidebar-notifications-delete-read', 'sidebar-notifications-list') +
+      renderSidebarSelectionBar('sidebar-notifications-list') +
       '<div class="notifications-list" id="sidebar-notifications-list"></div>';
     renderNotificationsList(document.getElementById('sidebar-notifications-list'));
-    document.getElementById('sidebar-notifications-mark-read')?.addEventListener('click', markAllNotificationsRead);
+    document.getElementById('sidebar-notifications-mark-read')?.addEventListener('click', () => markAllNotificationsRead());
+    document.getElementById('sidebar-notifications-delete-read')?.addEventListener('click', () => deleteReadNotifications());
+    document.querySelector('[data-selection-unread-for="sidebar-notifications-list"]')?.addEventListener('click', () => markNotificationsUnread(selectedSidebarKeys('sidebar-notifications-list')));
+    document.querySelector('[data-selection-delete-for="sidebar-notifications-list"]')?.addEventListener('click', () => deleteReadNotifications(selectedSidebarKeys('sidebar-notifications-list')));
     return;
   }
 
   if (view === 'alarms') {
-    content.innerHTML = '<div class="notifications-list" id="sidebar-alarms-list"></div>';
+    content.innerHTML =
+      renderSidebarActionButtons('sidebar-alarms-mark-read', 'sidebar-alarms-delete-read', 'sidebar-alarms-list') +
+      renderSidebarSelectionBar('sidebar-alarms-list') +
+      '<div class="notifications-list" id="sidebar-alarms-list"></div>';
     renderAlarmsList(document.getElementById('sidebar-alarms-list'));
+    document.getElementById('sidebar-alarms-mark-read')?.addEventListener('click', () => markReminderItemsRead());
+    document.getElementById('sidebar-alarms-delete-read')?.addEventListener('click', () => deleteReadReminderItems());
+    document.querySelector('[data-selection-unread-for="sidebar-alarms-list"]')?.addEventListener('click', () => markReminderItemsUnread(selectedSidebarKeys('sidebar-alarms-list')));
+    document.querySelector('[data-selection-delete-for="sidebar-alarms-list"]')?.addEventListener('click', () => deleteReadReminderItems(selectedSidebarKeys('sidebar-alarms-list')));
+    return;
+  }
+
+  if (view === 'conversations') {
+    content.innerHTML =
+      renderSidebarActionButtons('sidebar-conversations-mark-read', 'sidebar-conversations-delete-read', 'sidebar-conversations-list') +
+      renderSidebarSelectionBar('sidebar-conversations-list') +
+      '<div class="notifications-list sidebar-conversations-list" id="sidebar-conversations-list"></div>';
+    if (typeof renderConversationSidebarPage === 'function') {
+      renderConversationSidebarPage(document.getElementById('sidebar-conversations-list'));
+    }
+    document.getElementById('sidebar-conversations-mark-read')?.addEventListener('click', () => markSidebarConversationsRead());
+    document.getElementById('sidebar-conversations-delete-read')?.addEventListener('click', () => deleteReadSidebarConversationAlerts());
+    document.querySelector('[data-selection-unread-for="sidebar-conversations-list"]')?.addEventListener('click', () => markSidebarConversationsUnread(selectedSidebarKeys('sidebar-conversations-list')));
+    document.querySelector('[data-selection-delete-for="sidebar-conversations-list"]')?.addEventListener('click', () => deleteReadSidebarConversationAlerts(selectedSidebarKeys('sidebar-conversations-list')));
     return;
   }
 

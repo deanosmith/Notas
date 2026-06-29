@@ -67,9 +67,16 @@ document.getElementById('signout-btn').addEventListener('click', () => {
   signOut(auth);
 });
 document.getElementById('notifications-close').addEventListener('click', () => document.getElementById('notifications-modal').classList.remove('open'));
-document.getElementById('notifications-mark-read').addEventListener('click', markAllNotificationsRead);
+document.getElementById('notifications-mark-read').addEventListener('click', () => markAllNotificationsRead());
+document.getElementById('notifications-delete-read')?.addEventListener('click', () => deleteReadNotifications());
+document.querySelector('[data-selection-unread-for="notifications-list"]')?.addEventListener('click', () => markNotificationsUnread(selectedSidebarKeys('notifications-list')));
+document.querySelector('[data-selection-delete-for="notifications-list"]')?.addEventListener('click', () => deleteReadNotifications(selectedSidebarKeys('notifications-list')));
 document.getElementById('notifications-modal').addEventListener('click', e => { if (e.target === e.currentTarget) document.getElementById('notifications-modal').classList.remove('open'); });
 document.getElementById('alarms-close').addEventListener('click', () => document.getElementById('alarms-modal').classList.remove('open'));
+document.getElementById('alarms-mark-read')?.addEventListener('click', () => markReminderItemsRead());
+document.getElementById('alarms-delete-read')?.addEventListener('click', () => deleteReadReminderItems());
+document.querySelector('[data-selection-unread-for="alarms-list"]')?.addEventListener('click', () => markReminderItemsUnread(selectedSidebarKeys('alarms-list')));
+document.querySelector('[data-selection-delete-for="alarms-list"]')?.addEventListener('click', () => deleteReadReminderItems(selectedSidebarKeys('alarms-list')));
 document.getElementById('alarms-modal').addEventListener('click', e => { if (e.target === e.currentTarget) document.getElementById('alarms-modal').classList.remove('open'); });
 document.getElementById('alarm-save').addEventListener('click', saveNoteAlarm);
 document.getElementById('alarm-clear').addEventListener('click', () => clearNoteAlarm());
@@ -105,7 +112,9 @@ document.querySelectorAll('[data-alarm-time-preset]').forEach(btn => {
 document.getElementById('mention-share-confirm').addEventListener('click', () => closeMentionShareModal(true));
 document.getElementById('mention-share-cancel').addEventListener('click', () => closeMentionShareModal(false));
 document.getElementById('mention-share-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeMentionShareModal(false); });
-document.getElementById('conversation-toggle-btn')?.addEventListener('click', toggleConversationsSidebar);
+document.getElementById('conversation-toggle-btn')?.addEventListener('click', () => {
+  if (!document.getElementById('conversation-toggle-btn')?.dataset.sidebarView) toggleConversationsSidebar();
+});
 document.getElementById('conversation-close-btn')?.addEventListener('click', closeConversationsSidebar);
 document.getElementById('conversation-selection-popover')?.addEventListener('mousedown', e => e.preventDefault());
 document.getElementById('conversation-selection-start-btn')?.addEventListener('click', e => {
@@ -332,6 +341,10 @@ editorEl.addEventListener('keydown', e => {
 
   if (!inTable && e.key === 'ArrowDown' && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey && !e.isComposing) {
     if (moveCaretBeyondHeaderDomainEnd()) {
+      e.preventDefault();
+      return;
+    }
+    if (insertCleanLineBelowCaret()) {
       e.preventDefault();
       return;
     }

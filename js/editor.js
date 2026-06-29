@@ -1,4 +1,4 @@
-/* Editor helpers, toolbar actions, alarms, and mentions - extracted from index.original.html. */
+/* Editor helpers, toolbar actions, reminders, and mentions. */
 function makeUndoSnapshot(ed = getEd()) {
   if (!ed) return null;
   return {
@@ -1596,6 +1596,88 @@ function moveCaretBeyondHeaderDomainEnd() {
   recomputeCollapsedSections();
   placeCursorAtStart(p);
   getEd().dispatchEvent(new Event('input'));
+  return true;
+}
+
+function outermostListForItem(li) {
+  const ed = getEd();
+  let list = li?.parentElement;
+  if (!list || !/^(UL|OL)$/.test(list.tagName) || !ed?.contains(list)) return null;
+  let outer = list;
+  while (outer.parentElement && outer.parentElement !== ed) {
+    const parentList = outer.parentElement.closest?.('ul, ol');
+    if (!parentList || !ed.contains(parentList)) break;
+    outer = parentList;
+  }
+  return outer;
+}
+
+function cleanLineInsertionInfo(block) {
+  const ed = getEd();
+  if (!ed || !block || block === ed) return { boundary: ed, visual: ed, outsideLevel: 0 };
+
+  const li = block.closest?.('li');
+  if (li && ed.contains(li)) {
+    const list = outermostListForItem(li);
+    const listBoundary = list || li;
+    const styledContainer = listBoundary.closest?.('blockquote, pre');
+    const boundary = styledContainer && ed.contains(styledContainer) ? styledContainer : listBoundary;
+    return { boundary, visual: boundary, outsideLevel: 0 };
+  }
+
+  const container = block.closest?.('blockquote, pre') || block;
+  const heading = container.matches?.('h1,h2,h3,h4') ? container : null;
+  if (heading?.hasAttribute('data-collapsed')) {
+    const level = parseInt(heading.tagName[1], 10);
+    let boundary = heading;
+    let sibling = heading.nextElementSibling;
+    while (sibling) {
+      const siblingLevel = headingLevel(sibling);
+      if (siblingLevel && siblingLevel <= level) break;
+      boundary = sibling;
+      sibling = sibling.nextElementSibling;
+    }
+    return { boundary, visual: heading, outsideLevel: level };
+  }
+
+  return {
+    boundary: ed.contains(container) ? container : block,
+    visual: ed.contains(container) ? container : block,
+    outsideLevel: 0
+  };
+}
+
+function reusableCleanParagraph(el, outsideLevel = 0) {
+  if (!el || el.tagName !== 'P' || el.style.display === 'none') return false;
+  if (outsideLevel && el.getAttribute('data-outside-collapse') !== String(outsideLevel)) return false;
+  return !fragmentHasMeaningfulContent(el);
+}
+
+function insertCleanLineBelowCaret() {
+  const ed = getEd();
+  const sel = window.getSelection();
+  if (!ed || !sel || !sel.rangeCount || !sel.isCollapsed) return false;
+  const range = sel.getRangeAt(0);
+  const owner = range.startContainer.nodeType === Node.ELEMENT_NODE
+    ? range.startContainer
+    : range.startContainer.parentElement;
+  if (!owner || (owner !== ed && !ed.contains(owner))) return false;
+
+  const block = currentBlockFromSelection();
+  const info = cleanLineInsertionInfo(block);
+  if (!info.boundary || !isCaretOnLastVisualLineOfElement(info.visual || info.boundary, range)) return false;
+
+  pushUndo();
+  let target = info.boundary === ed ? null : info.boundary.nextElementSibling;
+  if (!reusableCleanParagraph(target, info.outsideLevel)) {
+    target = createEmptyBlock('p');
+    if (info.outsideLevel) target.setAttribute('data-outside-collapse', String(info.outsideLevel));
+    if (info.boundary === ed) ed.appendChild(target);
+    else info.boundary.after(target);
+  }
+  recomputeCollapsedSections();
+  placeCursorAtStart(target);
+  ed.dispatchEvent(new Event('input'));
   return true;
 }
 
@@ -3755,7 +3837,9 @@ function getAlarmItems() {
       due: false
     });
   });
-  return items.sort((a, b) => new Date(a.alarmAt) - new Date(b.alarmAt));
+  return items
+    .map(normalizeReminderListItem)
+    .sort((a, b) => new Date(a.alarmAt) - new Date(b.alarmAt));
 }
 
 function scheduleAlarmRefresh(items = getAlarmItems()) {
@@ -3808,15 +3892,41 @@ function reminderItemIcon(item) {
   return 'fa-solid fa-clock';
 }
 
+function reminderItemKey(item) {
+  return [item.kind || '', item.noteId || '', item.alarmId || ''].join('::');
+}
+
+function reminderItemReadKeys(item) {
+  if (item?.kind !== 'received' || !item.alarmId || typeof notificationReadKeys !== 'function') return [];
+  const notification = profileShareNotifications[item.alarmId] || {
+    id: item.alarmId,
+    type: 'reminder',
+    reminderId: item.alarmId,
+    noteId: item.noteId || ''
+  };
+  return notificationReadKeys(notification);
+}
+
+function normalizeReminderListItem(item) {
+  const readKeys = reminderItemReadKeys(item);
+  const readable = readKeys.length > 0;
+  return {
+    ...item,
+    key: reminderItemKey(item),
+    readable,
+    read: readable ? readKeys.some(key => !!readNotifications[key]) : false
+  };
+}
+
 function renderReminderItem(item) {
-  return '<div class="profile-row alarm-row' + (item.due ? ' due' : '') + '" data-alarm-note-id="' + esc(item.noteId) + '" data-alarm-id="' + esc(item.alarmId) + '" data-alarm-kind="' + esc(item.kind) + '">' +
+  return '<div class="profile-row alarm-row sidebar-selectable-row' + (item.due ? ' due' : '') + (item.readable && !item.read ? ' unread' : '') + '" data-alarm-note-id="' + esc(item.noteId) + '" data-alarm-id="' + esc(item.alarmId) + '" data-alarm-kind="' + esc(item.kind) + '" data-alarm-key="' + esc(item.key) + '">' +
+    (typeof renderSidebarSelectionCheckbox === 'function' ? renderSidebarSelectionCheckbox(item.key, 'Select reminder') : '') +
     '<span class="alarm-icon"><i class="' + reminderItemIcon(item) + '"></i></span>' +
     '<div class="profile-main">' +
       '<div class="alarm-text">' + esc(item.text) + '</div>' +
       '<div class="alarm-note-title">' + esc(reminderItemMeta(item)) + '</div>' +
       '<div class="notification-time">' + esc(formatAlarmDateTime(item.alarmAt)) + (item.due ? ' · Due' : '') + '</div>' +
     '</div>' +
-    '<button class="modal-btn" data-clear-alarm-note="' + esc(item.noteId) + '" data-clear-alarm-id="' + esc(item.alarmId) + '" data-clear-alarm-kind="' + esc(item.kind) + '" type="button" title="Clear Reminder" aria-label="Clear Reminder"><i class="fa-solid fa-xmark"></i></button>' +
   '</div>';
 }
 
@@ -3826,6 +3936,7 @@ function renderAlarmsList(target = 'alarms-list') {
   const items = getAlarmItems();
   if (!items.length) {
     list.innerHTML = '<div class="profile-empty">No reminders set.</div>';
+    if (typeof attachSidebarSelectionHandlers === 'function') attachSidebarSelectionHandlers(list);
     return;
   }
 
@@ -3837,10 +3948,12 @@ function renderAlarmsList(target = 'alarms-list') {
       sectionItems.map(renderReminderItem).join('') +
     '</div>';
   }).join('');
+  if (typeof attachSidebarSelectionHandlers === 'function') attachSidebarSelectionHandlers(list);
 
   list.querySelectorAll('[data-alarm-note-id]').forEach(row => {
     row.addEventListener('click', e => {
       if (e.target.closest('[data-clear-alarm-note]')) return;
+      if (e.target.closest('[data-select-key]')) return;
       openAlarmFromList(row.dataset.alarmNoteId, row.dataset.alarmId, row.dataset.alarmKind);
     });
   });
@@ -3850,6 +3963,75 @@ function renderAlarmsList(target = 'alarms-list') {
       clearNoteAlarm(btn.dataset.clearAlarmNote, btn.dataset.clearAlarmId, btn.dataset.clearAlarmKind);
     });
   });
+}
+
+function reminderItemsForKeys(keys = []) {
+  const selected = new Set((keys || []).filter(Boolean));
+  return getAlarmItems().filter(item => selected.has(item.key));
+}
+
+async function markReminderItemsRead(keys = []) {
+  const selected = new Set((keys || []).filter(Boolean));
+  const targets = getAlarmItems().filter(item =>
+    item.readable &&
+    (selected.size ? selected.has(item.key) : !item.read)
+  );
+  const readKeys = targets.flatMap(reminderItemReadKeys);
+  if (!readKeys.length) {
+    showToast(selected.size ? 'No Selected Reminders To Read' : 'No Unread Reminders', 'success');
+    return;
+  }
+  if (typeof persistNotificationReads === 'function') await persistNotificationReads(readKeys);
+  renderAlarmButton();
+  if (document.getElementById('alarms-modal')?.classList.contains('open')) renderAlarmsList();
+  refreshOpenSidebarPage('alarms');
+}
+
+async function markReminderItemsUnread(keys = []) {
+  const selected = new Set((keys || []).filter(Boolean));
+  if (!selected.size) {
+    showToast('No Selected Reminders', 'success');
+    return;
+  }
+  const targets = reminderItemsForKeys([...selected]).filter(item => item.readable);
+  const readKeys = targets.flatMap(reminderItemReadKeys);
+  if (!readKeys.length) {
+    showToast('No Selected Read Reminders', 'success');
+    return;
+  }
+  if (typeof persistNotificationUnreads === 'function') await persistNotificationUnreads(readKeys);
+  renderAlarmButton();
+  if (document.getElementById('alarms-modal')?.classList.contains('open')) renderAlarmsList();
+  refreshOpenSidebarPage('alarms');
+  showToast(targets.length === 1 ? 'Reminder Marked Unread' : 'Reminders Marked Unread', 'success');
+}
+
+async function deleteReadReminderItems(keys = []) {
+  const selected = new Set((keys || []).filter(Boolean));
+  const targets = selected.size
+    ? reminderItemsForKeys([...selected])
+    : getAlarmItems().filter(item => item.readable && item.read);
+  if (!targets.length) {
+    showToast(selected.size ? 'No Selected Reminders' : 'No Read Reminders', 'success');
+    return;
+  }
+  const commitDelete = async () => {
+    for (const item of targets) {
+      await clearNoteAlarm(item.noteId, item.alarmId, item.kind);
+    }
+    showToast(targets.length === 1 ? 'Reminder Deleted' : 'Reminders Deleted', 'success');
+  };
+  if (typeof openDeleteConfirmationModal === 'function') {
+    openDeleteConfirmationModal({
+      title: selected.size ? 'Delete Selected Reminders?' : 'Delete Read Reminders?',
+      target: targets.length === 1 ? (targets[0].text || 'Reminder') : targets.length + ' Reminders',
+      copy: 'Deletes the reminder items from this list. The related notes stay available.',
+      confirmLabel: targets.length === 1 ? 'Delete Reminder' : 'Delete Reminders',
+      onConfirm: commitDelete
+    });
+    return;
+  }
+  await commitDelete();
 }
 
 async function openAlarmFromList(noteId, alarmId, kind) {
