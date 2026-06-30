@@ -1206,10 +1206,14 @@ function selectConversation(conversationId) {
   openConversationsSidebar(conversationId, { preserveScope: true });
 }
 
+function isConversationAlertItem(item) {
+  return item?.type === 'conversation' || item?.type === 'conversation_like';
+}
+
 function conversationUnreadItems(conversationId) {
   if (!conversationId || typeof getMentionItems !== 'function') return [];
   return getMentionItems().filter(item =>
-    item.type === 'conversation' &&
+    isConversationAlertItem(item) &&
     item.conversationId === conversationId &&
     !item.read
   );
@@ -1511,7 +1515,7 @@ async function markSidebarConversationsUnread(keys = []) {
   }
   const conversationIds = new Set(conversationSidebarConversationsForKeys(selected).map(conv => conv.id));
   const alerts = getMentionItems().filter(item =>
-    item.type === 'conversation' &&
+    isConversationAlertItem(item) &&
     conversationIds.has(item.conversationId)
   );
   const readKeys = alerts.flatMap(notificationReadKeys);
@@ -1529,7 +1533,7 @@ async function deleteReadSidebarConversationAlerts(keys = []) {
   const selected = (keys || []).filter(Boolean);
   const conversationIds = new Set(conversationSidebarConversationsForKeys(selected).map(conv => conv.id));
   const alerts = getMentionItems().filter(item =>
-    item.type === 'conversation' &&
+    isConversationAlertItem(item) &&
     conversationIds.has(item.conversationId) &&
     (selected.length || item.read)
   );
@@ -1982,6 +1986,10 @@ async function toggleConversationMessageThumb(conversationId, messageId) {
       current.thumbsUp = nextThumbs;
       renderConversationsSidebar();
     }
+    if (shouldThumb) {
+      const delivered = await deliverConversationLikeNotification(conversation, message);
+      if (!delivered) showToast('Like Saved; Alert Delivery Failed', 'error');
+    }
   } catch (err) {
     console.error('toggle conversation thumbs up:', err);
     const current = (conversationMessages[conversationId] || []).find(item => item.id === messageId);
@@ -2187,6 +2195,47 @@ async function deliverConversationNotification(conversation, message, targetUid)
   }
   const results = await Promise.allSettled(writes);
   if (results.some(result => result.status === 'rejected')) console.warn('conversation notification delivery:', results);
+  return results.some(result => result.status === 'fulfilled');
+}
+
+function conversationLikeNotificationPayload(conversation, message, targetUid) {
+  const sender = currentUserConversationProfile();
+  const recipient = conversationProfileByUid(targetUid, conversation);
+  const reactionId = conversationDocId('conversation_like');
+  return {
+    id: reactionId,
+    type: 'conversation_like',
+    noteId: conversation.noteId,
+    noteTitle: notes[conversation.noteId]?.title || conversation.noteTitle || 'Untitled Note',
+    conversationId: conversation.id,
+    messageId: message.id,
+    reactionId,
+    anchorText: conversationAnchorCopy(conversation),
+    messagePreview: conversationText(message.body, 180),
+    recipientUid: targetUid,
+    recipientProfileKey: targetUid,
+    recipientName: recipient.displayName || '',
+    recipientEmail: normalizeEmail(recipient.email || ''),
+    fromUid: userId,
+    fromName: sender.displayName || 'Someone',
+    fromPhotoURL: sender.photoURL || '',
+    fromPhotoURLCandidates: sender.photoURLCandidates || [],
+    fromEmail: normalizeEmail(sender.email || ''),
+    createdIso: new Date().toISOString(),
+    created: serverTimestamp()
+  };
+}
+
+async function deliverConversationLikeNotification(conversation, message) {
+  const targetUid = message?.authorUid || '';
+  if (!targetUid || targetUid === userId) return true;
+  const payload = conversationLikeNotificationPayload(conversation, message, targetUid);
+  const writes = [setDoc(doc(fsDb, 'profileShares', targetUid, 'items', payload.id), payload, { merge: true })];
+  if (payload.recipientEmail) {
+    writes.push(setDoc(doc(fsDb, 'profileEmailShares', emailProfileDocId(payload.recipientEmail), 'items', payload.id), payload, { merge: true }));
+  }
+  const results = await Promise.allSettled(writes);
+  if (results.some(result => result.status === 'rejected')) console.warn('conversation like notification delivery:', results);
   return results.some(result => result.status === 'fulfilled');
 }
 

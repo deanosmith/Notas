@@ -188,7 +188,10 @@ function updateActiveNoteAccessAvatars() {
   const el = document.getElementById('doc-access-avatars');
   if (!el) return;
   const note = activeId ? notes[activeId] : null;
-  el.innerHTML = note ? renderAccessAvatars(accessProfilesForNote(note), isOwnedNote(note) ? 'Shared with' : 'Your access') : '';
+  const linkBadge = note?.linkPublic
+    ? '<span class="note-shared-badge" title="Link sharing is on"><i class="fa-solid fa-link"></i></span>'
+    : '';
+  el.innerHTML = note ? renderAccessAvatars(accessProfilesForNote(note), isOwnedNote(note) ? 'Shared with' : 'Your access') + linkBadge : '';
 }
 
 /* ── Context Menu ────────────────────────────────── */
@@ -280,6 +283,9 @@ function makeSidebarNoteEl(note, { inFolder = false } = {}) {
   const showPreview = sidebarNotePreviewMode === 'title-text';
   const snippet  = showPreview ? (note.content.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 65) || 'Empty Note') : '';
   const accessAvatars = inFolder ? '' : renderAccessAvatars(accessProfilesForNote(note), isOwned ? 'Shared with' : 'Shared by');
+  const linkBadge = note.linkPublic
+    ? '<span class="note-shared-badge" title="Link sharing is on"><i class="fa-solid fa-link"></i></span>'
+    : '';
   const noteFolder = note.folderId ? folders[note.folderId] : null;
   const noteFolderColor = noteFolder ? resolveFolderIconColor(noteFolder.iconColor, noteFolder.iconColorMode) : '';
   const el       = document.createElement('div');
@@ -294,7 +300,7 @@ function makeSidebarNoteEl(note, { inFolder = false } = {}) {
     '<div class="item-info"><div class="item-name">' + esc(note.title) + '</div>' + (showPreview ? '<div class="item-preview">' + esc(snippet) + '</div>' : '') + '</div>' +
     accessAvatars +
     (isPinned ? '<span class="note-pin-badge" title="' + (pinScope === 'minor' ? 'Pinned in folder' : 'Pinned to sidebar') + '"><i class="fa-solid fa-thumbtack"></i></span>' : '') +
-    (isOwned ? '' : '<span class="note-shared-badge" title="Shared with you"><i class="fa-solid fa-link"></i></span>') +
+    linkBadge +
     '<button class="item-menu-btn" title="More Options"><i class="fa-solid fa-ellipsis"></i></button>';
   el.addEventListener('click', e => {
     if (!e.target.closest('.item-menu-btn')) openNote(note.id);
@@ -643,8 +649,12 @@ function setSidebarView(view) {
 function toggleSidebarView(view) {
   const nextView = SIDEBAR_VIEWS.has(view) ? view : 'notes';
   if (sidebarView === nextView && isSidebarPanelVisible()) {
-    if (isMobile()) closeDrawer();
-    else setSidebarMinimized(true);
+    if (nextView === 'notes') {
+      if (isMobile()) closeDrawer();
+      else setSidebarMinimized(true);
+    } else {
+      setSidebarView('notes');
+    }
     return;
   }
   setSidebarView(nextView);
@@ -988,8 +998,8 @@ function renderSidebar(filter) {
     folderEl.className = 'folder-item';
 
     const folderAccessProfiles = accessProfilesForFolder(folder);
-    const sharedBadge = folder.public || folder.shared || folderAccessProfiles.length
-      ? '<span class="folder-shared-badge" title="Shared"><i class="fa-solid fa-link"></i></span>'
+    const sharedBadge = folder.public
+      ? '<span class="folder-shared-badge" title="Link sharing is on"><i class="fa-solid fa-link"></i></span>'
       : '';
     const folderAccessAvatars = renderAccessAvatars(folderAccessProfiles, isOwnedFolder(folder) ? 'Folder shared with' : 'Shared by');
     const folderColor = resolveFolderIconColor(folder.iconColor, folder.iconColorMode);

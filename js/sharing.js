@@ -979,12 +979,16 @@ function updateShareLinkUI() {
   const panel = document.getElementById('share-link-panel');
   const toggle = document.getElementById('share-link-toggle');
   const status = document.getElementById('share-link-status');
+  const input = document.getElementById('share-link-input');
   const copyBtn = document.getElementById('copy-link-btn');
   const nativeBtn = document.getElementById('native-share-btn');
   const active = isShareLinkEnabled();
   if (panel) panel.classList.toggle('link-off', !active);
   if (toggle) toggle.checked = active;
   if (status) status.textContent = active ? 'On' : 'Off';
+  if (input) input.value = active && _shareCtx
+    ? (_shareCtx.type === 'note' ? getShareUrl(_shareCtx.id) : getFolderShareUrl(_shareCtx.id))
+    : '';
   if (copyBtn) copyBtn.disabled = !active;
   if (nativeBtn) nativeBtn.disabled = !active;
 }
@@ -994,13 +998,10 @@ function openShareModal(type, id) {
   if (type === 'folder' && !folders[id]) return;
   _shareCtx = { type, id };
 
-  const url      = type === 'note' ? getShareUrl(id) : getFolderShareUrl(id);
-
   document.getElementById('share-modal-title').textContent = type === 'note' ? 'Share Note' : 'Share Folder';
   document.getElementById('share-modal-desc').textContent  = type === 'note'
     ? 'Choose friends to give write access, or turn on a read-only public link.'
     : 'Choose friends to give write access to every note in this folder, or turn on a read-only public folder link.';
-  document.getElementById('share-link-input').value = url;
 
   const nativeBtn = document.getElementById('native-share-btn');
   nativeBtn.style.display = navigator.share ? 'flex' : 'none';
@@ -2654,6 +2655,7 @@ function notificationReadKeyForParts(type, noteId, fromUid) {
 function notificationTargetId(notification) {
   if (notification?.type === 'reminder') return notification.reminderId || notification.id || '';
   if (notification?.type === 'conversation') return notification.messageId || notification.id || '';
+  if (notification?.type === 'conversation_like') return notification.reactionId || notification.id || '';
   return notification?.noteId || notification?.sourceFolderId || notification?.folderId || notification?.id || '';
 }
 
@@ -2745,12 +2747,12 @@ function normalizeProfileShareNotification(id, data) {
   const created = createdDate ? createdDate.toISOString() : (data.createdIso || new Date().toISOString());
   const type = data.type === 'reminder'
     ? 'reminder'
-    : (data.type === 'conversation' ? 'conversation' : (data.type === 'mention' ? 'mention' : (data.type === 'folder_share' ? 'folder_share' : 'share')));
+    : (data.type === 'conversation' ? 'conversation' : (data.type === 'conversation_like' ? 'conversation_like' : (data.type === 'mention' ? 'mention' : (data.type === 'folder_share' ? 'folder_share' : 'share'))));
   const sourceFolderId = data.sourceFolderId || data.folderId || '';
   const sourceFolderTitle = data.sourceFolderTitle || data.folderTitle || 'Shared Folder';
   const targetId = type === 'reminder'
     ? (data.reminderId || data.id || id)
-    : (type === 'conversation' ? (data.messageId || data.id || id) : (data.noteId || sourceFolderId || id));
+    : (type === 'conversation' ? (data.messageId || data.id || id) : (type === 'conversation_like' ? (data.reactionId || data.id || id) : (data.noteId || sourceFolderId || id)));
   const fromPhotos = profilePhotoFields(data.fromPhotoURL, data.fromPhotoURLCandidates);
   return {
     id,
@@ -2767,6 +2769,7 @@ function normalizeProfileShareNotification(id, data) {
     sourceFolderTitle,
     conversationId: data.conversationId || '',
     messageId: data.messageId || data.id || id,
+    reactionId: data.reactionId || '',
     messagePreview: data.messagePreview || '',
     anchorText: data.anchorText || '',
     reminderId: data.reminderId || data.id || id,
@@ -3043,7 +3046,7 @@ function getNotificationItems() {
 function getMentionItems() {
   const byReadKey = {};
   getNotificationItems()
-    .filter(item => ['mention', 'share', 'folder_share', 'conversation'].includes(item.type))
+    .filter(item => ['mention', 'share', 'folder_share', 'conversation', 'conversation_like'].includes(item.type))
     .forEach(item => { byReadKey[item.readKey || item.id] = item; });
 
   Object.values(notes || {}).forEach(note => {
@@ -3095,6 +3098,7 @@ function notificationText(n) {
   if (n.type === 'profile_link') return n.fromName + ' wants to link profiles';
   if (n.type === 'folder_share') return n.fromName + ' shared folder "' + (n.sourceFolderTitle || 'Shared Folder') + '" with you';
   if (n.type === 'conversation') return n.fromName + ' replied in "' + (n.noteTitle || 'Untitled Note') + '"';
+  if (n.type === 'conversation_like') return n.fromName + ' liked your message in "' + (n.noteTitle || 'Untitled Note') + '"';
   if (n.type === 'mention') return n.fromName + ' mentioned you in "' + n.noteTitle + '"';
   if (n.type === 'reminder') return n.fromName + ' set a reminder for "' + (n.reminderText || n.noteTitle || 'Reminder') + '"';
   return n.fromName + ' shared "' + n.noteTitle + '" with you';
@@ -3121,7 +3125,7 @@ function renderNotificationsList(target = 'notifications-list') {
     return;
   }
   if (!items.length) {
-    list.innerHTML = '<div class="profile-empty">No notifications yet. Mentions, shares, and conversation replies from friends will appear here.</div>';
+    list.innerHTML = '<div class="profile-empty">No notifications yet. Mentions, shares, and conversation activity from friends will appear here.</div>';
     if (typeof attachSidebarSelectionHandlers === 'function') attachSidebarSelectionHandlers(list);
     return;
   }
@@ -3207,7 +3211,7 @@ async function deleteReadNotifications(ids = []) {
     }
   };
   if (typeof openDeleteConfirmationModal === 'function') {
-    const conversationOnly = read.every(item => item.type === 'conversation');
+    const conversationOnly = read.every(item => item.type === 'conversation' || item.type === 'conversation_like');
     const singular = conversationOnly ? 'Conversation Alert' : 'Notification';
     const plural = conversationOnly ? 'Conversation Alerts' : 'Notifications';
     openDeleteConfirmationModal({
@@ -3246,7 +3250,7 @@ async function openNotification(id) {
       opened = await openDirectSharedNote(item.noteId);
     }
   }
-  if (opened && item.type === 'conversation' && item.conversationId && typeof openConversationsSidebar === 'function') {
+  if (opened && (item.type === 'conversation' || item.type === 'conversation_like') && item.conversationId && typeof openConversationsSidebar === 'function') {
     openConversationsSidebar(item.conversationId);
   }
   if (opened) await markNotificationRead(id);

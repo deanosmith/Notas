@@ -38,13 +38,13 @@
           <i class="fa-solid fa-bell"></i>
           <span class="notification-badge" id="notification-badge" hidden>0</span>
         </button>
-        <button class="rail-btn" id="conversation-toggle-btn" data-sidebar-view="conversations" type="button" title="Toggle Conversations" aria-label="Toggle Conversations" aria-pressed="false">
-          <i class="fa-solid fa-comments"></i>
-          <span class="notification-badge conversation-notification-icon" id="conversation-badge" hidden><i class="fa-solid fa-bell"></i></span>
-        </button>
         <button class="rail-btn" id="alarm-btn" data-sidebar-view="alarms" type="button" title="Toggle Reminders" aria-label="Toggle Reminders" aria-pressed="false">
           <i class="fa-solid fa-clock"></i>
           <span class="notification-badge" id="alarm-badge" hidden>0</span>
+        </button>
+        <button class="rail-btn" id="conversation-toggle-btn" data-sidebar-view="conversations" type="button" title="Toggle Conversations" aria-label="Toggle Conversations" aria-pressed="false">
+          <i class="fa-solid fa-comments"></i>
+          <span class="notification-badge conversation-notification-icon" id="conversation-badge" hidden><i class="fa-solid fa-bell"></i></span>
         </button>
         <button class="rail-btn" id="rail-friends-btn" data-sidebar-view="friends" type="button" title="Toggle Friends" aria-label="Toggle Friends" aria-pressed="false">
           <i class="fa-solid fa-user-group"></i>
@@ -244,7 +244,7 @@
         </div>
         <div class="settings-row" id="signout-row" style="display:none;">
           <span class="settings-label"><i class="fa-solid fa-arrow-right-from-bracket"></i>Sign Out</span>
-          <button id="signout-btn" style="padding:7px 14px;border-radius:var(--radius-xs);border:1px solid rgba(255,69,58,.3);background:rgba(255,69,58,.1);color:var(--danger);font-size:12px;font-family:var(--font);font-weight:500;cursor:pointer;transition:background .12s;">Sign Out</button>
+          <button class="settings-signout-btn" id="signout-btn">Sign Out</button>
         </div>
       </div>
       <div class="modal-actions">

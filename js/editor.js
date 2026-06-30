@@ -1743,6 +1743,14 @@ function reusableCleanParagraph(el, outsideLevel = 0) {
   return !fragmentHasMeaningfulContent(el);
 }
 
+function cleanLineShortcutApplies(block, owner) {
+  const ed = getEd();
+  if (!ed || !block || block === ed) return false;
+  if (closestInlineCodeFromSelection()) return true;
+  const styled = owner?.closest?.('code, pre, blockquote, li, h1, h2, h3, h4');
+  return !!(styled && ed.contains(styled));
+}
+
 function insertCleanLineBelowCaret() {
   const ed = getEd();
   const sel = window.getSelection();
@@ -1754,6 +1762,7 @@ function insertCleanLineBelowCaret() {
   if (!owner || (owner !== ed && !ed.contains(owner))) return false;
 
   const block = currentBlockFromSelection();
+  if (!cleanLineShortcutApplies(block, owner)) return false;
   const info = cleanLineInsertionInfo(block);
   if (!info.boundary || !isCaretOnLastVisualLineOfElement(info.visual || info.boundary, range)) return false;
 

@@ -629,7 +629,7 @@ function normalizeSharedAccessKeys(value) {
 
 function noteLinkPublicFromData(data) {
   if (typeof data?.linkPublic === 'boolean') return data.linkPublic;
-  return !!data?.public;
+  return !!data?.public && !normalizePublicFolderIds(data?.publicFolderIds).length;
 }
 
 function computeEffectiveNotePublic(note) {
