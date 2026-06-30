@@ -68,12 +68,21 @@ service cloud.firestore {
         );
     }
 
+    function hasValidMessageThumbs(data) {
+      return !data.keys().hasAny(["thumbsUp"])
+        || (data.thumbsUp is map);
+    }
+
     function messageThumbs(data) {
-      return data.thumbsUp is map ? data.thumbsUp : {};
+      return (data.keys().hasAny(["thumbsUp"]) && data.thumbsUp is map)
+        ? data.thumbsUp
+        : {};
     }
 
     function validMessageThumbUpdate(conversationId) {
       return canReadConversation(conversationId)
+        && hasValidMessageThumbs(resource.data)
+        && hasValidMessageThumbs(request.resource.data)
         && request.resource.data.diff(resource.data).affectedKeys().hasAny(["thumbsUp"])
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           "thumbsUp",

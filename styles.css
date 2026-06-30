@@ -970,6 +970,10 @@ body.light-mode .editor [data-header-domain-end]::after {
 .editor .note-image-block { position: relative; display: block; width: fit-content; max-width: 100%; margin: 0 0 14px; line-height: 0; white-space: normal; }
 .editor .note-image { display: block; max-width: 100%; height: auto; border-radius: var(--radius-sm); border: 1px solid var(--glass-border); background: rgba(255,255,255,.035); box-shadow: 0 10px 26px rgba(0,0,0,.18); }
 .editor .note-image-block.has-image-controls { -webkit-user-select: none; user-select: none; }
+.editor .note-image-block.note-image-selected .note-image {
+  border-color: rgba(var(--orb-r),var(--orb-g),var(--orb-b),.72);
+  box-shadow: 0 0 0 3px rgba(var(--orb-r),var(--orb-g),var(--orb-b),.22), 0 12px 28px rgba(0,0,0,.22);
+}
 .editor .note-image-resize-handle { position: absolute; right: -7px; bottom: -7px; width: 16px; height: 16px; border-radius: 50%; border: 1px solid rgba(var(--orb-r),var(--orb-g),var(--orb-b),.46); background: linear-gradient(135deg, var(--accent-h), var(--accent)); box-shadow: 0 5px 14px rgba(0,0,0,.24), inset 0 1px 0 rgba(255,255,255,.28); cursor: nwse-resize; touch-action: none; }
 .editor .note-image-resize-handle::before { content: ''; position: absolute; inset: 4px; border-right: 2px solid var(--accent-text); border-bottom: 2px solid var(--accent-text); opacity: .72; }
 body.light-mode .editor code { background: rgba(var(--orb-r),var(--orb-g),var(--orb-b),.11); color: var(--accent-ink, var(--accent)); border-color: rgba(var(--orb-r),var(--orb-g),var(--orb-b),.24); }
@@ -1196,7 +1200,9 @@ body.light-mode .editor .table-reorder-handle.dragging { color: var(--accent-ink
 .editor caption { caption-side: top; padding: 10px 12px; border-bottom: 1px solid var(--border); color: var(--text); text-align: center; font-weight: 750; background: rgba(255,255,255,.035); }
 .editor .note-table-wrap.has-table-controls caption { display: none; }
 .editor th,
-.editor td { min-width: 0; padding: 8px 11px; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); vertical-align: top; outline: none; white-space: pre-wrap; overflow-wrap: normal; word-break: normal; }
+.editor td { min-width: 0; padding: 8px 11px; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); vertical-align: top; outline: none; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; }
+.editor th *,
+.editor td * { max-width: 100%; overflow-wrap: anywhere; word-break: break-word; }
 .editor .note-table-wrap.has-table-controls tr > :first-child { padding-left: 32px; }
 .editor th { text-align: left; font-weight: 600; color: var(--text); background: rgba(255,255,255,.035); }
 .editor tr:last-child td,
@@ -1842,11 +1848,11 @@ body.light-mode .notifications-list .profile-row.unread {
 }
 .conversation-message-meta { color: var(--muted); font-size: 10.5px; font-weight: 650; margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .conversation-message-body { color: var(--text); font-size: 12.5px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
-.conversation-message-actions { display: flex; justify-content: flex-end; margin-top: 10px; min-height: 32px; }
-.conversation-message:not(.mine) .conversation-message-actions { justify-content: flex-start; }
+.conversation-message-line { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; min-width: 0; }
+.conversation-message-actions { display: flex; justify-content: flex-end; align-items: center; margin-top: 0; min-height: 30px; }
 .conversation-reaction-btn {
-  min-width: 82px;
-  height: 32px;
+  min-width: 30px;
+  height: 30px;
   border: 1px solid rgba(var(--orb-r),var(--orb-g),var(--orb-b),.3);
   border-radius: 999px;
   background: rgba(var(--orb-r),var(--orb-g),var(--orb-b),.08);
@@ -1854,15 +1860,14 @@ body.light-mode .notifications-list .profile-row.unread {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 7px;
-  padding: 0 12px;
+  gap: 5px;
+  padding: 0 9px;
   font: 750 12px var(--font);
   cursor: pointer;
   box-shadow: inset 0 1px 0 rgba(255,255,255,.06);
   transition: color .12s, border-color .12s, background .12s, box-shadow .12s, transform .12s;
 }
 .conversation-reaction-btn i { color: var(--accent-ink, var(--accent)); font-size: 13px; line-height: 1; pointer-events: none; }
-.conversation-reaction-label { line-height: 1; }
 .conversation-reaction-count {
   min-width: 18px;
   height: 18px;
@@ -1905,13 +1910,13 @@ body.light-mode .notifications-list .profile-row.unread {
 .conversation-selection-popover {
   position: fixed;
   z-index: 530;
-  padding: 4px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--glass-border);
-  background: linear-gradient(180deg, var(--surface-glass-strong), rgba(14,22,32,.96));
-  box-shadow: var(--shadow-lg);
-  -webkit-backdrop-filter: blur(20px) saturate(140%);
-  backdrop-filter: blur(20px) saturate(140%);
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 .conversation-selection-popover[hidden] { display: none; }
 .conversation-selection-popover button { width: 36px; height: 34px; color: var(--accent-ink, var(--accent)); }
@@ -2404,7 +2409,9 @@ body.light-mode .conversation-panel-header { background: rgba(255,255,255,.28); 
 }
 .conversation-bubble,
 .conversation-message.mine .conversation-bubble {
+  flex: 1;
   max-width: none;
+  min-width: 0;
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -2452,9 +2459,11 @@ body.light-mode .conversation-panel-header { background: rgba(255,255,255,.28); 
   --conversation-panel-control-bg: color-mix(in srgb, var(--surface2) 76%, transparent);
   --conversation-panel-control-hover-bg: color-mix(in srgb, var(--surface2) 68%, var(--accent) 14%);
   --conversation-panel-shadow: var(--shadow-lg);
-  border-color: var(--conversation-panel-card-border);
-  background: var(--conversation-panel-bg);
-  box-shadow: var(--conversation-panel-shadow);
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
 body.light-mode #conversation-sidebar,

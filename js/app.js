@@ -173,6 +173,10 @@ window.editorEl = document.getElementById('editor');
 const editorEl = window.editorEl;
 
 editorEl.addEventListener('beforeinput', e => {
+  if (typeof protectConversationAnchorDeletion === 'function' && protectConversationAnchorDeletion(e, editorEl)) {
+    e.preventDefault();
+    return;
+  }
   refreshUndoSnapshotSelection();
   if (e.inputType === 'insertParagraph' || e.inputType === 'insertLineBreak') {
     _capitalizeNext = true;
@@ -228,7 +232,10 @@ editorEl.addEventListener('mouseup', () => {
   scheduleConversationSelectionPopover();
 });
 editorEl.addEventListener('scroll', hideConversationSelectionPopover);
-document.addEventListener('selectionchange', scheduleConversationSelectionPopover);
+document.addEventListener('selectionchange', () => {
+  if (typeof syncSelectedNoteImageState === 'function') syncSelectedNoteImageState(editorEl);
+  scheduleConversationSelectionPopover();
+});
 
 editorEl.addEventListener('pointerdown', e => {
   const imageResizeHandle = e.target.closest?.('[data-note-image-resize]');
@@ -273,6 +280,14 @@ editorEl.addEventListener('click', e => {
     e.stopPropagation();
     return;
   }
+  const imageBlock = e.target.closest?.('.note-image-block');
+  if (imageBlock && editorEl.contains(imageBlock) && typeof selectNoteImageBlock === 'function') {
+    e.preventDefault();
+    e.stopPropagation();
+    selectNoteImageBlock(imageBlock);
+    return;
+  }
+  if (typeof clearSelectedNoteImages === 'function') clearSelectedNoteImages(editorEl);
   const li = e.target.closest('ul.checklist > li');
   if (li && editorEl.contains(li)) {
     const relX = e.clientX - li.getBoundingClientRect().left;
@@ -586,6 +601,18 @@ editorEl.addEventListener('keydown', e => {
   }
 });
 
+editorEl.addEventListener('copy', e => {
+  if (typeof copySelectedNoteImage === 'function' && copySelectedNoteImage(e.clipboardData)) {
+    e.preventDefault();
+  }
+});
+
+editorEl.addEventListener('cut', e => {
+  if (typeof cutSelectedNoteImage === 'function' && cutSelectedNoteImage(e.clipboardData)) {
+    e.preventDefault();
+  }
+});
+
 editorEl.addEventListener('paste', e => {
   const imageFile = clipboardImageFile(e.clipboardData);
   if (imageFile) {
@@ -633,10 +660,12 @@ editorEl.addEventListener('paste', e => {
       ['href', 'src', 'action', 'formaction', 'xlink:href'].forEach(attrName => {
         const val = el.getAttribute(attrName);
         if (val && /^\s*(javascript|vbscript|data):/i.test(val)) {
+          if (attrName === 'src' && safeNoteImageSrc(val)) return;
           el.removeAttribute(attrName);
         }
       });
     });
+    stripNoteImageEditorChrome(temp);
     document.execCommand('insertHTML', false, temp.innerHTML);
   } else if (text) {
     document.execCommand('insertText', false, text);

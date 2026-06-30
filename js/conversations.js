@@ -832,6 +832,111 @@ function conversationSenderName(conversation, message) {
   return profile.displayName || profile.email || conversation?.createdByName || 'Someone';
 }
 
+function conversationAnchorPayloadFromConversation(conversation) {
+  return {
+    noteId: conversation?.noteId || '',
+    mode: conversation?.anchorMode || (conversation?.anchorText ? 'selection' : 'cursor'),
+    text: conversation?.anchorText || '',
+    context: conversation?.anchorContext || '',
+    start: conversation?.anchorStart || 0,
+    end: conversation?.anchorEnd || conversation?.anchorStart || 0,
+    bookmark: conversation?.anchorBookmark || null
+  };
+}
+
+function normalizedConversationAnchorText(value) {
+  return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+function conversationAnchorMarkFromNode(node, root = getEd()) {
+  if (!node || !root) return null;
+  const el = node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
+  const mark = el?.matches?.('.note-conversation-anchor')
+    ? el
+    : el?.closest?.('.note-conversation-anchor');
+  return mark && root.contains(mark) ? mark : null;
+}
+
+function adjacentConversationAnchorMark(root, range, direction) {
+  if (!root || !range?.collapsed) return null;
+  let node = range.startContainer;
+  if (node.nodeType === Node.ELEMENT_NODE) {
+    const index = direction < 0 ? range.startOffset - 1 : range.startOffset;
+    return conversationAnchorMarkFromNode(node.childNodes[index], root);
+  }
+  if (node.nodeType !== Node.TEXT_NODE) return null;
+  if (direction < 0 && range.startOffset > 0) return null;
+  if (direction > 0 && range.startOffset < node.textContent.length) return null;
+
+  let cursor = node;
+  while (cursor && cursor !== root) {
+    let sibling = direction < 0 ? cursor.previousSibling : cursor.nextSibling;
+    while (sibling) {
+      if (sibling.nodeType !== Node.TEXT_NODE || sibling.textContent.replace(/\u200b/g, '').trim()) {
+        return conversationAnchorMarkFromNode(sibling, root);
+      }
+      sibling = direction < 0 ? sibling.previousSibling : sibling.nextSibling;
+    }
+    cursor = cursor.parentNode;
+  }
+  return null;
+}
+
+function rangeFromInputTargetRange(targetRange) {
+  if (!targetRange?.startContainer || !targetRange?.endContainer) return null;
+  try {
+    const range = document.createRange();
+    range.setStart(targetRange.startContainer, targetRange.startOffset);
+    range.setEnd(targetRange.endContainer, targetRange.endOffset);
+    return range;
+  } catch (_) {
+    return null;
+  }
+}
+
+function conversationAnchorMarkForDeleteRange(root, range, inputType) {
+  if (!root || !range) return null;
+  const direct = conversationAnchorMarkFromNode(range.startContainer, root) ||
+    conversationAnchorMarkFromNode(range.endContainer, root) ||
+    [...root.querySelectorAll('.note-conversation-anchor')].find(mark => {
+      try { return range.intersectsNode(mark); }
+      catch (_) { return false; }
+    });
+  if (direct) return direct;
+  if (inputType === 'deleteContentBackward') return adjacentConversationAnchorMark(root, range, -1);
+  if (inputType === 'deleteContentForward') return adjacentConversationAnchorMark(root, range, 1);
+  return null;
+}
+
+function selectConversationAnchorMark(mark) {
+  if (!mark) return;
+  const range = document.createRange();
+  range.selectNodeContents(mark);
+  const sel = window.getSelection();
+  sel?.removeAllRanges();
+  sel?.addRange(range);
+  getEd()?.focus();
+  placeConversationFocusOnMark(mark);
+}
+
+function protectConversationAnchorDeletion(e, root = getEd()) {
+  const inputType = e?.inputType || '';
+  if (!inputType.startsWith('delete')) return false;
+  const ranges = typeof e.getTargetRanges === 'function'
+    ? [...e.getTargetRanges()].map(rangeFromInputTargetRange).filter(Boolean)
+    : [];
+  if (!ranges.length) {
+    const sel = window.getSelection();
+    if (sel?.rangeCount) ranges.push(sel.getRangeAt(0));
+  }
+  const mark = ranges.map(range => conversationAnchorMarkForDeleteRange(root, range, inputType)).find(Boolean);
+  const conversation = conversationById(mark?.dataset?.conversationId || '');
+  if (!mark || !conversation || conversation.resolved) return false;
+  selectConversationAnchorMark(mark);
+  showToast('Resolve Conversation Before Removing Topic', 'error');
+  return true;
+}
+
 function createConversationAnchorMark(conversationId, anchor = {}) {
   const mark = document.createElement('span');
   mark.className = 'note-conversation-anchor';
@@ -951,6 +1056,68 @@ async function applyConversationAnchorMark(conversationId, anchor) {
     return synced ? await saveDoc(note) : false;
   } catch (err) {
     console.warn('conversation anchor mark:', err);
+    try { commitUndoSnapshot(); } catch (_) {}
+    return false;
+  }
+}
+
+async function ensureConversationAnchorPresent(conversation, options = {}) {
+  const latest = conversationById(conversation?.id) || conversation;
+  const note = latest?.noteId ? notes[latest.noteId] : null;
+  if (!latest?.id || latest.resolved || !note || !canEditNote(note)) return false;
+  if (activeId !== note.id) return false;
+  const ed = getEd();
+  if (!ed) return false;
+  const existing = conversationAnchorMarkForConversation(ed, latest.id);
+  if (existing) return true;
+
+  const anchor = conversationAnchorPayloadFromConversation(latest);
+  const bookmark = anchor.bookmark || {
+    start: anchor.start || 0,
+    end: anchor.end || anchor.start || 0,
+    collapsed: anchor.mode === 'cursor'
+  };
+
+  try {
+    pushUndo();
+    restoreEditorSelection(ed, bookmark);
+    const sel = window.getSelection();
+    let range = sel?.rangeCount ? sel.getRangeAt(0) : null;
+    if (!range) {
+      range = document.createRange();
+      range.selectNodeContents(ed);
+      range.collapse(false);
+    }
+
+    const mark = createConversationAnchorMark(latest.id, anchor);
+    const anchorText = anchor.text || '';
+    const selectedText = range.collapsed ? '' : range.toString();
+    const selectedMatchesAnchor = !!anchorText &&
+      normalizedConversationAnchorText(selectedText) === normalizedConversationAnchorText(anchorText);
+
+    if (anchor.mode !== 'cursor' && selectedMatchesAnchor) {
+      mark.appendChild(range.extractContents());
+      mark.querySelectorAll('.note-conversation-anchor').forEach(nested => unwrapConversationAnchorMark(nested));
+      range.insertNode(mark);
+    } else {
+      if (!range.collapsed) range.collapse(true);
+      mark.textContent = anchor.mode === 'cursor'
+        ? 'Conversation'
+        : (anchorText || conversationAnchorCopy(latest) || 'Conversation');
+      range.insertNode(mark);
+    }
+
+    restoreConversationAnchorMarks(ed);
+    placeCursorAfterNode(mark);
+    refreshEmpty(ed);
+    const synced = syncActiveNoteFromEditor();
+    scheduleUndoSnapshot();
+    renderSidebar();
+    const saved = synced ? await saveDoc(note) : false;
+    if (saved && options.notify) showToast('Conversation Location Restored', 'success');
+    return saved;
+  } catch (err) {
+    console.warn('restore conversation anchor marker:', err);
     try { commitUndoSnapshot(); } catch (_) {}
     return false;
   }
@@ -1420,19 +1587,19 @@ function renderConversationDetail(body, conv) {
     const profile = conversationProfileByUid(message.authorUid, conv);
     const thumbCount = conversationThumbCount(message);
     const thumbed = conversationThumbedByMe(message);
-    const thumbLabel = thumbed ? 'Liked' : 'Like';
     const thumbCountLabel = thumbCount ? String(thumbCount) : '';
     return '<div class="conversation-message' + (mine ? ' mine' : '') + '">' +
       renderProfileAvatar({ ...profile, displayName: message.authorName || profile.displayName, photoURL: message.authorPhotoURL || profile.photoURL, photoURLCandidates: message.authorPhotoURLCandidates || profile.photoURLCandidates || [] }) +
       '<div class="conversation-bubble">' +
         '<div class="conversation-message-meta">' + conversationEsc(mine ? 'You' : (message.authorName || profile.displayName || 'Friend')) + ' &middot; ' + conversationEsc(relativeNotificationTime(message.created)) + '</div>' +
-        '<div class="conversation-message-body">' + conversationEsc(message.body) + '</div>' +
-        '<div class="conversation-message-actions">' +
-          '<button class="conversation-reaction-btn' + (thumbed ? ' active' : '') + '" data-conversation-thumb="' + conversationEsc(conv.id) + '" data-conversation-message="' + conversationEsc(message.id) + '" type="button" title="' + conversationEsc(thumbCount ? conversationThumbTitle(message, conv) : 'Like Message') + '" aria-label="' + conversationEsc(thumbed ? 'Remove Thumbs Up' : 'Thumbs Up') + '">' +
-            '<i class="fa-solid fa-thumbs-up"></i>' +
-            '<span class="conversation-reaction-label">' + conversationEsc(thumbLabel) + '</span>' +
-            (thumbCountLabel ? '<span class="conversation-reaction-count">' + conversationEsc(thumbCountLabel) + '</span>' : '') +
-          '</button>' +
+        '<div class="conversation-message-line">' +
+          '<div class="conversation-message-body">' + conversationEsc(message.body) + '</div>' +
+          '<div class="conversation-message-actions">' +
+            '<button class="conversation-reaction-btn' + (thumbed ? ' active' : '') + '" data-conversation-thumb="' + conversationEsc(conv.id) + '" data-conversation-message="' + conversationEsc(message.id) + '" type="button" title="' + conversationEsc(thumbCount ? conversationThumbTitle(message, conv) : 'Like Message') + '" aria-label="' + conversationEsc(thumbed ? 'Remove Thumbs Up' : 'Thumbs Up') + '">' +
+              '<i class="fa-solid fa-thumbs-up"></i>' +
+              (thumbCountLabel ? '<span class="conversation-reaction-count">' + conversationEsc(thumbCountLabel) + '</span>' : '') +
+            '</button>' +
+          '</div>' +
         '</div>' +
       '</div>' +
     '</div>';
@@ -1592,6 +1759,14 @@ function focusConversationAnchor(conversation) {
   const mark = conversationAnchorMarkForConversation(ed, conversation.id);
   if (mark) {
     placeConversationFocusOnMark(mark);
+    return;
+  }
+  if (!conversation.resolved && canEditNote(notes[conversation.noteId])) {
+    ensureConversationAnchorPresent(conversation, { notify: true }).then(restored => {
+      if (!restored) return;
+      const restoredMark = conversationAnchorMarkForConversation(getEd(), conversation.id);
+      if (restoredMark) placeConversationFocusOnMark(restoredMark);
+    });
     return;
   }
   const bookmark = conversation.anchorBookmark || {
@@ -1793,27 +1968,18 @@ async function toggleConversationMessageThumb(conversationId, messageId) {
 
   try {
     const messageRef = doc(fsDb, 'noteConversations', conversationId, 'messages', messageId);
-    let committedThumbs = nextThumbs;
-    await runTransaction(fsDb, async transaction => {
-      const snap = await transaction.get(messageRef);
-      if (!snap.exists()) throw new Error('message-missing');
-      const latestThumbs = normalizeConversationThumbs(snap.data()?.thumbsUp);
-      if (!!latestThumbs[userId] === shouldThumb) {
-        committedThumbs = latestThumbs;
-        return;
-      }
-      if (shouldThumb) latestThumbs[userId] = true;
-      else delete latestThumbs[userId];
-      committedThumbs = latestThumbs;
-      transaction.update(messageRef, {
-        thumbsUp: Object.keys(latestThumbs).length ? latestThumbs : deleteField(),
-        modifiedIso: new Date().toISOString(),
-        modified: serverTimestamp()
-      });
-    });
+    await updateDoc(
+      messageRef,
+      new FieldPath('thumbsUp', userId),
+      shouldThumb ? true : deleteField(),
+      'modifiedIso',
+      new Date().toISOString(),
+      'modified',
+      serverTimestamp()
+    );
     const current = (conversationMessages[conversationId] || []).find(item => item.id === messageId);
     if (current) {
-      current.thumbsUp = committedThumbs;
+      current.thumbsUp = nextThumbs;
       renderConversationsSidebar();
     }
   } catch (err) {
@@ -1966,6 +2132,13 @@ async function setConversationResolved(conversationId, resolved) {
         if (!anchorRemoved) console.warn('resolved conversation marker cleanup skipped:', conversationId);
       } catch (err) {
         console.warn('resolved conversation marker cleanup:', err);
+      }
+    } else {
+      try {
+        const restoredConversation = conversationById(conversationId) || { ...conversation, resolved: false };
+        await ensureConversationAnchorPresent(restoredConversation, { notify: true });
+      } catch (err) {
+        console.warn('reopen conversation marker restore:', err);
       }
     }
     renderConversationsSidebar();

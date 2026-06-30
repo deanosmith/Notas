@@ -4,7 +4,7 @@ import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChang
 import {
   getFirestore, collection, doc, setDoc, deleteDoc, getDocs, getDoc,
   onSnapshot, query, where, Timestamp, writeBatch, serverTimestamp, deleteField, updateDoc,
-  arrayUnion, arrayRemove, runTransaction, limit
+  arrayUnion, arrayRemove, limit, FieldPath
 } from 'https://www.gstatic.com/firebasejs/12.13.0/firebase-firestore.js';
 
 const __env = window.__env || {};
@@ -49,6 +49,6 @@ export {
   updateDoc,
   arrayUnion,
   arrayRemove,
-  runTransaction,
-  limit
+  limit,
+  FieldPath
 };

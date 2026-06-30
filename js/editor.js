@@ -582,6 +582,95 @@ function createNoteImageResizeHandle() {
   return handle;
 }
 
+function clearSelectedNoteImages(root = getEd()) {
+  root?.querySelectorAll?.('.note-image-block.note-image-selected').forEach(block => {
+    block.classList.remove('note-image-selected');
+    block.removeAttribute('data-note-image-selected');
+  });
+}
+
+function selectNoteImageBlock(block) {
+  const ed = getEd();
+  if (!block || !ed?.contains(block)) return false;
+  clearSelectedNoteImages(ed);
+  block.classList.add('note-image-selected');
+  block.dataset.noteImageSelected = '1';
+  const range = document.createRange();
+  range.selectNode(block);
+  const sel = window.getSelection();
+  if (!sel) return false;
+  sel.removeAllRanges();
+  sel.addRange(range);
+  ed.focus();
+  refreshUndoSnapshotSelection();
+  return true;
+}
+
+function selectedNoteImageBlock(root = getEd()) {
+  const block = root?.querySelector?.('.note-image-block.note-image-selected');
+  if (!block) return null;
+  const sel = window.getSelection();
+  if (!sel?.rangeCount) return null;
+  const range = sel.getRangeAt(0);
+  const parent = block.parentNode;
+  if (!parent || range.startContainer !== parent || range.endContainer !== parent) return null;
+  const index = [...parent.childNodes].indexOf(block);
+  return index >= 0 && range.startOffset === index && range.endOffset === index + 1 ? block : null;
+}
+
+function syncSelectedNoteImageState(root = getEd()) {
+  if (!root) return;
+  const selected = selectedNoteImageBlock(root);
+  root.querySelectorAll('.note-image-block.note-image-selected').forEach(block => {
+    if (block === selected) return;
+    block.classList.remove('note-image-selected');
+    block.removeAttribute('data-note-image-selected');
+  });
+}
+
+function cleanNoteImageBlockHTML(block) {
+  if (!block) return '';
+  const wrapper = document.createElement('div');
+  wrapper.appendChild(block.cloneNode(true));
+  stripNoteImageEditorChrome(wrapper);
+  return wrapper.innerHTML;
+}
+
+function writeSelectedNoteImageToClipboard(clipboardData) {
+  const block = selectedNoteImageBlock();
+  if (!block || !clipboardData) return false;
+  const html = cleanNoteImageBlockHTML(block);
+  if (!html) return false;
+  const img = block.querySelector('img.note-image, img');
+  clipboardData.setData('text/html', html);
+  clipboardData.setData('text/plain', img?.alt || 'Image');
+  return true;
+}
+
+function copySelectedNoteImage(clipboardData) {
+  return writeSelectedNoteImageToClipboard(clipboardData);
+}
+
+function cutSelectedNoteImage(clipboardData) {
+  const block = selectedNoteImageBlock();
+  if (!block || !activeId || !canEditNote(notes[activeId])) return false;
+  if (!writeSelectedNoteImageToClipboard(clipboardData)) return false;
+  pushUndo();
+  const marker = document.createTextNode('\u200b');
+  block.after(marker);
+  block.remove();
+  clearSelectedNoteImages(getEd());
+  const range = document.createRange();
+  range.setStart(marker, 1);
+  range.collapse(true);
+  const sel = window.getSelection();
+  sel?.removeAllRanges();
+  sel?.addRange(range);
+  getEd().focus();
+  getEd().dispatchEvent(new Event('input'));
+  return true;
+}
+
 function decorateNoteImages(root = getEd()) {
   if (!root) return false;
   let changed = false;
@@ -621,7 +710,8 @@ function stripNoteImageEditorChrome(root) {
     img.removeAttribute('draggable');
   });
   root.querySelectorAll('.note-image-block').forEach(block => {
-    block.classList.remove('has-image-controls');
+    block.classList.remove('has-image-controls', 'note-image-selected');
+    block.removeAttribute('data-note-image-selected');
     block.removeAttribute('contenteditable');
     if (!block.querySelector('img')) {
       block.remove();
