@@ -2499,6 +2499,10 @@ function tableAvailableWidth(table) {
   return Math.max(TABLE_MIN_COLUMN_WIDTH, rectWidth || clientWidth || tableWidthBasis(table));
 }
 
+function tableShouldFitAvailableWidth(table) {
+  return tableColumnCount(table) <= 4;
+}
+
 function tableMinimumResizeWidth(table) {
   const colCount = tableColumnCount(table);
   const preferred = Math.max(120, colCount * TABLE_MIN_COLUMN_WIDTH);
@@ -2634,6 +2638,10 @@ function tableScrollWrapForTable(table) {
 function updateTableScrollState(table) {
   const scrollWrap = tableScrollWrapForTable(table);
   if (!scrollWrap) return;
+  if (tableShouldFitAvailableWidth(table) && tablePixelStyleWidth(table) > tableAvailableWidth(table)) {
+    table.style.width = '100%';
+    table.style.minWidth = '';
+  }
   applyTableChromeWidth(table);
   const canScroll = scrollWrap.scrollWidth - scrollWrap.clientWidth > 2;
   scrollWrap.classList.toggle('is-scrollable', canScroll);
@@ -2676,12 +2684,21 @@ function ensureTableScrollWrap(wrap, table) {
     scrollWrap.appendChild(resizeControls);
     changed = true;
   }
-  let reorderControls = scrollWrap.querySelector(':scope > .table-reorder-controls');
+  let reorderControls = wrap.querySelector(':scope > .table-reorder-controls');
+  const nestedReorderControls = scrollWrap.querySelector(':scope > .table-reorder-controls');
+  if (!reorderControls && nestedReorderControls) {
+    reorderControls = nestedReorderControls;
+    wrap.appendChild(reorderControls);
+    changed = true;
+  } else if (nestedReorderControls && nestedReorderControls !== reorderControls) {
+    nestedReorderControls.remove();
+    changed = true;
+  }
   if (!reorderControls) {
     reorderControls = document.createElement('div');
     reorderControls.className = 'table-reorder-controls';
     reorderControls.setAttribute('contenteditable', 'false');
-    scrollWrap.appendChild(reorderControls);
+    wrap.appendChild(reorderControls);
     changed = true;
   }
   bindTableChromeScroll(scrollWrap);
@@ -2747,8 +2764,9 @@ function updateTableResizeHandles(table) {
 
 function updateTableReorderHandles(table) {
   const scrollWrap = tableScrollWrapForTable(table);
-  const controls = scrollWrap?.querySelector(':scope > .table-reorder-controls');
-  if (!table || !scrollWrap || !controls) return;
+  const wrap = table?.closest?.('.note-table-wrap');
+  const controls = wrap?.querySelector(':scope > .table-reorder-controls');
+  if (!table || !scrollWrap || !wrap || !controls) return;
   const rows = [...table.rows];
   const colCount = tableColumnCount(table);
   if (!rows.length || !getEd()?.isContentEditable) {
@@ -2758,9 +2776,13 @@ function updateTableReorderHandles(table) {
 
   const firstRow = rows[0];
   const scrollRect = scrollWrap.getBoundingClientRect();
-  const tableRect = table.getBoundingClientRect();
-  controls.style.width = Math.max(scrollWrap.clientWidth, tableRect.width) + 'px';
-  controls.style.height = tableRect.height + 'px';
+  const wrapRect = wrap.getBoundingClientRect();
+  const tableLeft = scrollRect.left - wrapRect.left;
+  const tableTop = scrollRect.top - wrapRect.top;
+  const visibleLeft = tableLeft;
+  const visibleRight = visibleLeft + scrollWrap.clientWidth;
+  controls.style.width = wrapRect.width + 'px';
+  controls.style.height = wrapRect.height + 'px';
 
   const existing = new Map(
     [...controls.querySelectorAll(':scope > .table-reorder-handle')]
@@ -2770,7 +2792,6 @@ function updateTableReorderHandles(table) {
 
   rows.forEach((row, index) => {
     const rect = row.getBoundingClientRect();
-    const firstCellRect = row.cells[0]?.getBoundingClientRect?.() || tableRect;
     const key = 'row:' + index;
     const handle = existing.get(key) || document.createElement('button');
     const active = _tableReorderState?.type === 'row' && _tableReorderState.table === table && _tableReorderState.fromIndex === index;
@@ -2782,9 +2803,9 @@ function updateTableReorderHandles(table) {
     handle.setAttribute('contenteditable', 'false');
     handle.setAttribute('title', 'Move Row');
     handle.setAttribute('aria-label', 'Move Row');
-    handle.innerHTML = '<i class="fa-solid fa-arrows-up-down"></i>';
-    handle.style.left = (firstCellRect.left - scrollRect.left + scrollWrap.scrollLeft + 9) + 'px';
-    handle.style.top = (rect.top - scrollRect.top + scrollWrap.scrollTop + rect.height / 2) + 'px';
+    handle.innerHTML = '<i class="fa-solid fa-up-down"></i>';
+    handle.style.left = tableLeft + 'px';
+    handle.style.top = (rect.top - wrapRect.top + rect.height / 2) + 'px';
     controls.appendChild(handle);
     keep.add(key);
   });
@@ -2804,9 +2825,14 @@ function updateTableReorderHandles(table) {
     handle.setAttribute('contenteditable', 'false');
     handle.setAttribute('title', 'Move Column');
     handle.setAttribute('aria-label', 'Move Column');
-    handle.innerHTML = '<i class="fa-solid fa-arrows-left-right"></i>';
-    handle.style.left = (rect.left - scrollRect.left + scrollWrap.scrollLeft + rect.width / 2) + 'px';
-    handle.style.top = (rect.top - scrollRect.top + scrollWrap.scrollTop + 9) + 'px';
+    handle.innerHTML = '<i class="fa-solid fa-left-right"></i>';
+    const left = rect.left - wrapRect.left + rect.width / 2;
+    if (left < visibleLeft || left > visibleRight) {
+      handle.remove();
+      continue;
+    }
+    handle.style.left = left + 'px';
+    handle.style.top = tableTop + 'px';
     controls.appendChild(handle);
     keep.add(key);
   }
@@ -2890,10 +2916,21 @@ function sanitizeEditorTables(root = getEd()) {
   return changed;
 }
 
-function createTableCell() {
-  const td = document.createElement('td');
-  td.appendChild(document.createElement('br'));
-  return td;
+function createTableCell(tagName = 'td') {
+  const tag = String(tagName || '').toLowerCase() === 'th' ? 'th' : 'td';
+  const cell = document.createElement(tag);
+  cell.appendChild(document.createElement('br'));
+  return cell;
+}
+
+function convertTableCellTag(cell, tagName) {
+  const tag = String(tagName || '').toUpperCase();
+  if (!cell || cell.tagName === tag || !['TD', 'TH'].includes(cell.tagName) || !['TD', 'TH'].includes(tag)) return cell;
+  const next = document.createElement(tag.toLowerCase());
+  [...cell.attributes].forEach(attr => next.setAttribute(attr.name, attr.value));
+  while (cell.firstChild) next.appendChild(cell.firstChild);
+  cell.replaceWith(next);
+  return next;
 }
 
 function ensureTableShape(table) {
@@ -2910,13 +2947,16 @@ function ensureTableShape(table) {
     changed = true;
   }
   const maxCols = Math.max(1, ...[...table.rows].map(row => row.cells.length));
-  [...table.rows].forEach(row => {
+  [...table.rows].forEach((row, rowIndex) => {
     while (row.cells.length < maxCols) {
-      row.appendChild(createTableCell());
+      row.appendChild(createTableCell(rowIndex === 0 ? 'th' : 'td'));
       changed = true;
     }
-    [...row.cells].forEach(cell => {
+    [...row.cells].forEach((cell, cellIndex) => {
       if (cell.tagName !== 'TD' && cell.tagName !== 'TH') return;
+      const normalized = convertTableCellTag(cell, rowIndex === 0 ? 'th' : 'td');
+      if (normalized !== cell) changed = true;
+      cell = normalized || row.cells[cellIndex];
       if (sanitizeTableCell(cell)) changed = true;
     });
   });
@@ -3006,7 +3046,7 @@ function createNoteTable(rows = 2, cols = 2) {
   const tbody = document.createElement('tbody');
   for (let r = 0; r < rows; r++) {
     const tr = document.createElement('tr');
-    for (let c = 0; c < cols; c++) tr.appendChild(createTableCell());
+    for (let c = 0; c < cols; c++) tr.appendChild(createTableCell(r === 0 ? 'th' : 'td'));
     tbody.appendChild(tr);
   }
   table.appendChild(colgroup);
@@ -3038,9 +3078,9 @@ function insertTable() {
   reorderControls.setAttribute('contenteditable', 'false');
   scrollWrap.appendChild(table);
   scrollWrap.appendChild(resizeControls);
-  scrollWrap.appendChild(reorderControls);
   bindTableChromeScroll(scrollWrap);
   wrap.appendChild(scrollWrap);
+  wrap.appendChild(reorderControls);
   const block = currentBlockFromSelection();
   if (range.collapsed && block && block !== getEd() && !['LI', 'TD', 'TH', 'PRE'].includes(block.tagName)) {
     if (block.textContent.replace(/\u00a0/g, ' ').trim() || block.querySelector('img, table, ul, ol')) block.after(wrap);
@@ -3060,6 +3100,10 @@ function insertTable() {
 
 function tableForButton(btn) {
   return btn?.closest('.note-table-wrap')?.querySelector('table') || null;
+}
+
+function tableForReorderHandle(handle) {
+  return handle?.closest('.note-table-wrap')?.querySelector(':scope > .note-table-scroll > table, :scope > table') || null;
 }
 
 function selectedCellInTable(table) {
@@ -3082,7 +3126,7 @@ function addTableRow(table) {
   const insertIndex = selectedCell ? selectedCell.parentElement.rowIndex + 1 : table.rows.length;
   const cols = tableColumnCount(table);
   const row = table.tBodies[0].insertRow(Math.min(insertIndex, table.tBodies[0].rows.length));
-  for (let i = 0; i < cols; i++) row.appendChild(createTableCell());
+  for (let i = 0; i < cols; i++) row.appendChild(createTableCell('td'));
   placeCursorInTableCell(row.cells[Math.min(selectedCell?.cellIndex || 0, cols - 1)]);
 }
 
@@ -3104,8 +3148,8 @@ function addTableColumn(table) {
   const selectedCell = selectedCellInTable(table);
   const insertIndex = selectedCell ? selectedCell.cellIndex + 1 : tableColumnCount(table);
   insertTableColumnWidth(table, insertIndex);
-  [...table.rows].forEach(row => {
-    row.insertBefore(createTableCell(), row.cells[insertIndex] || null);
+  [...table.rows].forEach((row, rowIndex) => {
+    row.insertBefore(createTableCell(rowIndex === 0 ? 'th' : 'td'), row.cells[insertIndex] || null);
   });
   const targetRow = selectedCell?.parentElement || table.rows[0];
   placeCursorInTableCell(targetRow?.cells[Math.min(insertIndex, targetRow.cells.length - 1)]);
@@ -3231,7 +3275,7 @@ function startTableReorder(e, handle) {
   if (!activeId || !canEditNote(notes[activeId])) return;
   const type = handle?.dataset?.tableReorder;
   if (type !== 'row' && type !== 'column') return;
-  const table = handle.closest('.note-table-scroll')?.querySelector('table');
+  const table = tableForReorderHandle(handle);
   const fromIndex = Number(type === 'row' ? handle.dataset.tableRowReorder : handle.dataset.tableColumnReorder);
   const count = tableReorderCount(table, type);
   if (!table || !Number.isInteger(fromIndex) || fromIndex < 0 || fromIndex >= count || count <= 1) return;
@@ -4233,7 +4277,7 @@ function currentAlarmRecipientProfile() {
   const email = normalizeEmail(currentProfile?.email || auth.currentUser?.email || '');
   return {
     uid: 'me',
-    displayName: currentProfile?.displayName || auth.currentUser?.displayName || 'Me',
+    displayName: 'You',
     email,
     photoURL: photos.photoURL,
     photoURLCandidates: photos.photoURLCandidates
@@ -4248,8 +4292,8 @@ function renderAlarmRecipientOption(value, profile, subtitle, selected) {
   return '<button class="alarm-recipient-option' + (selected ? ' active' : '') + '" data-alarm-recipient-option="' + esc(value) + '" type="button" role="radio" aria-checked="' + (selected ? 'true' : 'false') + '">' +
     renderProfileAvatar(profile) +
     '<span class="alarm-recipient-copy">' +
-      '<span class="alarm-recipient-name">' + esc(profile.displayName || profile.email || (value === 'me' ? 'Me' : 'Friend')) + '</span>' +
-      '<span class="alarm-recipient-sub">' + esc(subtitle || profile.email || '') + '</span>' +
+      '<span class="alarm-recipient-name">' + esc(value === 'me' ? 'You' : (profile.displayName || profile.email || 'Friend')) + '</span>' +
+      (value === 'me' ? '' : '<span class="alarm-recipient-sub">' + esc(subtitle || profile.email || '') + '</span>') +
     '</span>' +
   '</button>';
 }
@@ -4286,7 +4330,7 @@ function populateAlarmRecipientOptions(note, selectedUid = '') {
   ).join('');
   select.value = selectedValue;
   if (!list) return;
-  list.innerHTML = renderAlarmRecipientOption('me', currentAlarmRecipientProfile(), 'Personal reminder', selectedValue === 'me') +
+  list.innerHTML = renderAlarmRecipientOption('me', currentAlarmRecipientProfile(), '', selectedValue === 'me') +
     friendOptions.map(friend => renderAlarmRecipientOption(
       friend.uid,
       friend,

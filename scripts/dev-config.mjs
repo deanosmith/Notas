@@ -14,6 +14,11 @@ const requiredKeys = [
   'FIREBASE_MEASUREMENT_ID'
 ];
 
+const optionalKeys = [
+  'NOTAS_ENABLE_TEST_PASSWORD_AUTH',
+  'NOTAS_TEST_PASSWORD_AUTH_DOMAIN'
+];
+
 function parseEnv(source) {
   const env = {};
 
@@ -66,6 +71,9 @@ if (invalid.length) {
 }
 
 const payload = Object.fromEntries(requiredKeys.map((key) => [key, env[key]]));
+for (const key of optionalKeys) {
+  if (env[key]) payload[key] = env[key];
+}
 const file = `window.__env = ${JSON.stringify(payload, null, 2)};\n`;
 
 await writeFile(outputPath, file, 'utf8');

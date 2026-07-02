@@ -9,7 +9,7 @@ function renderProfileConnectionUI(options = {}) {
 
   const profiles = friendArray();
   if (!profiles.length) {
-    list.innerHTML = '<div class="profile-empty">Search for another Notas user by exact Google email to add them as a friend.</div>';
+    list.innerHTML = '<div class="profile-empty">Search for another Notas user by exact email to add them as a friend.</div>';
     return;
   }
 
@@ -493,7 +493,7 @@ function openProfileLinkApproval(profileOrRequest) {
   _pendingProfileLink = { profile, request };
   preview.innerHTML =
     renderProfileAvatar(profile) +
-    '<div class="profile-main"><div class="profile-name">' + esc(profile.displayName || 'Linked Profile') + '</div><div class="profile-sub">' + esc(profile.email || 'Google profile') + '</div></div>';
+    '<div class="profile-main"><div class="profile-name">' + esc(profile.displayName || 'Linked Profile') + '</div><div class="profile-sub">' + esc(profile.email || 'Notas profile') + '</div></div>';
   if (note) {
     note.textContent = request
       ? 'Approve to link this profile with yours for direct shares and @mentions. Deny cancels the request.'
@@ -588,7 +588,7 @@ async function connectProfileByEmail(inputId = 'connect-profile-email-input') {
   const input = document.getElementById(inputId);
   const email = normalizeEmail(input?.value || '');
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    showToast('Enter A Valid Google Email', 'error');
+    showToast('Enter A Valid Email', 'error');
     return;
   }
   if (email === normalizeEmail(currentProfile?.email)) {
@@ -3088,7 +3088,7 @@ function getMentionItems() {
 function renderNotificationButton() {
   const badge = document.getElementById('notification-badge');
   if (!badge) return;
-  const unread = getMentionItems().filter(n => !n.read).length;
+  const unread = getNotificationItems().filter(n => !n.read).length;
   badge.textContent = unread > 99 ? '99+' : String(unread);
   badge.hidden = unread === 0;
 }
@@ -3118,7 +3118,7 @@ function relativeNotificationTime(iso) {
 function renderNotificationsList(target = 'notifications-list') {
   const list = typeof target === 'string' ? document.getElementById(target) : target;
   if (!list) return;
-  const items = getMentionItems();
+  const items = getNotificationItems();
   if (notificationsUnavailable) {
     list.innerHTML = '<div class="profile-empty">Notifications are unavailable right now. Direct sharing can still be retried after Firestore profile-share access is enabled.</div>';
     if (typeof attachSidebarSelectionHandlers === 'function') attachSidebarSelectionHandlers(list);
@@ -3153,7 +3153,7 @@ async function markNotificationRead(id) {
 
 async function markAllNotificationsRead(ids = []) {
   const selected = new Set((ids || []).filter(Boolean));
-  const unread = getMentionItems().filter(n => selected.size ? selected.has(n.id) : !n.read);
+  const unread = getNotificationItems().filter(n => selected.size ? selected.has(n.id) : !n.read);
   if (!unread.length) return;
   await persistNotificationReads(unread.flatMap(notificationReadKeys));
 }
@@ -3164,7 +3164,7 @@ async function markNotificationsUnread(ids = []) {
     showToast('No Selected Notifications', 'success');
     return;
   }
-  const targets = getMentionItems().filter(n => selected.has(n.id));
+  const targets = getNotificationItems().filter(n => selected.has(n.id));
   const readKeys = targets.flatMap(notificationReadKeys);
   if (!readKeys.length) {
     showToast('No Selected Notifications', 'success');
@@ -3176,7 +3176,7 @@ async function markNotificationsUnread(ids = []) {
 
 async function deleteReadNotifications(ids = []) {
   const selected = new Set((ids || []).filter(Boolean));
-  const read = getMentionItems().filter(n => selected.size ? selected.has(n.id) : n.read);
+  const read = getNotificationItems().filter(n => selected.size ? selected.has(n.id) : n.read);
   if (!read.length) {
     showToast(selected.size ? 'No Selected Notifications' : 'No Read Notifications', 'success');
     return;
@@ -3227,7 +3227,7 @@ async function deleteReadNotifications(ids = []) {
 }
 
 async function openNotification(id) {
-  const item = profileShareNotifications[id] || getMentionItems().find(n => n.id === id) || profileLinkRequests[id] || incomingFriendRequests[id];
+  const item = profileShareNotifications[id] || getNotificationItems().find(n => n.id === id) || profileLinkRequests[id] || incomingFriendRequests[id];
   if (!item) return;
   document.getElementById('notifications-modal')?.classList.remove('open');
   if (item.type === 'friend_request') {

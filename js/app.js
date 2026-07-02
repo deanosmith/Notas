@@ -49,6 +49,7 @@ for (const src of sectionScripts) {
 }
 
 showEditorView(false);
+configureTestPasswordAuthUI();
 
 document.getElementById('drawer-btn').addEventListener('click',     toggleDrawer);
 document.getElementById('mob-logo-btn').addEventListener('click',   toggleDrawer);
@@ -62,6 +63,7 @@ document.querySelectorAll('[data-sidebar-view]').forEach(btn => {
 document.getElementById('rail-create-btn')?.addEventListener('click', () => openModal('note'));
 document.getElementById('mob-new-btn').addEventListener('click',    openModal);
 document.getElementById('google-signin-btn').addEventListener('click', signInWithGoogle);
+document.getElementById('test-password-signin-form')?.addEventListener('submit', signInWithTestPassword);
 document.getElementById('signout-btn').addEventListener('click', () => {
   closeTransientSurfaces();
   signOut(auth);
@@ -89,6 +91,28 @@ document.getElementById('note-alarm-modal').addEventListener('click', e => { if 
   });
   document.getElementById(id).addEventListener('input', updateAlarmSummary);
 });
+{
+  const timeInput = document.getElementById('alarm-time-input');
+  let wheelRemainder = 0;
+  timeInput?.addEventListener('wheel', e => {
+    if (document.activeElement !== timeInput && !timeInput.matches(':hover')) return;
+    e.preventDefault();
+    wheelRemainder += e.deltaY;
+    const threshold = e.deltaMode === WheelEvent.DOM_DELTA_LINE ? 1 : 48;
+    if (Math.abs(wheelRemainder) < threshold) return;
+    const direction = wheelRemainder > 0 ? 1 : -1;
+    wheelRemainder = 0;
+    const [rawHour, rawMinute] = String(timeInput.value || '09:00').split(':').map(part => parseInt(part, 10));
+    const hour = Number.isFinite(rawHour) ? rawHour : 9;
+    const minute = Number.isFinite(rawMinute) ? rawMinute : 0;
+    const total = (hour * 60 + minute + direction * 15 + 1440) % 1440;
+    const nextHour = String(Math.floor(total / 60)).padStart(2, '0');
+    const nextMinute = String(total % 60).padStart(2, '0');
+    timeInput.value = nextHour + ':' + nextMinute;
+    updateAlarmSummary();
+  }, { passive: false });
+  timeInput?.addEventListener('blur', () => { wheelRemainder = 0; });
+}
 document.getElementById('alarm-recipient-select')?.addEventListener('change', () => {
   updateAlarmRecipientOptionState();
   updateAlarmRecipientState();

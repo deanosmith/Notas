@@ -882,7 +882,7 @@ function renderSidebarPage(view) {
   if (view === 'friends') {
     content.innerHTML =
       '<div class="profile-connect-row">' +
-        '<input class="modal-input" id="sidebar-connect-profile-email-input" type="email" placeholder="Friend Google Email" autocomplete="email" />' +
+        '<input class="modal-input" id="sidebar-connect-profile-email-input" type="email" placeholder="Friend Email" autocomplete="email" />' +
         '<button class="modal-btn primary" id="sidebar-connect-profile-btn" type="button">Add</button>' +
       '</div>' +
       '<div class="profile-link-requests" id="sidebar-profile-link-requests-panel" hidden>' +

@@ -303,8 +303,26 @@ function normalizeLinkedProfile(key, value) {
   };
 }
 
+function testPasswordProfileDomain() {
+  return normalizeEmail((window.__env || {}).NOTAS_TEST_PASSWORD_AUTH_DOMAIN || 'test.notas.local');
+}
+
+function displayNameFromEmail(email) {
+  const normalized = normalizeEmail(email);
+  const localPart = normalized.split('@')[0] || '';
+  if (normalized.endsWith('@' + testPasswordProfileDomain())) {
+    const name = localPart
+      .split(/[._-]+/)
+      .filter(Boolean)
+      .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(' ');
+    return name || localPart;
+  }
+  return localPart;
+}
+
 function profileNameFromUser(user) {
-  return user?.displayName || (user?.email ? user.email.split('@')[0] : 'Notas User');
+  return user?.displayName || (user?.email ? displayNameFromEmail(user.email) : 'Notas User');
 }
 
 function profileInitials(profile) {

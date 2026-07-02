@@ -1,6 +1,6 @@
 # Notas
 
-Notas is a lightweight collaborative notes app with real-time saving, Google sign-in, profile-based sharing, reminders, conversations, and responsive desktop/mobile layouts.
+Notas is a lightweight collaborative notes app with real-time saving, Firebase sign-in, profile-based sharing, reminders, conversations, and responsive desktop/mobile layouts.
 
 ## Highlights
 

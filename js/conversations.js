@@ -1553,6 +1553,18 @@ function renderConversationComposer(body, anchor) {
       conversationEsc(profile.displayName || profile.email || 'Friend') +
     '</option>'
   ).join('');
+  const recipientPicker = recipients.length
+    ? '<div class="conversation-recipient-picker" id="conversation-recipient-picker" role="radiogroup" aria-label="Recipient">' +
+        recipients.map((profile, index) =>
+          '<button class="conversation-recipient-option' + (index === 0 ? ' active' : '') + '" data-conversation-recipient="' + conversationEsc(profile.uid) + '" type="button" role="radio" aria-checked="' + (index === 0 ? 'true' : 'false') + '">' +
+            renderProfileAvatar(profile) +
+            '<span class="conversation-recipient-copy">' +
+              '<span class="conversation-recipient-name">' + conversationEsc(profile.displayName || profile.email || 'Friend') + '</span>' +
+            '</span>' +
+          '</button>'
+        ).join('') +
+      '</div>'
+    : '';
 
   body.innerHTML =
     '<div class="conversation-compose">' +
@@ -1563,7 +1575,8 @@ function renderConversationComposer(body, anchor) {
       renderConversationAnchor(anchor) +
       (recipients.length
         ? '<div class="conversation-compose-fields">' +
-            '<select class="settings-select conversation-recipient-select" id="conversation-recipient-select" aria-label="Recipient">' + recipientOptions + '</select>' +
+            '<select class="settings-select conversation-recipient-select" id="conversation-recipient-select" aria-label="Recipient" hidden>' + recipientOptions + '</select>' +
+            recipientPicker +
             '<textarea class="conversation-textarea" id="conversation-new-message" rows="5" maxlength="1200" placeholder="Write the first message..." aria-label="Message"></textarea>' +
           '</div>' +
           '<div class="conversation-actions"><button class="modal-btn" data-conversation-cancel-compose type="button">Cancel</button><button class="modal-btn primary" id="conversation-create-btn" type="button"><i class="fa-solid fa-paper-plane" style="margin-right:6px;"></i>Start</button></div>'
@@ -1572,6 +1585,17 @@ function renderConversationComposer(body, anchor) {
 
   const select = document.getElementById('conversation-recipient-select');
   if (select && defaultRecipient) select.value = defaultRecipient;
+  document.querySelectorAll('[data-conversation-recipient]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const uid = btn.dataset.conversationRecipient || '';
+      if (select) select.value = uid;
+      document.querySelectorAll('[data-conversation-recipient]').forEach(option => {
+        const active = option.dataset.conversationRecipient === uid;
+        option.classList.toggle('active', active);
+        option.setAttribute('aria-checked', active ? 'true' : 'false');
+      });
+    });
+  });
 }
 
 function renderConversationDetail(body, conv) {

@@ -1,6 +1,15 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.13.0/firebase-app.js';
 import { getAnalytics } from 'https://www.gstatic.com/firebasejs/12.13.0/firebase-analytics.js';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/12.13.0/firebase-auth.js';
+import {
+  getAuth,
+  GoogleAuthProvider,
+  signInWithPopup,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  updateProfile,
+  signOut,
+  onAuthStateChanged
+} from 'https://www.gstatic.com/firebasejs/12.13.0/firebase-auth.js';
 import {
   getFirestore, collection, doc, setDoc, deleteDoc, getDocs, getDoc,
   onSnapshot, query, where, Timestamp, writeBatch, serverTimestamp, deleteField, updateDoc,
@@ -30,6 +39,9 @@ export {
   getAuth,
   GoogleAuthProvider,
   signInWithPopup,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  updateProfile,
   signOut,
   onAuthStateChanged,
   getFirestore,
