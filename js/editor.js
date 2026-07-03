@@ -1645,6 +1645,18 @@ function isCaretAtEndOfElement(el, range) {
   return !fragmentHasMeaningfulContent(afterCaret.cloneContents());
 }
 
+function isCaretAtStartOfElement(el, range) {
+  if (!el || !range?.collapsed) return false;
+  const beforeCaret = document.createRange();
+  beforeCaret.selectNodeContents(el);
+  try {
+    beforeCaret.setEnd(range.startContainer, range.startOffset);
+  } catch (_) {
+    return false;
+  }
+  return !fragmentHasMeaningfulContent(beforeCaret.cloneContents());
+}
+
 function isCaretOnLastVisualLineOfElement(el, range) {
   if (!el || !range?.collapsed) return false;
   const contentRange = document.createRange();
@@ -1654,6 +1666,17 @@ function isCaretOnLastVisualLineOfElement(el, range) {
   if (!caret || !contentRects.length) return isCaretAtEndOfElement(el, range);
   const lastBottom = Math.max(...contentRects.map(rect => rect.bottom));
   return caret.bottom >= lastBottom - 4;
+}
+
+function isCaretOnFirstVisualLineOfElement(el, range) {
+  if (!el || !range?.collapsed) return false;
+  const contentRange = document.createRange();
+  contentRange.selectNodeContents(el);
+  const contentRects = [...contentRange.getClientRects()].filter(rect => rect.width || rect.height);
+  const caret = rangeRect(range);
+  if (!caret || !contentRects.length) return isCaretAtStartOfElement(el, range);
+  const firstTop = Math.min(...contentRects.map(rect => rect.top));
+  return caret.top <= firstTop + 4;
 }
 
 function nextOutsideHeaderDomainTarget(el, level) {
@@ -1702,8 +1725,23 @@ function outermostListForItem(li) {
   return outer;
 }
 
-function cleanLineInsertionInfo(block) {
+function tableCleanLineInsertionInfo(direction) {
   const ed = getEd();
+  const cell = currentTableCellFromSelection();
+  const table = cell?.closest?.('table');
+  const row = cell?.closest?.('tr');
+  const boundary = table?.closest?.('.note-table-wrap') || table;
+  if (!ed || !cell || !table || !row || !boundary || !ed.contains(boundary)) return null;
+  const rows = [...table.rows];
+  if (direction === 'above' && row !== rows[0]) return null;
+  if (direction === 'below' && row !== rows[rows.length - 1]) return null;
+  return { boundary, visual: cell, outsideLevel: 0 };
+}
+
+function cleanLineInsertionInfo(block, direction = 'below') {
+  const ed = getEd();
+  const tableInfo = tableCleanLineInsertionInfo(direction);
+  if (tableInfo) return tableInfo;
   if (!ed || !block || block === ed) return { boundary: ed, visual: ed, outsideLevel: 0 };
 
   const li = block.closest?.('li');
@@ -1717,7 +1755,7 @@ function cleanLineInsertionInfo(block) {
 
   const container = block.closest?.('blockquote, pre') || block;
   const heading = container.matches?.('h1,h2,h3,h4') ? container : null;
-  if (heading?.hasAttribute('data-collapsed')) {
+  if (direction === 'below' && heading?.hasAttribute('data-collapsed')) {
     const level = parseInt(heading.tagName[1], 10);
     let boundary = heading;
     let sibling = heading.nextElementSibling;
@@ -1745,6 +1783,7 @@ function reusableCleanParagraph(el, outsideLevel = 0) {
 
 function cleanLineShortcutApplies(block, owner) {
   const ed = getEd();
+  if (currentTableCellFromSelection()) return true;
   if (!ed || !block || block === ed) return false;
   if (closestInlineCodeFromSelection()) return true;
   const styled = owner?.closest?.('code, pre, blockquote, li, h1, h2, h3, h4');
@@ -1773,6 +1812,35 @@ function insertCleanLineBelowCaret() {
     if (info.outsideLevel) target.setAttribute('data-outside-collapse', String(info.outsideLevel));
     if (info.boundary === ed) ed.appendChild(target);
     else info.boundary.after(target);
+  }
+  recomputeCollapsedSections();
+  placeCursorAtStart(target);
+  ed.dispatchEvent(new Event('input'));
+  return true;
+}
+
+function insertCleanLineAboveCaret() {
+  const ed = getEd();
+  const sel = window.getSelection();
+  if (!ed || !sel || !sel.rangeCount || !sel.isCollapsed) return false;
+  const range = sel.getRangeAt(0);
+  const owner = range.startContainer.nodeType === Node.ELEMENT_NODE
+    ? range.startContainer
+    : range.startContainer.parentElement;
+  if (!owner || (owner !== ed && !ed.contains(owner))) return false;
+
+  const block = currentBlockFromSelection();
+  if (!cleanLineShortcutApplies(block, owner)) return false;
+  const info = cleanLineInsertionInfo(block, 'above');
+  if (!info.boundary || !isCaretOnFirstVisualLineOfElement(info.visual || info.boundary, range)) return false;
+
+  pushUndo();
+  let target = info.boundary === ed ? ed.firstElementChild : info.boundary.previousElementSibling;
+  if (!reusableCleanParagraph(target, info.outsideLevel)) {
+    target = createEmptyBlock('p');
+    if (info.outsideLevel) target.setAttribute('data-outside-collapse', String(info.outsideLevel));
+    if (info.boundary === ed) ed.insertBefore(target, ed.firstChild);
+    else info.boundary.before(target);
   }
   recomputeCollapsedSections();
   placeCursorAtStart(target);
@@ -4265,7 +4333,7 @@ function selectedAlarmRecipientUid() {
 function alarmRecipientName(uid) {
   if (!uid) return 'Me';
   const friend = friends[uid] || linkedProfiles[uid];
-  return friend?.displayName || friend?.email || 'Friend';
+  return friend?.displayName || 'Friend';
 }
 
 function currentAlarmRecipientProfile() {
@@ -4288,12 +4356,11 @@ function canSendFriendReminderForNote(note) {
   return !!(note && (!note.owner || note.owner === userId));
 }
 
-function renderAlarmRecipientOption(value, profile, subtitle, selected) {
+function renderAlarmRecipientOption(value, profile, selected) {
   return '<button class="alarm-recipient-option' + (selected ? ' active' : '') + '" data-alarm-recipient-option="' + esc(value) + '" type="button" role="radio" aria-checked="' + (selected ? 'true' : 'false') + '">' +
     renderProfileAvatar(profile) +
     '<span class="alarm-recipient-copy">' +
-      '<span class="alarm-recipient-name">' + esc(value === 'me' ? 'You' : (profile.displayName || profile.email || 'Friend')) + '</span>' +
-      (value === 'me' ? '' : '<span class="alarm-recipient-sub">' + esc(subtitle || profile.email || '') + '</span>') +
+      '<span class="alarm-recipient-name">' + esc(value === 'me' ? 'You' : (profile.displayName || 'Friend')) + '</span>' +
     '</span>' +
   '</button>';
 }
@@ -4326,15 +4393,14 @@ function populateAlarmRecipientOptions(note, selectedUid = '') {
   const friendOptions = canSendFriendReminderForNote(note) ? friendArray() : [];
   const selectedValue = selectedUid && friendOptions.some(friend => friend.uid === selectedUid) ? selectedUid : 'me';
   select.innerHTML = '<option value="me">Me</option>' + friendOptions.map(friend =>
-    '<option value="' + esc(friend.uid) + '">' + esc(friend.displayName || friend.email || 'Friend') + '</option>'
+    '<option value="' + esc(friend.uid) + '">' + esc(friend.displayName || 'Friend') + '</option>'
   ).join('');
   select.value = selectedValue;
   if (!list) return;
-  list.innerHTML = renderAlarmRecipientOption('me', currentAlarmRecipientProfile(), '', selectedValue === 'me') +
+  list.innerHTML = renderAlarmRecipientOption('me', currentAlarmRecipientProfile(), selectedValue === 'me') +
     friendOptions.map(friend => renderAlarmRecipientOption(
       friend.uid,
       friend,
-      friend.email || 'Friend reminder',
       selectedValue === friend.uid
     )).join('');
   list.querySelectorAll('[data-alarm-recipient-option]').forEach(btn => {

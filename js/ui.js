@@ -1624,9 +1624,6 @@ function updateColorPickerUI(value = accentColor) {
   const sv = document.getElementById('color-sv');
   const cursor = document.getElementById('color-sv-cursor');
   const hue = document.getElementById('color-hue');
-  const rInput = document.getElementById('color-r');
-  const gInput = document.getElementById('color-g');
-  const bInput = document.getElementById('color-b');
 
   if (popover) popover.style.setProperty('--picker-hue', Math.round(pickerHsv.h));
   if (sv) sv.style.setProperty('--picker-hue', Math.round(pickerHsv.h));
@@ -1635,25 +1632,10 @@ function updateColorPickerUI(value = accentColor) {
     cursor.style.top = `${(1 - pickerHsv.v) * 100}%`;
   }
   if (hue) hue.value = Math.round(pickerHsv.h);
-  if (rInput) rInput.value = clampColor(rgb.r);
-  if (gInput) gInput.value = clampColor(rgb.g);
-  if (bInput) bInput.value = clampColor(rgb.b);
 }
 
 function colorFromPickerHsv() {
   return rgbToHex(hsvToRgb(pickerHsv));
-}
-
-function setPickerFromRgbInputs() {
-  const r = document.getElementById('color-r');
-  const g = document.getElementById('color-g');
-  const b = document.getElementById('color-b');
-  if (!r || !g || !b) return;
-  setAccentColor(rgbToHex({
-    r: clampColor(Number(r.value)),
-    g: clampColor(Number(g.value)),
-    b: clampColor(Number(b.value))
-  }));
 }
 
 function resolveLightMode() {
@@ -1701,7 +1683,6 @@ function initSettings() {
   const colorPopover = document.getElementById('color-popover');
   const colorSv = document.getElementById('color-sv');
   const colorHue = document.getElementById('color-hue');
-  const colorInputs = ['color-r', 'color-g', 'color-b'].map(id => document.getElementById(id)).filter(Boolean);
   let accentScrubTimer = 0;
 
   function closeColorPopover() {
@@ -1802,9 +1783,6 @@ function initSettings() {
   document.addEventListener('pointerup', () => setAccentScrubbing(false));
   document.addEventListener('pointercancel', () => setAccentScrubbing(false));
 
-  colorInputs.forEach(input => {
-    input.addEventListener('input', setPickerFromRgbInputs);
-  });
   document.getElementById('fs-inc').addEventListener('click', () => {
     if (editorFontSize < FONT_MAX) {
       editorFontSize++;

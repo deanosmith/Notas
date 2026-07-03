@@ -377,13 +377,21 @@ editorEl.addEventListener('keydown', e => {
   }
   if (handleMentionKeydown(e)) return;
   const inTable = isSelectionInTable();
+  const plainArrowKey = !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey && !e.isComposing;
 
-  if (!inTable && e.key === 'ArrowDown' && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey && !e.isComposing) {
-    if (moveCaretBeyondHeaderDomainEnd()) {
+  if (plainArrowKey && e.key === 'ArrowDown') {
+    if (!inTable && moveCaretBeyondHeaderDomainEnd()) {
       e.preventDefault();
       return;
     }
     if (insertCleanLineBelowCaret()) {
+      e.preventDefault();
+      return;
+    }
+  }
+
+  if (plainArrowKey && e.key === 'ArrowUp') {
+    if (insertCleanLineAboveCaret()) {
       e.preventDefault();
       return;
     }
