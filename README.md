@@ -1,18 +1,18 @@
 # Notas
 
-Notas is a lightweight collaborative notes app with real-time saving, Firebase sign-in, profile-based sharing, reminders, conversations, and responsive desktop/mobile layouts.
+Notas is a lightweight collaborative notes app with real-time saving, Google auth, friend-based sharing, reminders, conversations, and responsive desktop/mobile layouts.
 
-## Highlights
+[macOS version](https://github.com/deanosmith/Notas/releases/download/macOS/Notas.app.zip)
 
-- Real-time notes, folders, sharing, and collaboration powered by Firebase.
-- Friend/profile connections for shared notes, mentions, reminders, and conversation alerts.
-- Rich editor support for checklists, headings, tables, images, inline code, and keyboard-driven editing.
-- Trash retention, shared-note library flows, and GitHub Pages deployment support.
+[webapp (legacy)](https://deanosmith.github.io/Notas/)
 
-## Desktop
+## Features
 
-<img width="1577" height="1013" alt="Notas desktop interface" src="https://github.com/user-attachments/assets/f5cd3a61-b9c0-4f4b-9b2b-2aa72437d53a" />
+- Friend connections for sharing through Google
+- Real-time collaboration powered by Firebase.
+- Conversations, Reminders and Mentions with Friends
+- Notifications, Pop-out windows and pre-loaded macOS tools.
 
-## Mobile
 
-<img width="494" height="1012" alt="Notas mobile interface" src="https://github.com/user-attachments/assets/f8978077-3465-4666-bcd8-356fe061eebb" />
+## Webapp
+<img width="3154" height="2026" alt="image" src="https://github.com/user-attachments/assets/d13db585-15cf-4aa6-8759-d9bbe63d4025" />
