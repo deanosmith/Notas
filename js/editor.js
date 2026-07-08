@@ -1154,6 +1154,10 @@ function splitListAtLi(li, newListClass) {
 }
 
 function refreshEmpty(el) {
+  if (el.classList.contains('is-loading')) {
+    el.classList.remove('is-empty');
+    return;
+  }
   const hasText = !!el.innerText.trim();
   const hasStructure = !!el.querySelector('ul, ol, hr, h1, h2, h3, h4, blockquote, pre, table');
   el.classList.toggle('is-empty', !hasText && !hasStructure);
@@ -1549,7 +1553,7 @@ function hasLinkifiableTextNodes(root) {
 function setSaveState(s) {
   const dot = document.getElementById('save-dot');
   const lbl = document.getElementById('save-label');
-  const cfg = { saved:['saved','Saved'], unsaved:['unsaved','Saving'], saving:['saving','Saving...'], error:['error','Error'], local:['local','Local'], readonly:['local','Read Only'] };
+  const cfg = { saved:['saved','Saved'], unsaved:['unsaved','Saving'], saving:['saving','Saving...'], loading:['saving','Loading...'], error:['error','Error'], local:['local','Local'], readonly:['local','Read Only'] };
   const [cls, txt] = cfg[s] || cfg.local;
   dot.className = 'save-dot ' + cls; lbl.textContent = txt;
 }

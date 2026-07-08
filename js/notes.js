@@ -190,6 +190,7 @@ function applyNoteEditorChrome(note) {
 
 function renderNoteBodyIntoEditor(note, content) {
   const ed = document.getElementById('editor');
+  setEditorBodyLoading(ed, false, canEditNote(note));
   ed.innerHTML = renderMarkdownContent(content || '');
   normalizeThemeTextStyles(ed);
   normalizeCodeThemeStyles(ed);
@@ -206,6 +207,20 @@ function renderNoteBodyIntoEditor(note, content) {
   refreshEmpty(ed);
   updateCounts();
   return linkified || cleanContent !== (content || '');
+}
+
+function setEditorBodyLoading(ed, loading, isEditable) {
+  if (!ed) return;
+  ed.classList.toggle('is-loading', !!loading);
+  if (loading) {
+    ed.setAttribute('aria-busy', 'true');
+    ed.contentEditable = 'false';
+    ed.innerHTML = '';
+    refreshEmpty(ed);
+    return;
+  }
+  ed.removeAttribute('aria-busy');
+  ed.contentEditable = isEditable ? 'true' : 'false';
 }
 
 function applyRemoteNoteBodyContent(noteId, content) {
@@ -233,8 +248,11 @@ async function openNote(id, options = {}) {
   const { ed, isEditable } = applyNoteEditorChrome(note);
   const canUseConversations = typeof canStartConversationOnNote === 'function' ? canStartConversationOnNote(note) : isEditable;
   if (!note._bodyLoaded) {
-    ed.innerHTML = '';
-    refreshEmpty(ed);
+    setEditorBodyLoading(ed, true, isEditable);
+    showEditorView(true);
+    renderSidebar();
+    updateActiveNoteAccessAvatars();
+    setSaveState('loading');
   }
   let body = note._bodyLoaded ? note.content || '' : '';
   let bodyLoadFailed = false;
@@ -248,6 +266,8 @@ async function openNote(id, options = {}) {
   }
   if (activeId !== id) return;
   if (bodyLoadFailed && !note._bodyLoaded) {
+    setEditorBodyLoading(ed, false, isEditable);
+    refreshEmpty(ed);
     showEditorView(true);
     renderSidebar();
     updateActiveNoteAccessAvatars();

@@ -42,6 +42,7 @@
       id: note.id,
       title: note.title || 'Untitled Note',
       content: typeof note.content === 'string' ? note.content : '',
+      bodyLoaded: !!note._bodyLoaded,
       owner: note.owner || '',
       folderId: note.folderId || null,
       public: !!note.public,
@@ -156,6 +157,11 @@
 
   window.refreshDesktopNotificationBadge = scheduleDockNotificationBadgeSync;
 
+  function requestNoteWindowPrewarm() {
+    if (desktopContext.type !== 'main') return;
+    window.desktop.prewarmNoteWindow?.();
+  }
+
   function canPopOutActiveNote() {
     const note = activeNote();
     return !!(note && !(typeof isTrashedNote === 'function' && isTrashedNote(note)));
@@ -249,6 +255,8 @@
       id: desktopContext.noteId,
       title: String(snapshot.title || '').trim() || 'Untitled Note',
       content: typeof snapshot.content === 'string' ? snapshot.content : '',
+      _bodyLoaded: snapshot.bodyLoaded === true,
+      _bodyError: false,
       folderId: snapshot.folderId || null,
       sharedWith: shallowObject(snapshot.sharedWith),
       sharedAccessKeys: shallowArray(snapshot.sharedAccessKeys),
@@ -345,6 +353,8 @@
         document.getElementById('toolbar').style.display = isEditable ? '' : 'none';
         document.getElementById('share-btn').style.display = isOwned && !(typeof isTrashedNote === 'function' && isTrashedNote(note)) ? '' : 'none';
         ed.contentEditable = isEditable ? 'true' : 'false';
+        ed.classList.remove('is-loading');
+        ed.removeAttribute('aria-busy');
         ed.innerHTML = renderMarkdownContent(note.content || '');
         normalizeThemeTextStyles(ed);
         normalizeCodeThemeStyles(ed);
@@ -404,6 +414,7 @@
       const result = originalOpenNote.apply(this, arguments);
       refreshDesktopControls();
       scheduleDesktopNoteStateBroadcast();
+      requestNoteWindowPrewarm();
       return result;
     };
     openNote.desktopWrapped = true;
@@ -442,9 +453,12 @@
       refreshWindowTitle();
       scheduleDesktopNoteStateBroadcast();
     });
-    window.addEventListener('focus', refreshDesktopControls);
+    window.addEventListener('focus', () => {
+      refreshDesktopControls();
+      requestNoteWindowPrewarm();
+    });
     window.addEventListener('notas:home-prepared', () => {
-      if (desktopContext.type === 'main') window.desktop.prewarmNoteWindow?.();
+      requestNoteWindowPrewarm();
       openRequestedDesktopNote();
     });
     window.addEventListener('notas:notes-updated', () => openRequestedDesktopNote());

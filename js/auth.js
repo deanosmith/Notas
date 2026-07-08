@@ -63,6 +63,12 @@ function hideLoadingOverlay() {
   }, 300);
 }
 
+function isDesktopWarmNoteShell() {
+  if (!window.desktop?.isElectron) return false;
+  const params = new URLSearchParams(location.search);
+  return params.get('desktopWindow') === 'note' && params.get('desktopWarm') === '1';
+}
+
 const TEST_PASSWORD_AUTH_DOMAIN = 'test.notas.local';
 
 function envValue(key) {
@@ -232,7 +238,7 @@ onAuthStateChanged(auth, async user => {
       if (_sharedNoteId)   handleShareLink(_sharedNoteId);
       if (_sharedFolderId) importSharedFolder(_sharedFolderId);
       await Promise.all([initialNotesLoad, initialFoldersLoad, initialSharedLibraryLoad, initialSharedWithMeLoad]);
-      if (typeof openInitialNoteOrFirst === 'function') openInitialNoteOrFirst();
+      if (!isDesktopWarmNoteShell() && typeof openInitialNoteOrFirst === 'function') openInitialNoteOrFirst();
     } catch (err) {
       console.error('auth state startup:', err);
       showToast('Could Not Finish Loading Notes', 'error');

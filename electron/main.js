@@ -15,6 +15,8 @@ let staticServer = null;
 let mainWindow = null;
 let prewarmedNoteWindow = null;
 let noteWindowPrewarmTimer = null;
+let noteWindowPrewarmIdleTimer = null;
+let suppressNextNoteWindowPrewarm = false;
 let isQuitting = false;
 let lastThemeState = null;
 
@@ -24,7 +26,8 @@ const windowNotificationCounts = new Map();
 
 const keepMainWindowWarm = process.platform === 'darwin';
 const NOTE_WINDOW_PREWARM_DELAY_MS = 160;
-const enableNoteWindowPrewarm = false;
+const NOTE_WINDOW_PREWARM_IDLE_MS = 10 * 60 * 1000;
+const enableNoteWindowPrewarm = true;
 
 const allowedTopLevelFiles = new Set([
   'index.html',
@@ -151,6 +154,7 @@ function normalizeNoteSnapshot(noteId, snapshot) {
     sharedWith: noteSnapshotObject(snapshot.sharedWith),
     sharedAccessKeys: noteSnapshotArray(snapshot.sharedAccessKeys),
     mentionedUids: noteSnapshotArray(snapshot.mentionedUids),
+    bodyLoaded: snapshot.bodyLoaded === true,
     pinnedAt: noteSnapshotString(snapshot.pinnedAt),
     pinScope: snapshot.pinScope === 'minor' ? 'minor' : (snapshot.pinScope === 'major' ? 'major' : ''),
     deletedAt: noteSnapshotString(snapshot.deletedAt),
@@ -329,16 +333,21 @@ function createWindow(options, behavior = {}) {
   win.on('blur', buildApplicationMenu);
   win.on('closed', () => {
     const context = windowContexts.get(win.id);
+    const shouldSuppressPrewarm = suppressNextNoteWindowPrewarm;
+    suppressNextNoteWindowPrewarm = false;
     if (context?.type === 'main' && mainWindow === win) {
       mainWindow = null;
       if (!isQuitting && process.platform !== 'darwin') app.quit();
     }
     if (context?.type === 'note' && context.noteId) noteWindows.delete(context.noteId);
-    if (prewarmedNoteWindow === win) prewarmedNoteWindow = null;
+    if (prewarmedNoteWindow === win) {
+      prewarmedNoteWindow = null;
+      clearNoteWindowPrewarmIdleTimer();
+    }
     windowContexts.delete(win.id);
     windowNotificationCounts.delete(win.id);
     updateDockNotificationBadge();
-    if (!isQuitting && context?.type === 'note') scheduleNoteWindowPrewarm();
+    if (!isQuitting && context?.type === 'note' && !shouldSuppressPrewarm) scheduleNoteWindowPrewarm();
     buildApplicationMenu();
   });
 
@@ -402,6 +411,24 @@ function usablePrewarmedNoteWindow() {
   return prewarmedNoteWindow;
 }
 
+function clearNoteWindowPrewarmIdleTimer() {
+  if (!noteWindowPrewarmIdleTimer) return;
+  clearTimeout(noteWindowPrewarmIdleTimer);
+  noteWindowPrewarmIdleTimer = null;
+}
+
+function armNoteWindowPrewarmIdleTimer() {
+  clearNoteWindowPrewarmIdleTimer();
+  if (!enableNoteWindowPrewarm || !usablePrewarmedNoteWindow()) return;
+  noteWindowPrewarmIdleTimer = setTimeout(() => {
+    noteWindowPrewarmIdleTimer = null;
+    const warmWindow = usablePrewarmedNoteWindow();
+    if (!warmWindow) return;
+    suppressNextNoteWindowPrewarm = true;
+    warmWindow.close();
+  }, NOTE_WINDOW_PREWARM_IDLE_MS);
+}
+
 function scheduleNoteWindowPrewarm(delay = NOTE_WINDOW_PREWARM_DELAY_MS) {
   if (!enableNoteWindowPrewarm) return;
   if (isQuitting || noteWindowPrewarmTimer || usablePrewarmedNoteWindow()) return;
@@ -422,7 +449,8 @@ function createPrewarmedNoteWindow() {
     initialNote: null,
     alwaysOnTop: true
   });
-  noteWindow.loadURL(appUrl({ desktopWindow: 'note' }));
+  noteWindow.loadURL(appUrl({ desktopWindow: 'note', desktopWarm: '1' }));
+  armNoteWindowPrewarmIdleTimer();
   return noteWindow;
 }
 
@@ -447,7 +475,10 @@ function toggleNoteWindow(noteId, noteSnapshot) {
   const warmedWindow = usablePrewarmedNoteWindow();
   const noteWindow = warmedWindow || createNoteBrowserWindow({ showOnReady: true });
   const reused = !!warmedWindow;
-  if (reused) prewarmedNoteWindow = null;
+  if (reused) {
+    prewarmedNoteWindow = null;
+    clearNoteWindowPrewarmIdleTimer();
+  }
 
   setNoteWindowContext(noteWindow, normalizedNoteId, initialNote);
   if (reused) {
@@ -732,6 +763,7 @@ app.on('before-quit', () => {
     clearTimeout(noteWindowPrewarmTimer);
     noteWindowPrewarmTimer = null;
   }
+  clearNoteWindowPrewarmIdleTimer();
   if (staticServer) {
     staticServer.close();
     staticServer = null;
