@@ -1,7 +1,46 @@
 {
+  "name": "notas-electron",
+  "version": "1.1.0",
+  "description": "Standalone Electron desktop clone of Notas",
   "private": true,
+  "main": "electron/main.js",
   "scripts": {
     "dev": "node scripts/dev-config.mjs && node scripts/dev-server.mjs",
-    "dev:config": "node scripts/dev-config.mjs"
+    "web:dev": "npm run dev",
+    "dev:config": "node scripts/dev-config.mjs",
+    "electron:dev": "npm run dev:config && electron .",
+    "electron:dev:external": "npm run dev:config && NOTAS_ELECTRON_URL=http://localhost:5173 electron .",
+    "build:electron": "npm run dev:config && electron-builder --mac dir",
+    "package:mac": "npm run dev:config && electron-builder --mac dmg"
+  },
+  "devDependencies": {
+    "electron": "^43.0.0",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "com.deanmsmith.notas.electron",
+    "productName": "Notas",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "electron/**/*",
+      "js/**/*",
+      "index.html",
+      "styles.css",
+      "firebase-config.local.js",
+      "notas.png",
+      "notas-icon.png",
+      "notas.icns",
+      "package.json"
+    ],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "icon": "notas.icns",
+      "hardenedRuntime": false
+    },
+    "dmg": {
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
+    }
   }
 }

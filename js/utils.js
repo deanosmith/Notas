@@ -688,6 +688,142 @@ function isTrashExpired(note) {
   return isTrashedNote(note) && trashDaysRemaining(note) <= 0;
 }
 
+const NOTE_PREVIEW_TEXT_LIMIT = 220;
+const NOTE_SEARCH_TEXT_LIMIT = 4000;
+
+function normalizeNotePlainText(value, limit = NOTE_SEARCH_TEXT_LIMIT) {
+  const clean = String(value || '').replace(/\u200b/g, ' ').replace(/\s+/g, ' ').trim();
+  return clean.length > limit ? clean.slice(0, limit).trimEnd() : clean;
+}
+
+function noteTextFromHtml(html, limit = NOTE_SEARCH_TEXT_LIMIT) {
+  if (!html) return '';
+  const root = document.createElement('div');
+  root.innerHTML = String(html || '');
+  return normalizeNotePlainText(root.innerText || root.textContent || '', limit);
+}
+
+function noteTextFromRoot(root, limit = NOTE_SEARCH_TEXT_LIMIT) {
+  return normalizeNotePlainText(root?.innerText || root?.textContent || '', limit);
+}
+
+function normalizeInlineAlarmMetadata(value) {
+  if (!Array.isArray(value)) return [];
+  return value.map((item, index) => {
+    const alarmAt = normalizeAlarmAt(item?.alarmAt);
+    if (!alarmAt) return null;
+    return {
+      alarmId: String(item?.alarmId || item?.id || 'alarm_' + index).slice(0, 180),
+      alarmAt,
+      text: normalizeNotePlainText(item?.text || item?.reminderText || 'Reminder', 180) || 'Reminder',
+      direction: item?.direction === 'sent' || item?.alarmDirection === 'sent' ? 'sent' : 'mine',
+      targetUid: String(item?.targetUid || '').slice(0, 180),
+      targetName: normalizeNotePlainText(item?.targetName || '', 120)
+    };
+  }).filter(Boolean);
+}
+
+function inlineAlarmsFromRoot(root) {
+  if (!root?.querySelectorAll) return [];
+  return [...root.querySelectorAll('.note-alarm')].map((mark, index) => {
+    const alarmAt = normalizeAlarmAt(mark.dataset.alarmAt);
+    if (!alarmAt) return null;
+    return {
+      alarmId: mark.dataset.alarmId || 'alarm_' + index,
+      alarmAt,
+      text: normalizeNotePlainText(mark.textContent || 'Reminder', 180) || 'Reminder',
+      direction: mark.dataset.alarmDirection === 'sent' ? 'sent' : 'mine',
+      targetUid: mark.dataset.alarmTargetUid || '',
+      targetName: normalizeNotePlainText(mark.dataset.alarmTargetName || '', 120)
+    };
+  }).filter(Boolean);
+}
+
+function inlineAlarmsFromContent(content) {
+  if (!content) return [];
+  const root = document.createElement('div');
+  root.innerHTML = String(content || '');
+  return inlineAlarmsFromRoot(root);
+}
+
+function buildNoteContentMetadata(content, options = {}) {
+  const root = options.root || null;
+  const text = typeof options.text === 'string'
+    ? normalizeNotePlainText(options.text, NOTE_SEARCH_TEXT_LIMIT)
+    : (root ? noteTextFromRoot(root, NOTE_SEARCH_TEXT_LIMIT) : noteTextFromHtml(content, NOTE_SEARCH_TEXT_LIMIT));
+  return {
+    previewText: normalizeNotePlainText(text, NOTE_PREVIEW_TEXT_LIMIT),
+    searchText: normalizeNotePlainText(text, NOTE_SEARCH_TEXT_LIMIT).toLowerCase(),
+    inlineAlarms: normalizeInlineAlarmMetadata(root ? inlineAlarmsFromRoot(root) : inlineAlarmsFromContent(content))
+  };
+}
+
+function noteContentMetadataFromData(data, fallback = {}) {
+  const legacyContent = typeof data?.content === 'string' ? data.content : '';
+  const derived = legacyContent ? buildNoteContentMetadata(legacyContent) : {};
+  return {
+    previewText: normalizeNotePlainText(data?.previewText || derived.previewText || fallback.previewText || '', NOTE_PREVIEW_TEXT_LIMIT),
+    searchText: normalizeNotePlainText(data?.searchText || derived.searchText || fallback.searchText || '', NOTE_SEARCH_TEXT_LIMIT).toLowerCase(),
+    inlineAlarms: normalizeInlineAlarmMetadata(
+      Array.isArray(data?.inlineAlarms) ? data.inlineAlarms :
+      (Array.isArray(derived.inlineAlarms) && derived.inlineAlarms.length ? derived.inlineAlarms : fallback.inlineAlarms)
+    )
+  };
+}
+
+function noteFromFirestoreData(id, data = {}, overrides = {}) {
+  const existing = notes?.[id] || {};
+  const hasOverrideContent = Object.prototype.hasOwnProperty.call(overrides || {}, 'content');
+  const metadata = hasOverrideContent
+    ? buildNoteContentMetadata(overrides.content || '')
+    : noteContentMetadataFromData(data, existing);
+  const bodyLoaded = hasOverrideContent || !!existing._bodyLoaded;
+  const base = {
+    id,
+    owner: data.owner || existing.owner || '',
+    title: data.title || existing.title || 'Untitled Note',
+    content: bodyLoaded ? (hasOverrideContent ? String(overrides.content || '') : String(existing.content || '')) : '',
+    _bodyLoaded: bodyLoaded,
+    _bodyError: !!existing._bodyError,
+    previewText: metadata.previewText,
+    searchText: metadata.searchText,
+    inlineAlarms: metadata.inlineAlarms,
+    folderId: Object.prototype.hasOwnProperty.call(overrides || {}, 'folderId') ? overrides.folderId : (data.folderId || null),
+    created: normalizeNoteTimestamp(data.created) || existing.created || new Date().toISOString(),
+    modified: normalizeNoteTimestamp(data.modified) || existing.modified || new Date().toISOString(),
+    ...overrides
+  };
+  if (!bodyLoaded && !hasOverrideContent) {
+    base.content = '';
+    base._bodyLoaded = false;
+  }
+  return hydrateNoteShareState(data, base);
+}
+
+function applyNoteBodyContent(noteId, content, options = {}) {
+  const note = notes?.[noteId];
+  if (!note) return null;
+  const body = String(content || '');
+  const metadata = buildNoteContentMetadata(body, options);
+  note.content = body;
+  note._bodyLoaded = true;
+  note._bodyError = false;
+  note.previewText = metadata.previewText;
+  note.searchText = metadata.searchText;
+  note.inlineAlarms = metadata.inlineAlarms;
+  if (options.modified) note.modified = options.modified;
+  return note;
+}
+
+function notePreviewText(note, fallback = 'Empty Note') {
+  const preview = normalizeNotePlainText(note?.previewText || (note?._bodyLoaded ? note.content : ''), 65);
+  return preview || fallback;
+}
+
+function noteSearchText(note) {
+  return normalizeNotePlainText(note?.searchText || note?.previewText || (note?._bodyLoaded ? note.content : ''), NOTE_SEARCH_TEXT_LIMIT).toLowerCase();
+}
+
 function hydrateNoteShareState(data, base = {}) {
   const sharedWith = normalizeSharedWith(data?.sharedWith);
   const sharedAccessKeys = normalizeSharedAccessKeys(data?.sharedAccessKeys);

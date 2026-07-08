@@ -5,6 +5,9 @@ let activeId      = null;
 let activeFolderId = null;
 let sidebarView   = 'notes';
 let sidebarFilter = '';
+const LAST_OPEN_NOTE_STORAGE_KEY = 'notas_last_open_note_id';
+let initialNoteRestoreId = '';
+let initialNoteRestorePending = false;
 let expandedFolders = new Set();
 let sidebarMinimized = false; // initialised after DOM ready
 let userId        = null;
@@ -28,6 +31,7 @@ let appNavForwardStack = [];
 let appNavCurrentState = null;
 let appNavCurrentKey = '';
 let appNavApplying = false;
+let appNavEscapeDirection = 'back';
 let noteConversations = {};
 let allConversations = {};
 let conversationMessages = {};
@@ -42,6 +46,10 @@ let conversationBrowseView = 'all';
 let conversationBrowseFolderId = null;
 let conversationBrowseNoteId = null;
 let conversationOverviewLoading = false;
+let activeNoteBodyUnsub = null;
+let activeNoteBodyListeningId = null;
+let activeNoteBodyRequestSeq = 0;
+let legacyBodyMigrationIds = new Set();
 let saveTimer     = null;
 let unsubscribe   = null;
 let unsubFolders  = null;
@@ -77,6 +85,7 @@ let _mentionState   = null;
 let _mentionActiveIndex = 0;
 let _mentionSaveTimer = null;
 let _mentionShareResolver = null;
+let _mentionSelectionPending = false;
 let _conversationSelectionTimer = null;
 let _conversationStarting = false;
 let _conversationSending = false;
@@ -92,7 +101,8 @@ const TRASH_RETENTION_DAYS = 30;
 /* ── Custom Undo/Redo System ─────────────────────────── */
 const undoStack = [];
 const redoStack = [];
-const UNDO_LIMIT = 100;
+const UNDO_LIMIT = 35;
+const UNDO_HTML_BUDGET = 8 * 1024 * 1024;
 let _lastUndoSnapshot = null;
 let _undoDebounceTimer = null;
 let _undoTransactionOpen = false;
@@ -107,3 +117,10 @@ let _docTitleUndoState = null;
 
 const _sharedNoteId   = new URLSearchParams(location.search).get('note');
 const _sharedFolderId = new URLSearchParams(location.search).get('folder');
+
+function notifyNotificationIndicatorsChanged() {
+  if (typeof window.refreshDesktopNotificationBadge === 'function') {
+    window.refreshDesktopNotificationBadge();
+  }
+  window.dispatchEvent(new CustomEvent('notas:notifications-updated'));
+}

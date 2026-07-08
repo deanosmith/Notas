@@ -3,4 +3,5 @@
 dist/
 firebase-config.local.js
 .DS_Store
-node_mobules/
+node_modules/
+release/

@@ -1535,6 +1535,16 @@ async function shareNoteWithFriend(noteId, friend, role = 'editor', context = {}
     modified: serverTimestamp()
   };
   await setDoc(ref, payload, { merge: true });
+  const localPayload = { ...payload };
+  if (!directRole) delete localPayload.directRole;
+  if (!hasFolderShares) delete localPayload.folderShares;
+  if (!primaryFolderId) {
+    delete localPayload.sourceFolderId;
+    delete localPayload.sourceFolderTitle;
+  }
+  noteAccessById[accessId] = normalizeNoteAccess(accessId, localPayload);
+  rebuildNoteAccessGroups();
+  updateActiveNoteAccessAvatars();
   if (!options.silent) showToast('Shared With ' + (profile.displayName || profile.email || 'Friend'), 'success');
   return true;
 }
@@ -1609,18 +1619,12 @@ function applySharedNoteFromData(noteId, data, access = directAccessForNote(note
   if (!data || data.owner === userId) return false;
   if (data.deletedAt) return false;
   const folderId = _applySharedFolderFromData(noteId, access) || _getSharedNoteFolder(noteId);
-  notes[noteId] = hydrateNoteShareState(data, {
-    id: noteId,
-    owner: data.owner,
-    title: data.title || 'Untitled Note',
-    content: data.content || '',
+  notes[noteId] = noteFromFirestoreData(noteId, data, {
     folderId,
     pinnedAt: _getSharedNotePinnedAt(noteId),
     pinScope: _getSharedNotePinScope(noteId),
     directAccessRole: access.role || '',
-    directAccess: access,
-    created: data.created?.toDate?.()?.toISOString() || new Date().toISOString(),
-    modified: data.modified?.toDate?.()?.toISOString() || new Date().toISOString()
+    directAccess: access
   });
   return true;
 }
@@ -1654,7 +1658,7 @@ function removeSharedAccessNote(noteId) {
     delete notes[noteId];
     _removeSharedId(noteId);
     if (sharedNoteUnsubs[noteId]) { sharedNoteUnsubs[noteId](); delete sharedNoteUnsubs[noteId]; delete sharedNoteInitialLoads[noteId]; }
-    if (activeId === noteId) activeId = null;
+    if (activeId === noteId) { clearActiveNoteBodyListener(); activeId = null; }
     renderSidebar();
     if (!activeId) { const ids = sortedIds(); ids.length ? openNote(ids[0]) : showEditorView(false); }
   }
@@ -2507,6 +2511,46 @@ function isNoteSharedWithProfile(note, profile) {
   return keys.some(key => sharedAccessKeys.includes(key) || !!sharedWith[key]);
 }
 
+function profileHasNoteAccess(note, profile) {
+  if (!note || !profile?.uid) return false;
+  if (profile.uid === userId) return true;
+  if (profile.uid === note.owner) return true;
+  return isNoteSharedWithProfile(note, profile);
+}
+
+function profileNeedsNoteAccess(note, profile) {
+  if (!note || !profile?.uid || profile.uid === userId) return false;
+  return !profileHasNoteAccess(note, profile);
+}
+
+async function ensureProfileNoteAccessForFeature(note, profile, featureLabel = 'this feature') {
+  if (!note || !profile?.uid) return false;
+  if (!profileNeedsNoteAccess(note, profile)) return true;
+  if (!isOwnedNote(note)) {
+    showToast('Only The Owner Can Share This Note', 'error');
+    return false;
+  }
+  const shouldShare = typeof confirmMentionShare === 'function'
+    ? await confirmMentionShare(profile, note, featureLabel)
+    : window.confirm('Share this note with ' + (profile.displayName || profile.email || 'this user') + '?');
+  if (!shouldShare) return false;
+  try {
+    const ok = await shareNoteWithFriend(note.id, friends[profile.uid] || profile, 'editor', {}, { silent: true });
+    if (!ok) {
+      showToast('Could Not Share Note', 'error');
+      return false;
+    }
+    renderShareProfileList();
+    renderSidebar();
+    showToast('Shared With ' + (profile.displayName || profile.email || 'Friend'), 'success');
+    return true;
+  } catch (err) {
+    console.error('share note for ' + featureLabel.toLowerCase() + ':', err);
+    showToast('Could Not Share Note', 'error');
+    return false;
+  }
+}
+
 function _applySharedLibraryMeta(meta) {
   sharedLibraryMeta = meta;
   Object.keys(notes).forEach(id => {
@@ -2529,7 +2573,7 @@ function _syncSharedSubscriptions(ids) {
     delete sharedNoteInitialLoads[id];
     if (notes[id] && !isOwnedNote(notes[id])) {
       delete notes[id];
-      if (activeId === id) activeId = null;
+      if (activeId === id) { clearActiveNoteBodyListener(); activeId = null; }
     }
   });
   return Promise.all(loads).catch(() => {});
@@ -2821,23 +2865,19 @@ function applyDirectSharedNote(docSnap) {
   if (!canReadLoadedSharedNote(noteId, d)) return;
   if (!sharedLibraryMeta[noteId] && _isSharedIdRemoved(noteId, shareTimestamp)) {
     delete notes[noteId];
+    if (activeId === noteId) { clearActiveNoteBodyListener(); activeId = null; }
     return;
   }
 
   const type = access.type === 'mention' ? 'mention' : 'share';
   const folderId = _applySharedFolderFromData(noteId, access);
 
-  notes[noteId] = hydrateNoteShareState(d, {
-    id: noteId, owner: d.owner,
-    title:    d.title    || 'Untitled Note',
-    content:  d.content  || '',
+  notes[noteId] = noteFromFirestoreData(noteId, d, {
     folderId: folderId || _getSharedNoteFolder(noteId),
     pinnedAt: _getSharedNotePinnedAt(noteId),
     pinScope: _getSharedNotePinScope(noteId),
     directAccessRole: access.role || '',
-    directAccess: access,
-    created:  d.created?.toDate?.()?.toISOString()  || new Date().toISOString(),
-    modified: d.modified?.toDate?.()?.toISOString() || new Date().toISOString()
+    directAccess: access
   });
 
   _addSharedId(noteId);
@@ -2994,7 +3034,10 @@ function listenToProfileShares() {
     renderSidebar();
     renderNotificationButton();
     renderAlarmButton();
-    if (!activeId) { const sorted = sortedIds(); sorted.length ? openNote(sorted[0]) : showEditorView(false); }
+    if (!activeId && !(typeof shouldDeferInitialNoteFallback === 'function' && shouldDeferInitialNoteFallback())) {
+      const sorted = sortedIds();
+      sorted.length ? openNote(sorted[0]) : showEditorView(false);
+    }
     if (document.getElementById('notifications-modal')?.classList.contains('open')) renderNotificationsList();
     if (document.getElementById('alarms-modal')?.classList.contains('open')) renderAlarmsList();
     refreshOpenSidebarPage('alarms');
@@ -3091,6 +3134,7 @@ function renderNotificationButton() {
   const unread = getNotificationItems().filter(n => !n.read).length;
   badge.textContent = unread > 99 ? '99+' : String(unread);
   badge.hidden = unread === 0;
+  if (typeof notifyNotificationIndicatorsChanged === 'function') notifyNotificationIndicatorsChanged();
 }
 
 function notificationText(n) {
@@ -3314,7 +3358,7 @@ function _subscribeSharedNote(noteId) {
         delete notes[noteId];
         _removeSharedId(noteId);
         if (sharedNoteUnsubs[noteId]) { sharedNoteUnsubs[noteId](); delete sharedNoteUnsubs[noteId]; delete sharedNoteInitialLoads[noteId]; }
-        if (activeId === noteId) { activeId = null; }
+        if (activeId === noteId) { clearActiveNoteBodyListener(); activeId = null; }
         renderSidebar();
         if ((conversationsOpen || sidebarView === 'conversations') && typeof scheduleConversationOverviewRefresh === 'function') scheduleConversationOverviewRefresh();
         if (!activeId) { const ids = sortedIds(); ids.length ? openNote(ids[0]) : showEditorView(false); }
@@ -3335,7 +3379,7 @@ function _subscribeSharedNote(noteId) {
       delete notes[noteId];
       _removeSharedId(noteId);
       if (sharedNoteUnsubs[noteId]) { sharedNoteUnsubs[noteId](); delete sharedNoteUnsubs[noteId]; delete sharedNoteInitialLoads[noteId]; }
-      if (activeId === noteId) { activeId = null; }
+      if (activeId === noteId) { clearActiveNoteBodyListener(); activeId = null; }
       renderSidebar();
       if ((conversationsOpen || sidebarView === 'conversations') && typeof scheduleConversationOverviewRefresh === 'function') scheduleConversationOverviewRefresh();
       if (!activeId) { const ids = sortedIds(); ids.length ? openNote(ids[0]) : showEditorView(false); }
@@ -3344,34 +3388,27 @@ function _subscribeSharedNote(noteId) {
       return;
     }
 
-    const prevContent = notes[noteId]?.content;
-    notes[noteId] = hydrateNoteShareState(d, {
-      id: noteId, owner: d.owner,
-      title:    d.title    || 'Untitled Note',
-      content:  d.content  || '',
+    const legacyContent = typeof d.content === 'string' ? d.content : null;
+    const prevContent = notes[noteId]?._bodyLoaded ? notes[noteId].content : undefined;
+    notes[noteId] = noteFromFirestoreData(noteId, d, {
       folderId: folderId || _getSharedNoteFolder(noteId),
       pinnedAt: _getSharedNotePinnedAt(noteId),
       pinScope: _getSharedNotePinScope(noteId),
       directAccessRole: access.role || '',
-      directAccess: access,
-      created:  d.created?.toDate?.()?.toISOString()  || new Date().toISOString(),
-      modified: d.modified?.toDate?.()?.toISOString() || new Date().toISOString()
+      directAccess: access
     });
 
     renderSidebar();
+    window.dispatchEvent(new CustomEvent('notas:notes-updated'));
     if ((conversationsOpen || sidebarView === 'conversations') && typeof scheduleConversationOverviewRefresh === 'function') scheduleConversationOverviewRefresh();
 
     // If this note is currently open and the editor is idle, sync it
-    if (activeId === noteId && prevContent !== undefined && prevContent !== d.content) {
+    if (activeId === noteId && legacyContent !== null && prevContent !== undefined && prevContent !== legacyContent) {
       const ed = getEd();
       const titleEl = document.getElementById('doc-title');
       if (document.activeElement !== ed && document.activeElement !== titleEl) {
         titleEl.value = d.title || 'Untitled Note';
-        ed.innerHTML  = renderMarkdownContent(d.content || '');
-        normalizeCodeThemeStyles(ed);
-        linkifyTextNodes(ed); ensureLinkAttrs(ed);
-        restoreChecklistState(ed); restoreAlarmMarks(ed); decorateTables(ed); decorateNoteImages(ed); refreshEmpty(ed); updateCounts();
-        openNote(noteId);
+        if (typeof applyRemoteNoteBodyContent === 'function') applyRemoteNoteBodyContent(noteId, legacyContent);
       }
     }
     settleInitial();
@@ -3382,7 +3419,7 @@ function _subscribeSharedNote(noteId) {
       delete notes[noteId];
       _removeSharedId(noteId);
       if (sharedNoteUnsubs[noteId]) { sharedNoteUnsubs[noteId](); delete sharedNoteUnsubs[noteId]; delete sharedNoteInitialLoads[noteId]; }
-      if (activeId === noteId) { activeId = null; }
+      if (activeId === noteId) { clearActiveNoteBodyListener(); activeId = null; }
       renderSidebar();
       if ((conversationsOpen || sidebarView === 'conversations') && typeof scheduleConversationOverviewRefresh === 'function') scheduleConversationOverviewRefresh();
       if (!activeId) { const ids = sortedIds(); ids.length ? openNote(ids[0]) : showEditorView(false); }
@@ -3429,7 +3466,10 @@ function listenToSharedNotes() {
       if (_isSharedIdRemoved(id)) _removeSharedId(id).catch(err => console.error('retry removed shared note cleanup:', err));
     });
     renderSidebar();
-    if (!activeId) { const sorted = sortedIds(); sorted.length ? openNote(sorted[0]) : showEditorView(false); }
+    if (!activeId && !(typeof shouldDeferInitialNoteFallback === 'function' && shouldDeferInitialNoteFallback())) {
+      const sorted = sortedIds();
+      sorted.length ? openNote(sorted[0]) : showEditorView(false);
+    }
     settleInitial([remoteLoad]);
   }, err => {
     console.error('user doc listener:', err);
@@ -3439,7 +3479,10 @@ function listenToSharedNotes() {
       _applySharedLibraryMeta(fallbackMeta);
       fallbackLoads.push(_syncSharedSubscriptions(Object.keys(sharedLibraryMeta)));
       renderSidebar();
-      if (!activeId) { const sorted = sortedIds(); sorted.length ? openNote(sorted[0]) : showEditorView(false); }
+      if (!activeId && !(typeof shouldDeferInitialNoteFallback === 'function' && shouldDeferInitialNoteFallback())) {
+        const sorted = sortedIds();
+        sorted.length ? openNote(sorted[0]) : showEditorView(false);
+      }
     }
     settleInitial(fallbackLoads);
   });
@@ -3480,17 +3523,12 @@ async function handleShareLink(noteId) {
       return;
     }
     // Populate the note immediately from the data we just fetched
-    notes[noteId] = hydrateNoteShareState(d, {
-      id: noteId, owner: d.owner,
-      title:    d.title    || 'Untitled Note',
-      content:  d.content  || '',
+    notes[noteId] = noteFromFirestoreData(noteId, d, {
       folderId: _applySharedFolderFromData(noteId, sharedAccess) || _getSharedNoteFolder(noteId),
       pinnedAt: _getSharedNotePinnedAt(noteId),
       pinScope: _getSharedNotePinScope(noteId),
       directAccessRole: sharedAccess.role || '',
-      directAccess: sharedAccess,
-      created:  d.created?.toDate?.()?.toISOString()  || new Date().toISOString(),
-      modified: d.modified?.toDate?.()?.toISOString() || new Date().toISOString()
+      directAccess: sharedAccess
     });
     // Persist and subscribe for real-time edits going forward
     const syncedToCloud = await _addSharedId(noteId);
@@ -3534,17 +3572,12 @@ async function openDirectSharedNote(noteId) {
       return false;
     }
 
-    notes[noteId] = hydrateNoteShareState(d, {
-      id: noteId, owner: d.owner,
-      title:    d.title    || 'Untitled Note',
-      content:  d.content  || '',
+    notes[noteId] = noteFromFirestoreData(noteId, d, {
       folderId: _applySharedFolderFromData(noteId, sharedAccess) || _getSharedNoteFolder(noteId),
       pinnedAt: _getSharedNotePinnedAt(noteId),
       pinScope: _getSharedNotePinScope(noteId),
       directAccessRole: sharedAccess.role || '',
-      directAccess: sharedAccess,
-      created:  d.created?.toDate?.()?.toISOString()  || new Date().toISOString(),
-      modified: d.modified?.toDate?.()?.toISOString() || new Date().toISOString()
+      directAccess: sharedAccess
     });
     await _addSharedId(noteId);
     _subscribeSharedNote(noteId);
@@ -3565,7 +3598,7 @@ async function removeFromLibrary(noteId, options = {}) {
   if (sharedNoteUnsubs[noteId]) { sharedNoteUnsubs[noteId](); delete sharedNoteUnsubs[noteId]; delete sharedNoteInitialLoads[noteId]; }
   delete notes[noteId];
   const cloudSynced = await _removeSharedId(noteId, { removedByUser: true });
-  if (activeId === noteId) activeId = null;
+  if (activeId === noteId) { clearActiveNoteBodyListener(); activeId = null; }
   if (render) renderSidebar();
   if (selectNext && !activeId) { const ids = sortedIds(); ids.length ? openNote(ids[0]) : showEditorView(false); }
   if (notify) showToast(cloudSynced ? 'Removed From Library' : 'Removed locally; cloud sync failed', cloudSynced ? 'success' : 'error');
@@ -3620,16 +3653,10 @@ async function importSharedFolder(folderId) {
         (data.folderId === folderId && noteLinkPublicFromData(data));
       if (data.owner !== userId && folderPublic) {
         if (localFolderId) _placeSharedNoteInFolder(noteSnap.id, localFolderId);
-        notes[noteSnap.id] = hydrateNoteShareState(data, {
-          id: noteSnap.id,
-          owner: data.owner,
-          title:    data.title    || 'Untitled Note',
-          content:  data.content  || '',
+        notes[noteSnap.id] = noteFromFirestoreData(noteSnap.id, data, {
           folderId: localFolderId || _getSharedNoteFolder(noteSnap.id),
           pinnedAt: _getSharedNotePinnedAt(noteSnap.id),
-          pinScope: _getSharedNotePinScope(noteSnap.id),
-          created:  data.created?.toDate?.()?.toISOString()  || new Date().toISOString(),
-          modified: data.modified?.toDate?.()?.toISOString() || new Date().toISOString()
+          pinScope: _getSharedNotePinScope(noteSnap.id)
         });
         persistJobs.push(_addSharedId(noteSnap.id));
         _subscribeSharedNote(noteSnap.id);

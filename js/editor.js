@@ -12,12 +12,24 @@ function sameUndoSnapshot(a, b) {
   return !!a && !!b && a.html === b.html;
 }
 
+function undoSnapshotBytes(snapshot) {
+  return snapshot?.html ? snapshot.html.length * 2 : 0;
+}
+
+function trimUndoStackMemory(stack) {
+  let bytes = stack.reduce((sum, snapshot) => sum + undoSnapshotBytes(snapshot), 0);
+  while (stack.length > UNDO_LIMIT || (stack.length > 1 && bytes > UNDO_HTML_BUDGET)) {
+    const removed = stack.shift();
+    bytes -= undoSnapshotBytes(removed);
+  }
+}
+
 function pushUndoState(stack, snapshot) {
   if (!snapshot) return;
   const top = stack[stack.length - 1];
   if (!sameUndoSnapshot(top, snapshot)) {
     stack.push({ ...snapshot });
-    if (stack.length > UNDO_LIMIT) stack.shift();
+    trimUndoStackMemory(stack);
   }
 }
 
@@ -769,6 +781,28 @@ function normalizeCodeThemeStyles(root = getEd()) {
     el.style.fontFamily = '';
     el.style.fontSize = '';
     if (!el.getAttribute('style')) el.removeAttribute('style');
+  });
+}
+
+function normalizeThemeTextStyles(root = getEd()) {
+  root.querySelectorAll?.('[style]').forEach(el => {
+    el.style.color = '';
+    el.style.background = '';
+    el.style.backgroundColor = '';
+    el.style.borderColor = '';
+    el.style.caretColor = '';
+    el.style.textDecorationColor = '';
+    el.style.webkitTextFillColor = '';
+    el.style.webkitTextStrokeColor = '';
+    if (!el.getAttribute('style')) el.removeAttribute('style');
+  });
+  root.querySelectorAll?.('font[color], font[face], font[size], [color], [bgcolor]').forEach(el => {
+    el.removeAttribute('color');
+    el.removeAttribute('bgcolor');
+    if (el.tagName === 'FONT') {
+      el.removeAttribute('face');
+      el.removeAttribute('size');
+    }
   });
 }
 
@@ -1881,6 +1915,7 @@ function getCleanHTML() {
   });
   cleanupInlineCodePlaceholders(clone);
   stripZeroWidthText(clone);
+  normalizeThemeTextStyles(clone);
   normalizeCodeThemeStyles(clone);
   normalizeChecklistStructure(clone);
   stripTableEditorChrome(clone);
@@ -1893,11 +1928,11 @@ function getCleanHTML() {
 function syncActiveNoteFromEditor() {
   if (!activeId || !notes[activeId]) return false;
   if (!canEditNote(notes[activeId])) return false;
-  notes[activeId].content  = getCleanHTML();
+  applyNoteBodyContent(activeId, getCleanHTML(), { text: editorEl.innerText || editorEl.textContent || '' });
   notes[activeId].modified = new Date().toISOString();
   updateCounts();
   const preview = document.querySelector('.sidebar-item.active .item-preview');
-  if (preview) preview.textContent = editorEl.innerText.replace(/\u200b/g, '').replace(/\s+/g,' ').trim().slice(0,65) || 'Empty Note';
+  if (preview) preview.textContent = notePreviewText(notes[activeId]);
   return true;
 }
 
@@ -3975,21 +4010,19 @@ function placeCursorAfterNode(node) {
 
 function alarmItemsFromNote(note) {
   if (!note) return [];
-  const root = document.createElement('div');
-  root.innerHTML = note.content || '';
-  return [...root.querySelectorAll('.note-alarm')]
-    .map((mark, index) => {
-      if (mark.dataset.alarmDirection === 'sent') return null;
-      const alarmAt = normalizeAlarmAt(mark.dataset.alarmAt);
+  return normalizeInlineAlarmMetadata(note.inlineAlarms)
+    .map((alarm, index) => {
+      if (alarm.direction === 'sent') return null;
+      const alarmAt = normalizeAlarmAt(alarm.alarmAt);
       if (!alarmAt) return null;
       return {
         kind: 'inline',
         direction: 'mine',
         noteId: note.id,
-        alarmId: mark.dataset.alarmId || note.id + '_alarm_' + index,
+        alarmId: alarm.alarmId || note.id + '_alarm_' + index,
         alarmAt,
         title: note.title || 'Untitled Note',
-        text: alarmTextFromMark(mark),
+        text: alarm.text || 'Reminder',
         due: new Date(alarmAt).getTime() <= Date.now()
       };
     })
@@ -4081,6 +4114,7 @@ function renderAlarmButton() {
   badge.textContent = count > 99 ? '99+' : String(count);
   badge.hidden = count === 0;
   scheduleAlarmRefresh(items);
+  if (typeof notifyNotificationIndicatorsChanged === 'function') notifyNotificationIndicatorsChanged();
 }
 
 function reminderSectionLabel(direction) {
@@ -4356,11 +4390,12 @@ function canSendFriendReminderForNote(note) {
   return !!(note && (!note.owner || note.owner === userId));
 }
 
-function renderAlarmRecipientOption(value, profile, selected) {
-  return '<button class="alarm-recipient-option' + (selected ? ' active' : '') + '" data-alarm-recipient-option="' + esc(value) + '" type="button" role="radio" aria-checked="' + (selected ? 'true' : 'false') + '">' +
+function renderAlarmRecipientOption(value, profile, selected, needsAccess = false) {
+  return '<button class="alarm-recipient-option' + (selected ? ' active' : '') + (needsAccess ? ' needs-note-access' : '') + '" data-alarm-recipient-option="' + esc(value) + '" type="button" role="radio" aria-checked="' + (selected ? 'true' : 'false') + '">' +
     renderProfileAvatar(profile) +
     '<span class="alarm-recipient-copy">' +
       '<span class="alarm-recipient-name">' + esc(value === 'me' ? 'You' : (profile.displayName || 'Friend')) + '</span>' +
+      (value === 'me' ? '' : '<span class="alarm-recipient-sub">' + esc(needsAccess ? 'Needs Note Access' : 'Write Access') + '</span>') +
     '</span>' +
   '</button>';
 }
@@ -4386,6 +4421,22 @@ function setAlarmRecipientValue(value) {
   updateAlarmSummary();
 }
 
+async function selectAlarmRecipientOption(value, note) {
+  if (!value || value === 'me') {
+    setAlarmRecipientValue('me');
+    return;
+  }
+  const profile = friends[value] || linkedProfiles[value];
+  if (typeof ensureProfileNoteAccessForFeature === 'function') {
+    const accessOk = await ensureProfileNoteAccessForFeature(note, profile, 'reminders');
+    if (!accessOk) return;
+    populateAlarmRecipientOptions(note, value);
+    updateAlarmSummary();
+    return;
+  }
+  setAlarmRecipientValue(value);
+}
+
 function populateAlarmRecipientOptions(note, selectedUid = '') {
   const select = document.getElementById('alarm-recipient-select');
   const list = document.getElementById('alarm-recipient-options');
@@ -4401,10 +4452,11 @@ function populateAlarmRecipientOptions(note, selectedUid = '') {
     friendOptions.map(friend => renderAlarmRecipientOption(
       friend.uid,
       friend,
-      selectedValue === friend.uid
+      selectedValue === friend.uid,
+      typeof profileNeedsNoteAccess === 'function' && profileNeedsNoteAccess(note, friend)
     )).join('');
   list.querySelectorAll('[data-alarm-recipient-option]').forEach(btn => {
-    btn.addEventListener('click', () => setAlarmRecipientValue(btn.dataset.alarmRecipientOption || 'me'));
+    btn.addEventListener('click', () => selectAlarmRecipientOption(btn.dataset.alarmRecipientOption || 'me', note));
   });
 }
 
@@ -4637,12 +4689,17 @@ async function removeInlineAlarm(noteId, alarmId) {
       }
     }
   } else {
+    const body = await loadNoteBody(noteId).catch(err => {
+      console.error('load reminder note body:', err);
+      return null;
+    });
+    if (body === null) return;
     const root = document.createElement('div');
-    root.innerHTML = notes[noteId].content || '';
+    root.innerHTML = body || '';
     const mark = findAlarmMark(root, alarmId);
     if (mark) {
       unwrapAlarmMark(mark);
-      notes[noteId].content = root.innerHTML;
+      applyNoteBodyContent(noteId, root.innerHTML);
       notes[noteId].modified = new Date().toISOString();
       await saveDoc(notes[noteId]);
     }
@@ -4800,12 +4857,15 @@ function closeMentionShareModal(result) {
   }
 }
 
-function confirmMentionShare(profile, note) {
+function confirmMentionShare(profile, note, featureLabel = 'this feature') {
   if (_mentionShareResolver) return Promise.resolve(false);
   const modal = document.getElementById('mention-share-modal');
   const body = document.getElementById('mention-share-body');
+  const title = document.querySelector('#mention-share-title span') || document.getElementById('mention-share-title');
   if (!modal || !body) return Promise.resolve(false);
-  body.textContent = 'Do you want to share this note with ' + (profile?.displayName || profile?.email || 'this user') + '?';
+  const name = profile?.displayName || profile?.email || 'this user';
+  if (title) title.textContent = 'Share Note?';
+  body.textContent = 'Share this note with ' + name + ' to use ' + featureLabel + ' with them?';
   modal.classList.add('open');
   return new Promise(resolve => { _mentionShareResolver = resolve; });
 }
@@ -4851,9 +4911,11 @@ function positionMentionPopover(range) {
 
 function hideMentionPopover() {
   const pop = document.getElementById('mention-popover');
+  const wasOpen = !!(pop && !pop.hidden);
   if (pop) pop.hidden = true;
   _mentionState = null;
   _mentionActiveIndex = 0;
+  return wasOpen;
 }
 
 function renderMentionPopover() {
@@ -4865,12 +4927,14 @@ function renderMentionPopover() {
   _mentionState = { ...ctx, profiles };
   _mentionActiveIndex = Math.min(_mentionActiveIndex, profiles.length - 1);
 
-  pop.innerHTML = profiles.map((p, i) =>
-    '<div class="mention-option' + (i === _mentionActiveIndex ? ' active' : '') + '" data-mention-uid="' + esc(p.uid) + '">' +
+  const note = activeId ? notes[activeId] : null;
+  pop.innerHTML = profiles.map((p, i) => {
+    const needsAccess = typeof profileNeedsNoteAccess === 'function' && profileNeedsNoteAccess(note, p);
+    return '<div class="mention-option' + (i === _mentionActiveIndex ? ' active' : '') + (needsAccess ? ' needs-note-access' : '') + '" data-mention-uid="' + esc(p.uid) + '">' +
       renderProfileAvatar(p) +
-      '<div class="profile-main"><div class="profile-name">' + esc(p.displayName) + '</div><div class="profile-sub">@mention</div></div>' +
-    '</div>'
-  ).join('');
+      '<div class="profile-main"><div class="profile-name">' + esc(p.displayName) + '</div><div class="profile-sub">' + esc(needsAccess ? 'Needs Note Access' : '@mention') + '</div></div>' +
+    '</div>';
+  }).join('');
   pop.hidden = false;
   positionMentionPopover(ctx.range);
 
@@ -4878,7 +4942,7 @@ function renderMentionPopover() {
     row.addEventListener('mousedown', e => e.preventDefault());
     row.addEventListener('click', () => {
       const profile = profiles.find(p => p.uid === row.dataset.mentionUid);
-      if (profile) insertMention(profile);
+      if (profile) selectMentionProfile(profile);
     });
   });
 }
@@ -4900,7 +4964,7 @@ function handleMentionKeydown(e) {
   }
   if (e.key === 'Enter' || e.key === 'Tab') {
     e.preventDefault();
-    insertMention(_mentionState.profiles[_mentionActiveIndex]);
+    selectMentionProfile(_mentionState.profiles[_mentionActiveIndex]);
     return true;
   }
   if (e.key === 'Escape') {
@@ -4911,10 +4975,33 @@ function handleMentionKeydown(e) {
   return false;
 }
 
-function insertMention(profile) {
-  if (!profile || !_mentionState?.range) return;
+async function selectMentionProfile(profile) {
+  if (!profile || !_mentionState?.range || _mentionSelectionPending) return;
+  const mentionState = _mentionState;
+  const pop = document.getElementById('mention-popover');
+  if (pop) pop.hidden = true;
+  _mentionSelectionPending = true;
+  try {
+    const note = activeId ? notes[activeId] : null;
+    const noteId = note?.id || '';
+    if (typeof ensureProfileNoteAccessForFeature === 'function') {
+      const accessOk = await ensureProfileNoteAccessForFeature(note, profile, 'mentions');
+      if (!accessOk) {
+        if (_mentionState === mentionState) hideMentionPopover();
+        return;
+      }
+    }
+    if (noteId && activeId !== noteId) return;
+    insertMention(profile, mentionState);
+  } finally {
+    _mentionSelectionPending = false;
+  }
+}
+
+function insertMention(profile, mentionState = _mentionState) {
+  if (!profile || !mentionState?.range) return;
   pushUndo();
-  const range = _mentionState.range;
+  const range = mentionState.range;
   range.deleteContents();
 
   const mention = document.createElement('span');
@@ -4978,7 +5065,7 @@ async function syncMentionNotifications() {
         continue;
       }
       if (declinedMentionShares.has(promptKey)) continue;
-      const shouldShare = await confirmMentionShare(profile, note);
+      const shouldShare = await confirmMentionShare(profile, note, 'mentions');
       if (!shouldShare) {
         declinedMentionShares.add(promptKey);
         continue;

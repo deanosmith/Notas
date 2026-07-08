@@ -359,6 +359,7 @@ function updateConversationRailBadge() {
   badge.title = label;
   badge.setAttribute('aria-label', label);
   badge.hidden = unreadCount <= 0;
+  if (typeof notifyNotificationIndicatorsChanged === 'function') notifyNotificationIndicatorsChanged();
   if (typeof refreshOpenSidebarPage === 'function') refreshOpenSidebarPage('conversations');
 }
 
@@ -445,6 +446,42 @@ function conversationRecipientOptions(note = notes[activeId]) {
 
 function conversationRecipientByUid(uid) {
   return conversationRecipientOptions().find(profile => profile.uid === uid) || conversationProfileByUid(uid);
+}
+
+function conversationComposeNote() {
+  return conversationComposeAnchor?.noteId
+    ? notes[conversationComposeAnchor.noteId]
+    : (activeId ? notes[activeId] : null);
+}
+
+function setConversationRecipientValue(uid) {
+  const select = document.getElementById('conversation-recipient-select');
+  if (!select || !uid) return;
+  const allowed = [...select.options].some(option => option.value === uid);
+  if (!allowed) return;
+  select.value = uid;
+  const note = conversationComposeNote();
+  document.querySelectorAll('[data-conversation-recipient]').forEach(option => {
+    const active = option.dataset.conversationRecipient === uid;
+    const profile = conversationRecipientByUid(option.dataset.conversationRecipient || '');
+    const needsAccess = typeof profileNeedsNoteAccess === 'function' && profileNeedsNoteAccess(note, profile);
+    option.classList.toggle('active', active);
+    option.classList.toggle('needs-note-access', needsAccess);
+    option.setAttribute('aria-checked', active ? 'true' : 'false');
+    const sub = option.querySelector('.conversation-recipient-sub');
+    if (sub) sub.textContent = needsAccess ? 'Needs Note Access' : 'Write Access';
+  });
+}
+
+async function selectConversationRecipientOption(uid) {
+  if (!uid) return;
+  const note = conversationComposeNote();
+  const profile = conversationRecipientByUid(uid);
+  if (typeof ensureProfileNoteAccessForFeature === 'function') {
+    const accessOk = await ensureProfileNoteAccessForFeature(note, profile, 'conversations');
+    if (!accessOk) return;
+  }
+  setConversationRecipientValue(uid);
 }
 
 function editorRangeForConversation() {
@@ -1547,7 +1584,8 @@ async function deleteReadSidebarConversationAlerts(keys = []) {
 
 function renderConversationComposer(body, anchor) {
   const recipients = conversationRecipientOptions();
-  const defaultRecipient = recipients[0]?.uid || '';
+  const note = conversationComposeNote();
+  const defaultRecipient = (recipients.find(profile => !(typeof profileNeedsNoteAccess === 'function' && profileNeedsNoteAccess(note, profile))) || recipients[0])?.uid || '';
   const recipientOptions = recipients.map(profile =>
     '<option value="' + conversationEsc(profile.uid) + '">' +
       conversationEsc(profile.displayName || profile.email || 'Friend') +
@@ -1555,14 +1593,17 @@ function renderConversationComposer(body, anchor) {
   ).join('');
   const recipientPicker = recipients.length
     ? '<div class="conversation-recipient-picker" id="conversation-recipient-picker" role="radiogroup" aria-label="Recipient">' +
-        recipients.map((profile, index) =>
-          '<button class="conversation-recipient-option' + (index === 0 ? ' active' : '') + '" data-conversation-recipient="' + conversationEsc(profile.uid) + '" type="button" role="radio" aria-checked="' + (index === 0 ? 'true' : 'false') + '">' +
+        recipients.map(profile => {
+          const needsAccess = typeof profileNeedsNoteAccess === 'function' && profileNeedsNoteAccess(note, profile);
+          const active = profile.uid === defaultRecipient;
+          return '<button class="conversation-recipient-option' + (active ? ' active' : '') + (needsAccess ? ' needs-note-access' : '') + '" data-conversation-recipient="' + conversationEsc(profile.uid) + '" type="button" role="radio" aria-checked="' + (active ? 'true' : 'false') + '">' +
             renderProfileAvatar(profile) +
             '<span class="conversation-recipient-copy">' +
               '<span class="conversation-recipient-name">' + conversationEsc(profile.displayName || profile.email || 'Friend') + '</span>' +
+              '<span class="conversation-recipient-sub">' + conversationEsc(needsAccess ? 'Needs Note Access' : 'Write Access') + '</span>' +
             '</span>' +
-          '</button>'
-        ).join('') +
+          '</button>';
+        }).join('') +
       '</div>'
     : '';
 
@@ -1587,13 +1628,7 @@ function renderConversationComposer(body, anchor) {
   if (select && defaultRecipient) select.value = defaultRecipient;
   document.querySelectorAll('[data-conversation-recipient]').forEach(btn => {
     btn.addEventListener('click', () => {
-      const uid = btn.dataset.conversationRecipient || '';
-      if (select) select.value = uid;
-      document.querySelectorAll('[data-conversation-recipient]').forEach(option => {
-        const active = option.dataset.conversationRecipient === uid;
-        option.classList.toggle('active', active);
-        option.setAttribute('aria-checked', active ? 'true' : 'false');
-      });
+      selectConversationRecipientOption(btn.dataset.conversationRecipient || '');
     });
   });
 }
@@ -1817,10 +1852,10 @@ function focusConversationAnchor(conversation) {
 
 async function ensureConversationRecipientAccess(note, recipient) {
   if (!note || !recipient?.uid) return false;
-  if (!isOwnedNote(note)) return true;
-  const existing = noteAccessForProfile(note.id, recipient);
-  if (existing?.noteShared || existing?.directRole === 'editor') return true;
-  return await shareNoteWithFriend(note.id, recipient, 'editor', {}, { silent: true });
+  if (typeof ensureProfileNoteAccessForFeature === 'function') {
+    return await ensureProfileNoteAccessForFeature(note, recipient, 'conversations');
+  }
+  return true;
 }
 
 function conversationParentPayload(note, anchor, recipient) {
@@ -2085,12 +2120,17 @@ async function removeConversationAnchorFromNote(conversation) {
     return await saveDoc(note);
   }
 
+  const body = await loadNoteBody(note.id).catch(err => {
+    console.warn('load conversation anchor note body:', err);
+    return null;
+  });
+  if (body === null) return false;
   const root = document.createElement('div');
-  root.innerHTML = note.content || '';
+  root.innerHTML = body || '';
   const mark = conversationAnchorMarkForConversation(root, conversation.id);
   if (!mark) return true;
   unwrapConversationAnchorMark(mark);
-  note.content = root.innerHTML;
+  applyNoteBodyContent(note.id, root.innerHTML);
   note.modified = new Date().toISOString();
   renderSidebar();
   return await saveDoc(note);
@@ -2287,7 +2327,9 @@ function selectionRangeIsInEditor() {
 
 function hideConversationSelectionPopover() {
   const pop = document.getElementById('conversation-selection-popover');
-  if (pop) pop.hidden = true;
+  if (!pop || pop.hidden) return false;
+  pop.hidden = true;
+  return true;
 }
 
 function scheduleConversationSelectionPopover() {

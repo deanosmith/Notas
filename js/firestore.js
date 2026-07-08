@@ -1,4 +1,135 @@
 /* Firestore listeners, writes, migration, and offline persistence. */
+const NOTE_BODY_COLLECTION = 'noteBodies';
+
+function noteBodyDocRef(noteId) {
+  return doc(fsDb, NOTE_BODY_COLLECTION, noteId);
+}
+
+function noteContentMetadataPayload(content, options = {}) {
+  const metadata = buildNoteContentMetadata(content || '', options);
+  return {
+    previewText: metadata.previewText,
+    searchText: metadata.searchText,
+    inlineAlarms: metadata.inlineAlarms,
+    bodyStorage: NOTE_BODY_COLLECTION,
+    bodyModified: serverTimestamp()
+  };
+}
+
+function noteBodyPayload(note, content) {
+  return {
+    noteId: note.id,
+    owner: note.owner || userId,
+    updatedBy: userId,
+    content: String(content || ''),
+    modified: serverTimestamp()
+  };
+}
+
+async function writeNoteBodyDoc(note, content = note?.content || '') {
+  if (!note?.id || !userId) return false;
+  try {
+    await setDoc(noteBodyDocRef(note.id), noteBodyPayload(note, content), { merge: true });
+    return true;
+  } catch (err) {
+    console.warn('write note body:', err);
+    return false;
+  }
+}
+
+function clearActiveNoteBodyListener() {
+  if (activeNoteBodyUnsub) {
+    try { activeNoteBodyUnsub(); } catch (_) {}
+  }
+  activeNoteBodyUnsub = null;
+  activeNoteBodyListeningId = null;
+}
+
+function releaseInactiveNoteBodies(keepId = '') {
+  Object.keys(notes || {}).forEach(id => {
+    if (id === keepId) return;
+    const note = notes[id];
+    if (!note?._bodyLoaded) return;
+    note.content = '';
+    note._bodyLoaded = false;
+  });
+}
+
+async function readNoteBodyContent(noteId) {
+  if (!noteId) return '';
+  let bodyError = null;
+  try {
+    const bodySnap = await getDoc(noteBodyDocRef(noteId));
+    if (bodySnap.exists()) return String(bodySnap.data()?.content || '');
+  } catch (err) {
+    bodyError = err;
+    console.warn('read note body:', err);
+  }
+
+  const noteSnap = await getDoc(doc(fsDb, 'notes', noteId));
+  if (noteSnap.exists()) {
+    const legacyContent = noteSnap.data()?.content;
+    if (typeof legacyContent === 'string') return legacyContent;
+  }
+  if (bodyError) throw bodyError;
+  return '';
+}
+
+async function loadNoteBody(noteId, options = {}) {
+  const note = notes?.[noteId];
+  if (!note) return '';
+  if (note._bodyLoaded && options.force !== true) return note.content || '';
+  const seq = ++activeNoteBodyRequestSeq;
+  const content = await readNoteBodyContent(noteId);
+  if (options.activeOnly && (activeId !== noteId || seq !== activeNoteBodyRequestSeq)) return content;
+  applyNoteBodyContent(noteId, content);
+  return content;
+}
+
+function listenToActiveNoteBody(noteId) {
+  if (activeNoteBodyListeningId === noteId) return;
+  clearActiveNoteBodyListener();
+  if (!noteId || !userId) return;
+  activeNoteBodyListeningId = noteId;
+  activeNoteBodyUnsub = onSnapshot(noteBodyDocRef(noteId), snap => {
+    if (!snap.exists()) return;
+    const content = String(snap.data()?.content || '');
+    const note = notes[noteId];
+    const previous = note?.content || '';
+    const ed = getEd();
+    const titleEl = document.getElementById('doc-title');
+    if (activeId === noteId && (document.activeElement === ed || document.activeElement === titleEl)) return;
+    const modified = normalizeNoteTimestamp(snap.data()?.modified);
+    applyNoteBodyContent(noteId, content, modified ? { modified } : {});
+    if (activeId === noteId && previous !== content && typeof applyRemoteNoteBodyContent === 'function') {
+      applyRemoteNoteBodyContent(noteId, content);
+    }
+    renderAlarmButton();
+    refreshOpenSidebarPage('alarms');
+  }, err => {
+    console.warn('active note body listener:', err);
+    const note = notes[noteId];
+    if (note) note._bodyError = true;
+  });
+}
+
+function migrateLegacyNoteBody(id, data = {}) {
+  if (!id || typeof data.content !== 'string' || legacyBodyMigrationIds.has(id)) return;
+  legacyBodyMigrationIds.add(id);
+  const note = notes[id] || noteFromFirestoreData(id, data);
+  const content = data.content || '';
+  writeNoteBodyDoc(note, content)
+    .then(async bodyStored => {
+      if (!bodyStored) return;
+      await setDoc(doc(fsDb, 'notes', id), {
+        ...noteContentMetadataPayload(content),
+        content: deleteField()
+      }, { merge: true });
+    })
+    .catch(err => console.warn('legacy note body migration:', err))
+    .finally(() => legacyBodyMigrationIds.delete(id));
+}
+
 function listenToNotes() {
   if (unsubscribe) unsubscribe();
   let initialSettled = false;
@@ -15,42 +146,41 @@ function listenToNotes() {
   unsubscribe = onSnapshot(q, snap => {
     snap.docChanges().forEach(ch => {
       const id = ch.doc.id;
-      if (ch.type === 'removed') { delete notes[id]; return; }
+      if (ch.type === 'removed') {
+        if (id === activeId) clearActiveNoteBodyListener();
+        delete notes[id];
+        return;
+      }
       const d = ch.doc.data();
-      const prevContent = notes[id]?.content;
-      notes[id] = hydrateNoteShareState(d, {
-        id,
-        owner:    d.owner,
-        title:    d.title    || 'Untitled Note',
-        content:  d.content  || '',
-        folderId: d.folderId || null,
-        created:  d.created?.toDate?.()?.toISOString()  || new Date().toISOString(),
-        modified: d.modified?.toDate?.()?.toISOString() || new Date().toISOString()
-      });
+      const legacyContent = typeof d.content === 'string' ? d.content : null;
+      const prevContent = notes[id]?._bodyLoaded ? notes[id].content : undefined;
+      notes[id] = noteFromFirestoreData(id, d);
+      if (legacyContent !== null) migrateLegacyNoteBody(id, d);
       // If this note is open and the content changed (e.g. a collaborator saved),
       // sync the editor as long as the user isn't actively typing.
-      if (id === activeId && prevContent !== undefined && prevContent !== d.content) {
+      if (id === activeId && legacyContent !== null && prevContent !== undefined && prevContent !== legacyContent) {
         const ed = getEd();
         const titleEl = document.getElementById('doc-title');
         if (document.activeElement !== ed && document.activeElement !== titleEl) {
           titleEl.value = d.title || 'Untitled Note';
-          ed.innerHTML  = renderMarkdownContent(d.content || '');
-          normalizeCodeThemeStyles(ed);
-          linkifyTextNodes(ed); ensureLinkAttrs(ed);
-          restoreChecklistState(ed); restoreAlarmMarks(ed);
-          if (typeof restoreConversationAnchorMarks === 'function') restoreConversationAnchorMarks(ed);
-          decorateTables(ed); decorateNoteImages(ed); recomputeCollapsedSections(); refreshEmpty(ed); updateCounts();
+          if (typeof applyRemoteNoteBodyContent === 'function') applyRemoteNoteBodyContent(id, legacyContent);
         }
       }
     });
+    releaseInactiveNoteBodies(activeId || '');
     purgeExpiredTrashNotes();
     renderSidebar();
+    window.dispatchEvent(new CustomEvent('notas:notes-updated'));
     if (typeof renderConversationsSidebar === 'function') renderConversationsSidebar();
     if ((conversationsOpen || sidebarView === 'conversations') && typeof scheduleConversationOverviewRefresh === 'function') scheduleConversationOverviewRefresh();
     if (!activeId || !notes[activeId] || (isTrashedNote(notes[activeId]) && sidebarView !== 'trash')) {
-      const ids = sortedIds();
-      if (ids.length) openNote(ids[0]);
-      else            showEditorView(false);
+      if (typeof shouldDeferInitialNoteFallback === 'function' && shouldDeferInitialNoteFallback()) {
+        showEditorView(false);
+      } else {
+        const ids = sortedIds();
+        if (ids.length) openNote(ids[0]);
+        else            showEditorView(false);
+      }
     }
     setSaveState('saved');
     settleInitial();
@@ -131,12 +261,19 @@ async function saveDoc(note) {
   setSaveState('saving');
   try {
     const isOwner = !note.owner || note.owner === userId;
+    const contentLoaded = !!note._bodyLoaded;
+    const content = contentLoaded ? String(note.content || '') : '';
+    const bodyStored = contentLoaded ? await writeNoteBodyDoc(note, content) : true;
     // Shared users only update title/content; owner fields stay untouched (merge preserves sharedWith)
     const payload = {
       title:    note.title,
-      content:  note.content,
       modified: serverTimestamp()
     };
+    if (contentLoaded) {
+      Object.assign(payload, noteContentMetadataPayload(content));
+      payload.content = bodyStored ? deleteField() : content;
+      if (!bodyStored) payload.bodyStorage = 'notes';
+    }
     if (isOwner) {
       payload.owner   = userId;
       payload.public  = computeEffectiveNotePublic(note);
@@ -149,6 +286,7 @@ async function saveDoc(note) {
       if (note.folderId) payload.folderId = note.folderId;
     }
     await setDoc(doc(fsDb, 'notes', note.id), payload, { merge: true });
+    if (contentLoaded) applyNoteBodyContent(note.id, content);
     setSaveState('saved');
     return true;
   } catch (err) {
@@ -183,22 +321,27 @@ async function saveFolderDoc(folder) {
 
 async function deleteDocNote(id) {
   if (!userId) return;
+  try { await deleteDoc(noteBodyDocRef(id)); }
+  catch (err) { console.warn('delete note body:', err); }
   try { await deleteDoc(doc(fsDb, 'notes', id)); }
   catch (err) { console.error('deleteDoc:', err); }
 }
 
 async function trashDocNote(note, deletedAt, trashExpiresAt) {
   if (!userId || !note) return;
-  await setDoc(doc(fsDb, 'notes', note.id), {
+  const bodyStored = note._bodyLoaded ? await writeNoteBodyDoc(note, note.content || '') : true;
+  const payload = {
     owner: userId,
     title: note.title || 'Untitled Note',
-    content: note.content || '',
+    ...(note._bodyLoaded ? noteContentMetadataPayload(note.content || '') : {}),
     modified: serverTimestamp(),
     deletedAt: Timestamp.fromDate(deletedAt),
     trashExpiresAt: Timestamp.fromDate(trashExpiresAt),
     pinnedAt: deleteField(),
     pinScope: deleteField()
-  }, { merge: true });
+  };
+  if (note._bodyLoaded) payload.content = bodyStored ? deleteField() : (note.content || '');
+  await setDoc(doc(fsDb, 'notes', note.id), payload, { merge: true });
 }
 
 async function restoreDocNote(id) {
@@ -222,12 +365,22 @@ async function migrateFromLocalStorage() {
     const batch = writeBatch(fsDb);
     list.forEach(n => {
       const html = renderMarkdownContent(n.content || '');
+      const created = Timestamp.fromDate(new Date(n.created));
+      const modified = Timestamp.fromDate(new Date(n.modified));
       batch.set(doc(fsDb, 'notes', n.id), {
         owner:    userId,
         title:    n.title,
-        content:  html,
-        created:  Timestamp.fromDate(new Date(n.created)),
-        modified: Timestamp.fromDate(new Date(n.modified))
+        ...noteContentMetadataPayload(html),
+        created,
+        modified
+      });
+      batch.set(noteBodyDocRef(n.id), {
+        noteId: n.id,
+        owner: userId,
+        updatedBy: userId,
+        content: html,
+        created,
+        modified
       });
     });
     await batch.commit();
@@ -277,15 +430,23 @@ function _flushOfflineEdits() {
         // Only apply if offline edit is newer
         if (new Date(edit.modified) > new Date(notes[id].modified)) {
           notes[id].title   = edit.title;
-          notes[id].content = edit.content;
+          applyNoteBodyContent(id, edit.content || '');
           notes[id].modified = edit.modified;
           saveDoc(notes[id]);
         }
       } else {
         // Note might not be loaded yet. Never claim ownership of a known shared note.
-        const payload = { title: edit.title, content: edit.content, modified: serverTimestamp() };
+        const bodyNote = { id, owner: edit.owner || userId };
+        const bodyStored = false; // metadata fallback keeps offline recovery independent of note-body rules
+        const payload = {
+          title: edit.title,
+          ...noteContentMetadataPayload(edit.content || ''),
+          content: bodyStored ? deleteField() : (edit.content || ''),
+          modified: serverTimestamp()
+        };
         const knownShared = edit.shared || (edit.owner && edit.owner !== userId) || sharedLibraryMeta[id];
         if (!knownShared) payload.owner = userId;
+        writeNoteBodyDoc(bodyNote, edit.content || '').catch(err => console.warn('offline note body:', err));
         setDoc(doc(fsDb, 'notes', id), payload, { merge: true }).catch(err => console.error('flush offline:', err));
       }
     });

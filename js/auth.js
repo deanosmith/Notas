@@ -1,6 +1,7 @@
 /* Authentication and auth-state lifecycle. */
 function closeTransientSurfaces() {
   [
+    'shortcuts-modal',
     'settings-modal',
     'profile-link-modal',
     'share-modal',
@@ -43,6 +44,7 @@ function prepareAuthenticatedHome() {
   if (searchInput) searchInput.value = '';
   renderSidebar();
   showEditorView(false);
+  window.dispatchEvent(new CustomEvent('notas:home-prepared'));
 }
 
 function showLoadingOverlay() {
@@ -80,6 +82,7 @@ function configuredBooleanEnv(key) {
 }
 
 function isLocalTestAuthHost() {
+  if (window.desktop?.isElectron) return false;
   const host = location.hostname;
   return location.protocol === 'file:' ||
     host === 'localhost' ||
@@ -203,6 +206,7 @@ onAuthStateChanged(auth, async user => {
     try {
       userId = user.uid;
       prepareAuthenticatedHome();
+      if (typeof beginInitialNoteRestore === 'function') beginInitialNoteRestore();
       overlay.style.display = 'none';
       updateUserAvatar(user);
       const signoutRow = document.getElementById('signout-row');
@@ -228,6 +232,7 @@ onAuthStateChanged(auth, async user => {
       if (_sharedNoteId)   handleShareLink(_sharedNoteId);
       if (_sharedFolderId) importSharedFolder(_sharedFolderId);
       await Promise.all([initialNotesLoad, initialFoldersLoad, initialSharedLibraryLoad, initialSharedWithMeLoad]);
+      if (typeof openInitialNoteOrFirst === 'function') openInitialNoteOrFirst();
     } catch (err) {
       console.error('auth state startup:', err);
       showToast('Could Not Finish Loading Notes', 'error');
@@ -253,6 +258,7 @@ onAuthStateChanged(auth, async user => {
     if (unsubSentFriendRequests) { unsubSentFriendRequests(); unsubSentFriendRequests = null; }
     if (unsubOwnedNoteAccess) { unsubOwnedNoteAccess(); unsubOwnedNoteAccess = null; }
     if (unsubSharedWithMe) { unsubSharedWithMe(); unsubSharedWithMe = null; }
+    if (typeof clearActiveNoteBodyListener === 'function') clearActiveNoteBodyListener();
     if (typeof clearConversationState === 'function') clearConversationState({ close: true });
     directShareUnsubs.forEach(fn => fn());
     directShareUnsubs = [];
@@ -281,6 +287,10 @@ onAuthStateChanged(auth, async user => {
     conversationMessages = {};
     conversationMessageUnsubs = {};
     unsubNoteConversations = null;
+    activeNoteBodyUnsub = null;
+    activeNoteBodyListeningId = null;
+    activeNoteBodyRequestSeq = 0;
+    legacyBodyMigrationIds = new Set();
     activeConversationId = null;
     conversationsOpen = false;
     conversationComposeAnchor = null;
@@ -290,6 +300,8 @@ onAuthStateChanged(auth, async user => {
     _sendingFriendRequests = new Set();
     declinedMentionShares = new Set();
     notes = {}; folders = {}; activeId = null; activeFolderId = null; sidebarView = 'notes'; sidebarFilter = '';
+    initialNoteRestoreId = '';
+    initialNoteRestorePending = false;
     if (typeof resetAppNavigationState === 'function') resetAppNavigationState();
     showEditorView(false);
     renderSidebar();
@@ -305,7 +317,9 @@ async function signInWithGoogle() {
   setAuthControlsDisabled(true);
   setAuthError('');
   try {
-    await signInWithPopup(auth, new GoogleAuthProvider());
+    const provider = new GoogleAuthProvider();
+    provider.setCustomParameters({ prompt: 'select_account' });
+    await signInWithPopup(auth, provider);
   } catch (e) {
     console.error('signInWithPopup:', e);
     setAuthError(e.message || e.code);

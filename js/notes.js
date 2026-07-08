@@ -1,4 +1,51 @@
 /* Note CRUD and current-note loading. */
+function readLastOpenNoteId() {
+  try {
+    return String(localStorage.getItem(LAST_OPEN_NOTE_STORAGE_KEY) || '').trim();
+  } catch {
+    return '';
+  }
+}
+
+function rememberLastOpenNote(id) {
+  if (!id) return;
+  try {
+    localStorage.setItem(LAST_OPEN_NOTE_STORAGE_KEY, id);
+  } catch {}
+}
+
+function beginInitialNoteRestore() {
+  initialNoteRestoreId = readLastOpenNoteId();
+  initialNoteRestorePending = !!initialNoteRestoreId;
+}
+
+function shouldDeferInitialNoteFallback() {
+  return !!(initialNoteRestorePending && initialNoteRestoreId && !notes[initialNoteRestoreId]);
+}
+
+function openFirstAvailableNote() {
+  const ids = sortedIds();
+  if (ids.length) openNote(ids[0]);
+  else showEditorView(false);
+}
+
+function openInitialNoteOrFirst() {
+  const targetId = initialNoteRestoreId && notes[initialNoteRestoreId] && !isTrashedNote(notes[initialNoteRestoreId])
+    ? initialNoteRestoreId
+    : '';
+  initialNoteRestorePending = false;
+  initialNoteRestoreId = '';
+
+  if (targetId) {
+    openNote(targetId);
+    return;
+  }
+
+  if (!activeId || !notes[activeId] || (isTrashedNote(notes[activeId]) && sidebarView !== 'trash')) {
+    openFirstAvailableNote();
+  }
+}
+
 async function createNote(title, folderId) {
   if (folderId && !isOwnedFolder(folders[folderId])) folderId = null;
   const id  = 'note_' + Date.now();
@@ -22,6 +69,7 @@ async function createNote(title, folderId) {
     modified: now
   };
   notes[id] = note;
+  applyNoteBodyContent(id, '');
   activeId  = id;
   if (folderId) expandedFolders.add(folderId);
   renderSidebar();
@@ -62,6 +110,7 @@ async function moveNoteToTrash(id) {
   note.pinnedAt = '';
   note.pinScope = '';
   if (activeId === id) {
+    clearActiveNoteBodyListener();
     const ids = sortedIds();
     activeId = ids.length ? ids[0] : null;
   }
@@ -98,6 +147,7 @@ function permanentlyDeleteTrashedNote(id) {
   if (!note || !isOwnedNote(note)) return;
   delete notes[id];
   if (activeId === id) {
+    clearActiveNoteBodyListener();
     const ids = sortedIds();
     activeId = ids.length ? ids[0] : null;
     activeId ? openNote(activeId) : showEditorView(false);
@@ -113,7 +163,7 @@ function purgeExpiredTrashNotes() {
   expired.forEach(note => {
     delete notes[note.id];
     deleteDocNote(note.id);
-    if (activeId === note.id) activeId = null;
+    if (activeId === note.id) { clearActiveNoteBodyListener(); activeId = null; }
   });
   if (!activeId) {
     const ids = sortedIds();
@@ -123,26 +173,25 @@ function purgeExpiredTrashNotes() {
   renderSidebar();
 }
 
-function openNote(id) {
-  const note = notes[id];
-  if (!note) return;
+function applyNoteEditorChrome(note) {
   const isOwned = !note.owner || note.owner === userId;
   const isEditable = canEditNote(note);
-  activeId = id;
-  activeFolderId = note.folderId || null;
   const titleEl = document.getElementById('doc-title');
   titleEl.value    = note.title;
   titleEl.readOnly = !isEditable;
   document.getElementById('toolbar').style.display   = isEditable ? '' : 'none';
   document.getElementById('share-btn').style.display = isOwned && !isTrashedNote(note) ? '' : 'none';
   const conversationToggleBtn = document.getElementById('conversation-toggle-btn');
-  const canUseConversations = typeof canStartConversationOnNote === 'function' ? canStartConversationOnNote(note) : isEditable;
-  if (conversationToggleBtn) {
-    conversationToggleBtn.style.display = userId ? '' : 'none';
-  }
+  if (conversationToggleBtn) conversationToggleBtn.style.display = userId ? '' : 'none';
   const ed = document.getElementById('editor');
   ed.contentEditable = isEditable ? 'true' : 'false';
-  ed.innerHTML = renderMarkdownContent(note.content || '');
+  return { ed, titleEl, isOwned, isEditable };
+}
+
+function renderNoteBodyIntoEditor(note, content) {
+  const ed = document.getElementById('editor');
+  ed.innerHTML = renderMarkdownContent(content || '');
+  normalizeThemeTextStyles(ed);
   normalizeCodeThemeStyles(ed);
   const linkified = linkifyTextNodes(ed);
   ensureLinkAttrs(ed);
@@ -151,9 +200,61 @@ function openNote(id) {
   if (typeof restoreConversationAnchorMarks === 'function') restoreConversationAnchorMarks(ed);
   decorateTables(ed);
   decorateNoteImages(ed);
-  restoreCollapsedState(id);
+  restoreCollapsedState(note.id);
   const cleanContent = getCleanHTML();
-  if (linkified || cleanContent !== (note.content || '')) note.content = cleanContent;
+  applyNoteBodyContent(note.id, cleanContent);
+  refreshEmpty(ed);
+  updateCounts();
+  return linkified || cleanContent !== (content || '');
+}
+
+function applyRemoteNoteBodyContent(noteId, content) {
+  const note = notes[noteId];
+  if (!note) return;
+  const ed = getEd();
+  const titleEl = document.getElementById('doc-title');
+  if (activeId === noteId && (document.activeElement === ed || document.activeElement === titleEl)) return;
+  applyNoteBodyContent(noteId, content);
+  if (activeId !== noteId) return;
+  applyNoteEditorChrome(note);
+  renderNoteBodyIntoEditor(note, content);
+  updateActiveNoteAccessAvatars();
+  setSaveState(canEditNote(note) ? 'saved' : 'readonly');
+}
+
+async function openNote(id, options = {}) {
+  const note = notes[id];
+  if (!note) return;
+  const preserveSidebarState = options?.preserveSidebarState === true;
+  activeId = id;
+  activeFolderId = note.folderId || null;
+  if (activeNoteBodyListeningId && activeNoteBodyListeningId !== id) clearActiveNoteBodyListener();
+  releaseInactiveNoteBodies(id);
+  const { ed, isEditable } = applyNoteEditorChrome(note);
+  const canUseConversations = typeof canStartConversationOnNote === 'function' ? canStartConversationOnNote(note) : isEditable;
+  if (!note._bodyLoaded) {
+    ed.innerHTML = '';
+    refreshEmpty(ed);
+  }
+  let body = note._bodyLoaded ? note.content || '' : '';
+  let bodyLoadFailed = false;
+  try {
+    body = await loadNoteBody(id, { activeOnly: true });
+  } catch (err) {
+    console.error('load note body:', err);
+    note._bodyError = true;
+    bodyLoadFailed = true;
+    showToast('Could Not Load Note Body', 'error');
+  }
+  if (activeId !== id) return;
+  if (bodyLoadFailed && !note._bodyLoaded) {
+    showEditorView(true);
+    renderSidebar();
+    updateActiveNoteAccessAvatars();
+    setSaveState('error');
+    return;
+  }
+  renderNoteBodyIntoEditor(note, body);
   refreshEmpty(ed);
   showEditorView(true);
   renderSidebar();
@@ -164,9 +265,13 @@ function openNote(id) {
   if (typeof listenToConversationsForNote === 'function') {
     listenToConversationsForNote(canUseConversations ? id : null);
   }
+  listenToActiveNoteBody(id);
   _capitalizeNext = false;
   if (isEditable && !isMobile()) setTimeout(() => placeCursorAtEnd(ed), 40);
-  if (isMobile()) closeDrawer();
-  else if (!sidebarMinimized && window.matchMedia('(orientation: portrait)').matches) setSidebarMinimized(true);
+  if (!preserveSidebarState) {
+    if (isMobile()) closeDrawer();
+    else if (!sidebarMinimized && window.matchMedia('(orientation: portrait)').matches) setSidebarMinimized(true);
+  }
+  rememberLastOpenNote(id);
   if (typeof recordAppNavigationState === 'function') recordAppNavigationState();
 }

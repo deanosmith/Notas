@@ -53,8 +53,11 @@
           <i class="fa-solid fa-trash"></i>
         </button>
       </div>
-      <div class="rail-stack">
+      <div class="rail-stack rail-account-stack">
         <img id="user-avatar" class="rail-avatar" alt="" />
+        <button class="rail-btn" id="shortcuts-btn" type="button" title="Keyboard Shortcuts" aria-label="Keyboard Shortcuts">
+          <i class="fa-solid fa-keyboard"></i>
+        </button>
         <button class="rail-btn" id="profile-settings-btn" type="button" title="Settings" aria-label="Settings">
           <i class="fa-solid fa-gear"></i>
         </button>
@@ -63,14 +66,14 @@
 
     <aside id="sidebar">
       <div class="sidebar-header">
-        <button class="app-logo" id="sidebar-logo-btn" type="button" title="Collapse Sidebar" aria-label="Collapse Sidebar">
+        <button class="app-logo" id="sidebar-logo-btn" type="button" title="Home" aria-label="Home">
           <img class="brand-wordmark" src="notas.png" alt="Notas" />
         </button>
-        <div class="app-history-controls" role="group" aria-label="Page navigation">
-          <button class="app-history-btn" id="app-back-btn" type="button" title="Backward" aria-label="Backward" disabled>
+        <div class="app-history-controls" role="group" aria-label="Note Navigation">
+          <button class="app-history-btn" id="app-back-btn" type="button" title="Previous Note" aria-label="Previous Note" disabled>
             <i class="fa-solid fa-chevron-left"></i>
           </button>
-          <button class="app-history-btn" id="app-forward-btn" type="button" title="Forward" aria-label="Forward" disabled>
+          <button class="app-history-btn" id="app-forward-btn" type="button" title="Next Note" aria-label="Next Note" disabled>
             <i class="fa-solid fa-chevron-right"></i>
           </button>
         </div>
@@ -93,39 +96,43 @@
 
       <div id="editorView">
         <div class="main-header">
-          <div style="display:flex;align-items:center;gap:8px;">
+          <div class="main-title-row">
             <input class="doc-title-input" id="doc-title" type="text" placeholder="Untitled Note" autocomplete="off" />
             <div id="doc-access-avatars" aria-hidden="true"></div>
-            <button class="new-note-btn" id="share-btn" title="Share Note" style="flex-shrink:0;width:32px;height:32px;"><i class="fa-solid fa-arrow-up-from-bracket"></i></button>
           </div>
-          <div class="toolbar" id="toolbar">
-            <div class="toolbar-group">
-              <button class="tb-btn" data-action="h1"            title="Heading 1">H1</button>
-              <button class="tb-btn" data-action="bold"          title="Bold (Cmd+B)"><b>B</b></button>
-              <button class="tb-btn" data-action="italic"        title="Italic (Cmd+I)"><i>I</i></button>
-              <button class="tb-btn" data-action="strikethrough" title="Strikethrough (Cmd+Shift+S)"><s>S</s></button>
+          <div class="main-toolbar-row">
+            <div class="toolbar" id="toolbar">
+              <div class="toolbar-group">
+                <button class="tb-btn" data-action="h1"            title="Heading 1">H1</button>
+                <button class="tb-btn" data-action="bold"          title="Bold (Cmd+B)"><b>B</b></button>
+                <button class="tb-btn" data-action="italic"        title="Italic (Cmd+I)"><i>I</i></button>
+                <button class="tb-btn" data-action="strikethrough" title="Strikethrough (Cmd+Shift+S)"><s>S</s></button>
+              </div>
+              <div class="toolbar-sep"></div>
+              <div class="toolbar-group">
+                <button class="tb-btn" data-action="ul"        title="Bullet List"><i class="fa-solid fa-list-ul"></i></button>
+                <button class="tb-btn" data-action="checklist" title="Checklist"><i class="fa-solid fa-list-check"></i></button>
+                <button class="tb-btn" data-action="ol"        title="Numbered List"><i class="fa-solid fa-list-ol"></i></button>
+              </div>
+              <div class="toolbar-sep"></div>
+              <div class="toolbar-group">
+                <button class="tb-btn" data-action="indentLeft"  title="Outdent (Shift+Tab)"><i class="fa-solid fa-outdent"></i></button>
+                <button class="tb-btn" data-action="indentRight" title="Indent (Tab)"><i class="fa-solid fa-indent"></i></button>
+              </div>
+              <div class="toolbar-sep"></div>
+              <div class="toolbar-group">
+                <button class="tb-btn" data-action="table"     title="Table"><i class="fa-solid fa-table"></i></button>
+                <button class="tb-btn" data-action="code"      title="Inline Code (Cmd+E)"><i class="fa-solid fa-code"></i></button>
+                <button class="tb-btn" data-action="codeblock" title="Code Block"><i class="fa-solid fa-terminal"></i></button>
+              </div>
+              <div class="toolbar-sep"></div>
+              <div class="toolbar-group">
+                <button class="tb-btn" data-action="alarm" title="Set Reminder"><i class="fa-solid fa-clock"></i></button>
+                <button class="tb-btn" data-action="conversation" title="Start Conversation"><i class="fa-solid fa-comments"></i></button>
+              </div>
             </div>
-            <div class="toolbar-sep"></div>
-            <div class="toolbar-group">
-              <button class="tb-btn" data-action="ul"        title="Bullet List"><i class="fa-solid fa-list-ul"></i></button>
-              <button class="tb-btn" data-action="checklist" title="Checklist"><i class="fa-solid fa-list-check"></i></button>
-              <button class="tb-btn" data-action="ol"        title="Numbered List"><i class="fa-solid fa-list-ol"></i></button>
-            </div>
-            <div class="toolbar-sep"></div>
-            <div class="toolbar-group">
-              <button class="tb-btn" data-action="indentLeft"  title="Outdent (Shift+Tab)"><i class="fa-solid fa-outdent"></i></button>
-              <button class="tb-btn" data-action="indentRight" title="Indent (Tab)"><i class="fa-solid fa-indent"></i></button>
-            </div>
-            <div class="toolbar-sep"></div>
-            <div class="toolbar-group">
-              <button class="tb-btn" data-action="table"     title="Table"><i class="fa-solid fa-table"></i></button>
-              <button class="tb-btn" data-action="code"      title="Inline Code (Cmd+E)"><i class="fa-solid fa-code"></i></button>
-              <button class="tb-btn" data-action="codeblock" title="Code Block"><i class="fa-solid fa-terminal"></i></button>
-            </div>
-            <div class="toolbar-sep"></div>
-            <div class="toolbar-group">
-              <button class="tb-btn" data-action="alarm" title="Set Reminder"><i class="fa-solid fa-clock"></i></button>
-              <button class="tb-btn" data-action="conversation" title="Start Conversation"><i class="fa-solid fa-comments"></i></button>
+            <div class="header-actions" id="header-actions">
+              <button class="new-note-btn header-action-btn" id="share-btn" type="button" title="Share Note"><i class="fa-solid fa-arrow-up-from-bracket"></i></button>
             </div>
           </div>
         </div>
@@ -195,6 +202,33 @@
   </div>
 
   <div id="toast"></div>
+
+  <div class="modal-overlay" id="shortcuts-modal">
+    <div class="modal wide shortcuts-modal" role="dialog" aria-modal="true" aria-labelledby="shortcuts-title">
+      <div class="modal-title shortcuts-title" id="shortcuts-title"><i class="fa-solid fa-keyboard" style="opacity:.7;"></i>Keyboard Shortcuts</div>
+      <div class="shortcut-list" aria-label="Keyboard Shortcuts">
+        <section class="shortcut-section" aria-labelledby="shortcuts-general-title">
+          <div class="shortcut-section-title" id="shortcuts-general-title">General</div>
+          <div class="shortcut-row"><span class="shortcut-label">New Note</span><span class="shortcut-keys"><kbd>Command + N</kbd></span></div>
+          <div class="shortcut-row"><span class="shortcut-label">Toggle Pop Out Note</span><span class="shortcut-keys"><kbd>Command + P</kbd></span></div>
+          <div class="shortcut-row"><span class="shortcut-label">Close Pop-Ups Or Toggle Notes</span><span class="shortcut-keys"><kbd>Escape</kbd></span></div>
+          <div class="shortcut-row"><span class="shortcut-label">Always On Top</span><span class="shortcut-keys"><kbd>Command + Shift + T</kbd></span></div>
+        </section>
+        <section class="shortcut-section" aria-labelledby="shortcuts-editor-title">
+          <div class="shortcut-section-title" id="shortcuts-editor-title">Editor</div>
+          <div class="shortcut-row"><span class="shortcut-label">Bold</span><span class="shortcut-keys"><kbd>Command + B</kbd></span></div>
+          <div class="shortcut-row"><span class="shortcut-label">Italic</span><span class="shortcut-keys"><kbd>Command + I</kbd></span></div>
+          <div class="shortcut-row"><span class="shortcut-label">Inline Code</span><span class="shortcut-keys"><kbd>Command + E</kbd></span></div>
+          <div class="shortcut-row"><span class="shortcut-label">Strikethrough</span><span class="shortcut-keys"><kbd>Command + Shift + S</kbd></span></div>
+          <div class="shortcut-row"><span class="shortcut-label">Indent Or Next Table Cell</span><span class="shortcut-keys"><kbd>Tab</kbd></span></div>
+          <div class="shortcut-row"><span class="shortcut-label">Outdent Or Previous Table Cell</span><span class="shortcut-keys"><kbd>Shift + Tab</kbd></span></div>
+        </section>
+      </div>
+      <div class="modal-actions">
+        <button class="modal-btn primary" id="shortcuts-close" type="button">Done</button>
+      </div>
+    </div>
+  </div>
 
   <div class="modal-overlay" id="settings-modal">
     <div class="modal wide">
@@ -426,7 +460,7 @@
 
   <div class="modal-overlay" id="mention-share-modal">
     <div class="modal">
-      <div class="modal-title"><i class="fa-solid fa-at" style="margin-right:8px;opacity:.7;"></i>Share Mentioned Note?</div>
+      <div class="modal-title" id="mention-share-title"><i class="fa-solid fa-arrow-up-from-bracket" style="margin-right:8px;opacity:.7;"></i><span>Share Note?</span></div>
       <p class="modal-note-info" id="mention-share-body"></p>
       <div class="modal-actions">
         <button class="modal-btn" id="mention-share-cancel">Not Now</button>

@@ -104,7 +104,7 @@ function hasVisibleFolder(note) {
 
 const noteMatchesFilter = (n, f) =>
   n.title.toLowerCase().includes(f) ||
-  n.content.replace(/<[^>]+>/g, ' ').toLowerCase().includes(f);
+  noteSearchText(n).includes(f);
 
 function profileIdentityKey(profile) {
   return normalizeEmail(profile?.email || '') || profile?.uid || profile?.displayName || '';
@@ -281,7 +281,7 @@ function makeSidebarNoteEl(note, { inFolder = false } = {}) {
         action: () => setNotePinned(note.id, !isPinnedNote(note), 'major')
       };
   const showPreview = sidebarNotePreviewMode === 'title-text';
-  const snippet  = showPreview ? (note.content.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 65) || 'Empty Note') : '';
+  const snippet  = showPreview ? notePreviewText(note) : '';
   const accessAvatars = inFolder ? '' : renderAccessAvatars(accessProfilesForNote(note), isOwned ? 'Shared with' : 'Shared by');
   const linkBadge = note.linkPublic
     ? '<span class="note-shared-badge" title="Link sharing is on"><i class="fa-solid fa-link"></i></span>'
@@ -526,12 +526,14 @@ function trimAppNavigationStack(stack) {
 function updateAppNavigationButtons() {
   const backBtn = document.getElementById('app-back-btn');
   const forwardBtn = document.getElementById('app-forward-btn');
+  const hasBackNote = hasNoteHistoryTarget(appNavBackStack);
+  const hasForwardNote = hasNoteHistoryTarget(appNavForwardStack);
   if (backBtn) {
-    backBtn.disabled = appNavBackStack.length === 0;
+    backBtn.disabled = !hasBackNote;
     backBtn.setAttribute('aria-disabled', backBtn.disabled ? 'true' : 'false');
   }
   if (forwardBtn) {
-    forwardBtn.disabled = appNavForwardStack.length === 0;
+    forwardBtn.disabled = !hasForwardNote;
     forwardBtn.setAttribute('aria-disabled', forwardBtn.disabled ? 'true' : 'false');
   }
 }
@@ -542,12 +544,14 @@ function resetAppNavigationState() {
   appNavCurrentState = null;
   appNavCurrentKey = '';
   appNavApplying = false;
+  appNavEscapeDirection = 'back';
   updateAppNavigationButtons();
 }
 
 function recordAppNavigationState() {
   const next = currentAppNavigationState();
   const nextKey = appNavigationKey(next);
+  const previousNoteId = appNavCurrentState?.noteId || '';
   if (appNavApplying) {
     updateAppNavigationButtons();
     return;
@@ -562,6 +566,7 @@ function recordAppNavigationState() {
     updateAppNavigationButtons();
     return;
   }
+  if (next.noteId && next.noteId !== previousNoteId) appNavEscapeDirection = 'back';
   appNavBackStack.push(appNavCurrentState);
   trimAppNavigationStack(appNavBackStack);
   appNavForwardStack = [];
@@ -574,6 +579,16 @@ function noteVisibleForNavigation(noteId, view) {
   const note = noteId ? notes[noteId] : null;
   if (!note) return false;
   return view === 'trash' || !isTrashedNote(note);
+}
+
+function hasNoteHistoryTarget(stack) {
+  const currentNoteId = activeId || appNavCurrentState?.noteId || '';
+  for (let i = stack.length - 1; i >= 0; i--) {
+    const candidate = normalizeAppNavigationState(stack[i]);
+    if (!candidate.noteId || candidate.noteId === currentNoteId) continue;
+    if (noteVisibleForNavigation(candidate.noteId, sidebarView)) return true;
+  }
+  return false;
 }
 
 function applyAppNavigationState(state) {
@@ -627,6 +642,54 @@ function navigateAppHistory(direction) {
   appNavCurrentState = normalizeAppNavigationState(target);
   appNavCurrentKey = appNavigationKey(appNavCurrentState);
   applyAppNavigationState(appNavCurrentState);
+}
+
+function navigateNoteHistory(direction) {
+  const stack = direction === 'forward' ? appNavForwardStack : appNavBackStack;
+  const oppositeStack = direction === 'forward' ? appNavBackStack : appNavForwardStack;
+  const current = currentAppNavigationState();
+  const currentNoteId = activeId || current.noteId || '';
+  const consumed = [];
+  let target = null;
+
+  while (stack.length) {
+    const candidate = normalizeAppNavigationState(stack.pop());
+    consumed.push(candidate);
+    if (!candidate.noteId || candidate.noteId === currentNoteId) continue;
+    if (!noteVisibleForNavigation(candidate.noteId, sidebarView)) continue;
+    target = candidate;
+    break;
+  }
+
+  if (!target) {
+    while (consumed.length) stack.push(consumed.pop());
+    updateAppNavigationButtons();
+    return false;
+  }
+
+  oppositeStack.push(current, ...consumed.slice(0, -1));
+  trimAppNavigationStack(oppositeStack);
+
+  appNavApplying = true;
+  try {
+    openNote(target.noteId, { preserveSidebarState: true });
+  } finally {
+    const actual = currentAppNavigationState();
+    appNavCurrentState = actual;
+    appNavCurrentKey = appNavigationKey(actual);
+    appNavApplying = false;
+    updateRailActiveState();
+    updateAppNavigationButtons();
+  }
+
+  appNavEscapeDirection = direction === 'forward' ? 'back' : 'forward';
+  return true;
+}
+
+function navigateAlternatingNoteHistory() {
+  const preferredDirection = appNavEscapeDirection === 'forward' ? 'forward' : 'back';
+  if (navigateNoteHistory(preferredDirection)) return true;
+  return navigateNoteHistory(preferredDirection === 'forward' ? 'back' : 'forward');
 }
 
 function setSidebarView(view) {
@@ -1197,10 +1260,9 @@ function toggleDrawer() {
   document.getElementById('sidebar').classList.contains('open') ? closeDrawer() : openDrawer();
 }
 
-function toggleSidebarFromLogo(e) {
+function showSidebarHomeFromLogo(e) {
   e?.stopPropagation?.();
-  if (isMobile()) { toggleDrawer(); return; }
-  setSidebarMinimized(!sidebarMinimized);
+  setSidebarView('notes');
 }
 
 /* Modal */
@@ -1611,6 +1673,7 @@ function setAccentColor(value) {
   _accentApplyFrame = requestAnimationFrame(() => {
     _accentApplyFrame = 0;
     applyAccentColor(accentColor);
+    if (typeof notifyDesktopThemeStateChanged === 'function') notifyDesktopThemeStateChanged();
   });
 }
 
@@ -1738,6 +1801,7 @@ function initSettings() {
       themeMode = nextMode;
       localStorage.setItem('notas_theme', themeMode);
       applyTheme();
+      if (typeof notifyDesktopThemeStateChanged === 'function') notifyDesktopThemeStateChanged();
     });
   });
   document.getElementById('sidebar-preview-toggle')?.addEventListener('change', e => {
@@ -1746,7 +1810,10 @@ function initSettings() {
     renderSidebar();
   });
   const onSystemThemeChange = () => {
-    if (themeMode === 'system') applyTheme();
+    if (themeMode === 'system') {
+      applyTheme();
+      if (typeof notifyDesktopThemeStateChanged === 'function') notifyDesktopThemeStateChanged();
+    }
   };
   if (systemThemeQuery?.addEventListener) systemThemeQuery.addEventListener('change', onSystemThemeChange);
   else systemThemeQuery?.addListener?.(onSystemThemeChange);
@@ -1788,6 +1855,7 @@ function initSettings() {
       editorFontSize++;
       localStorage.setItem('notas_font_size', String(editorFontSize));
       applyFontSize();
+      if (typeof notifyDesktopThemeStateChanged === 'function') notifyDesktopThemeStateChanged();
     }
   });
   document.getElementById('fs-dec').addEventListener('click', () => {
@@ -1795,6 +1863,7 @@ function initSettings() {
       editorFontSize--;
       localStorage.setItem('notas_font_size', String(editorFontSize));
       applyFontSize();
+      if (typeof notifyDesktopThemeStateChanged === 'function') notifyDesktopThemeStateChanged();
     }
   });
 }
@@ -1862,8 +1931,8 @@ function setSidebarMinimized(val) {
   sidebar.classList.toggle('logo-compact', false);
   const logoBtn = document.getElementById('sidebar-logo-btn');
   if (logoBtn) {
-    logoBtn.title = val ? 'Expand Sidebar' : 'Collapse Sidebar';
-    logoBtn.setAttribute('aria-label', val ? 'Expand Sidebar' : 'Collapse Sidebar');
+    logoBtn.title = 'Home';
+    logoBtn.setAttribute('aria-label', 'Home');
   }
   localStorage.setItem('notas_sidebar_minimized', val ? '1' : '0');
   if (!val) {

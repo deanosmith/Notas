@@ -48,19 +48,111 @@ for (const src of sectionScripts) {
   await loadSectionScript(src);
 }
 
+if (window.desktop?.isElectron) {
+  await loadSectionScript('./desktop.js');
+}
+
 showEditorView(false);
 configureTestPasswordAuthUI();
 
+function openShortcutsModal() {
+  document.getElementById('shortcuts-modal')?.classList.add('open');
+}
+
+function closeShortcutsModal() {
+  document.getElementById('shortcuts-modal')?.classList.remove('open');
+}
+
+function closeSettingsModal() {
+  document.getElementById('color-popover')?.setAttribute('hidden', '');
+  document.getElementById('accent-picker-btn')?.setAttribute('aria-expanded', 'false');
+  document.getElementById('settings-modal')?.classList.remove('open');
+}
+
+function closeColorPopover() {
+  const colorPopover = document.getElementById('color-popover');
+  if (!colorPopover || colorPopover.hidden) return false;
+  colorPopover.hidden = true;
+  document.getElementById('accent-picker-btn')?.setAttribute('aria-expanded', 'false');
+  return true;
+}
+
+function closeOpenOverlayById(id) {
+  const modal = document.getElementById(id);
+  if (!modal?.classList.contains('open')) return false;
+  modal.classList.remove('open');
+  return true;
+}
+
+function handleEscapeNavigation() {
+  const mentionPopoverClosed = typeof hideMentionPopover === 'function' && hideMentionPopover();
+  if (mentionPopoverClosed) return true;
+  const conversationSelectionClosed = typeof hideConversationSelectionPopover === 'function' && hideConversationSelectionPopover();
+  if (conversationSelectionClosed) return true;
+
+  closeCtxMenu();
+  closeFolderColorPicker();
+
+  if (closeColorPopover()) return true;
+  if (document.getElementById('settings-modal')?.classList.contains('open')) {
+    closeSettingsModal();
+    return true;
+  }
+  if (closeOpenOverlayById('shortcuts-modal')) return true;
+  if (document.getElementById('mention-share-modal')?.classList.contains('open')) {
+    closeMentionShareModal(false);
+    return true;
+  }
+  if (document.getElementById('note-alarm-modal')?.classList.contains('open')) {
+    closeNoteAlarmModal();
+    return true;
+  }
+  if (closeOpenOverlayById('link-modal')) return true;
+  if (document.getElementById('folder-modal')?.classList.contains('open')) {
+    closeFolderModal();
+    return true;
+  }
+  if (document.getElementById('delete-modal')?.classList.contains('open')) {
+    closeDeleteModal();
+    return true;
+  }
+  if (document.getElementById('move-modal')?.classList.contains('open')) {
+    closeMoveModal();
+    return true;
+  }
+  if (document.getElementById('modal')?.classList.contains('open')) {
+    closeModal();
+    return true;
+  }
+  if (closeOpenOverlayById('profile-link-modal')) return true;
+  if (closeOpenOverlayById('share-modal')) return true;
+  if (closeOpenOverlayById('notifications-modal')) return true;
+  if (closeOpenOverlayById('alarms-modal')) return true;
+  if (typeof closeConversationsSidebar === 'function' && conversationsOpen) {
+    closeConversationsSidebar();
+    return true;
+  }
+  const activeOverlay = document.activeElement?.closest?.('.modal-overlay');
+  if (activeOverlay && !activeOverlay.classList.contains('open')) return true;
+  if (typeof navigateAlternatingNoteHistory === 'function' && navigateAlternatingNoteHistory()) {
+    return true;
+  }
+  return false;
+}
+
 document.getElementById('drawer-btn').addEventListener('click',     toggleDrawer);
 document.getElementById('mob-logo-btn').addEventListener('click',   toggleDrawer);
-document.getElementById('sidebar-logo-btn').addEventListener('click', toggleSidebarFromLogo);
-document.getElementById('app-back-btn')?.addEventListener('click', () => navigateAppHistory('back'));
-document.getElementById('app-forward-btn')?.addEventListener('click', () => navigateAppHistory('forward'));
+document.getElementById('sidebar-logo-btn').addEventListener('click', showSidebarHomeFromLogo);
+document.getElementById('app-back-btn')?.addEventListener('click', () => navigateNoteHistory('back'));
+document.getElementById('app-forward-btn')?.addEventListener('click', () => navigateNoteHistory('forward'));
 document.getElementById('sidebar').addEventListener('click', () => { if (sidebarMinimized && !isMobile()) setSidebarMinimized(false); });
 document.querySelectorAll('[data-sidebar-view]').forEach(btn => {
   btn.addEventListener('click', () => toggleSidebarView(btn.dataset.sidebarView));
 });
 document.getElementById('rail-create-btn')?.addEventListener('click', () => openModal('note'));
+document.getElementById('shortcuts-btn')?.addEventListener('click', openShortcutsModal);
+document.getElementById('shortcuts-close')?.addEventListener('click', closeShortcutsModal);
+document.getElementById('shortcuts-modal')?.addEventListener('click', e => { if (e.target === e.currentTarget) closeShortcutsModal(); });
 document.getElementById('mob-new-btn').addEventListener('click',    openModal);
 document.getElementById('google-signin-btn').addEventListener('click', signInWithGoogle);
 document.getElementById('test-password-signin-form')?.addEventListener('submit', signInWithTestPassword);
@@ -113,7 +205,17 @@ document.getElementById('note-alarm-modal').addEventListener('click', e => { if 
   }, { passive: false });
   timeInput?.addEventListener('blur', () => { wheelRemainder = 0; });
 }
-document.getElementById('alarm-recipient-select')?.addEventListener('change', () => {
+document.getElementById('alarm-recipient-select')?.addEventListener('change', async () => {
+  const targetUid = selectedAlarmRecipientUid();
+  const note = _alarmContext?.noteId ? notes[_alarmContext.noteId] : (activeId ? notes[activeId] : null);
+  const profile = targetUid ? (friends[targetUid] || linkedProfiles[targetUid]) : null;
+  if (targetUid && typeof ensureProfileNoteAccessForFeature === 'function') {
+    const accessOk = await ensureProfileNoteAccessForFeature(note, profile, 'reminders');
+    if (!accessOk) {
+      setAlarmRecipientValue('me');
+      return;
+    }
+  }
   updateAlarmRecipientOptionState();
   updateAlarmRecipientState();
   updateAlarmSummary();
@@ -697,6 +799,7 @@ editorEl.addEventListener('paste', e => {
         }
       });
     });
+    normalizeThemeTextStyles(temp);
     stripNoteImageEditorChrome(temp);
     document.execCommand('insertHTML', false, temp.innerHTML);
   } else if (text) {
@@ -777,7 +880,10 @@ document.getElementById('search-input').addEventListener('input', e => {
 });
 
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') { closeCtxMenu(); hideMentionPopover(); hideConversationSelectionPopover(); closeMentionShareModal(false); closeFolderColorPicker(); }
+  if (e.key === 'Escape' && handleEscapeNavigation()) {
+    e.preventDefault();
+    return;
+  }
   const mod = /Mac/.test(navigator.platform) ? e.metaKey : e.ctrlKey;
   if (!mod) return;
   const key = e.key.toLowerCase();
@@ -828,6 +934,11 @@ document.addEventListener('keydown', e => {
       else performAppRedo();
       return;
     }
+  }
+  if (key === 'p' && window.desktop?.isElectron && typeof window.openActiveDesktopNoteWindow === 'function') {
+    e.preventDefault();
+    window.openActiveDesktopNoteWindow();
+    return;
   }
   if (key === 'n') { e.preventDefault(); openModal(); }
 });
