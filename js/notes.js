@@ -288,10 +288,7 @@ async function openNote(id, options = {}) {
   listenToActiveNoteBody(id);
   _capitalizeNext = false;
   if (isEditable && !isMobile()) setTimeout(() => placeCursorAtEnd(ed), 40);
-  if (!preserveSidebarState) {
-    if (isMobile()) closeDrawer();
-    else if (!sidebarMinimized && window.matchMedia('(orientation: portrait)').matches) setSidebarMinimized(true);
-  }
+  if (!preserveSidebarState && isMobile()) closeDrawer();
   rememberLastOpenNote(id);
   if (typeof recordAppNavigationState === 'function') recordAppNavigationState();
 }

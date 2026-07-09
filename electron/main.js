@@ -178,11 +178,15 @@ function normalizeThemeState(state) {
   const mode = ['light', 'dark', 'system'].includes(state.mode) ? state.mode : '';
   const accent = String(state.accent || '').trim();
   const fontSize = Math.trunc(Number(state.fontSize) || 0);
+  const lineHeight = Number(state.lineHeight);
   if (!mode || !/^#[0-9a-f]{6}$/i.test(accent) || fontSize < 10 || fontSize > 26) return null;
   return {
     mode,
     accent: accent.toLowerCase(),
-    fontSize
+    fontSize,
+    lineHeight: Number.isFinite(lineHeight)
+      ? Math.max(1.2, Math.min(2.2, Math.round(lineHeight * 100) / 100))
+      : 1.66
   };
 }
 
@@ -381,8 +385,21 @@ function createNoteBrowserWindow(behavior = {}) {
     title: 'Notas Note',
     alwaysOnTop: true
   }, behavior);
-  noteWindow.setAlwaysOnTop(true, 'floating');
+  applyNoteWindowFloatingBehavior(noteWindow, true);
   return noteWindow;
+}
+
+function applyNoteWindowFloatingBehavior(win, enabled) {
+  if (!win || win.isDestroyed()) return;
+  const shouldFloat = !!enabled;
+  win.setAlwaysOnTop(shouldFloat, shouldFloat ? 'floating' : 'normal');
+  if (typeof win.setVisibleOnAllWorkspaces === 'function') {
+    try {
+      win.setVisibleOnAllWorkspaces(shouldFloat, { visibleOnFullScreen: true });
+    } catch (err) {
+      console.error('set visible on all workspaces:', err);
+    }
+  }
 }
 
 function setNoteWindowContext(noteWindow, noteId, initialNote) {
@@ -400,7 +417,7 @@ function setNoteWindowContext(noteWindow, noteId, initialNote) {
   windowContexts.set(noteWindow.id, context);
   if (noteId) noteWindows.set(noteId, noteWindow);
   noteWindow.setTitle(initialNote?.title ? `${initialNote.title} - ${APP_NAME}` : 'Notas Note');
-  noteWindow.setAlwaysOnTop(true, 'floating');
+  applyNoteWindowFloatingBehavior(noteWindow, true);
   sendWindowContext(noteWindow);
   buildApplicationMenu();
 }
@@ -516,7 +533,7 @@ function setWindowAlwaysOnTop(win, enabled) {
     return { ok: false, enabled: false };
   }
   const next = !!enabled;
-  win.setAlwaysOnTop(next, 'floating');
+  applyNoteWindowFloatingBehavior(win, next);
   context.alwaysOnTop = next;
   win.webContents.send('desktop:always-on-top-changed', next);
   buildApplicationMenu();

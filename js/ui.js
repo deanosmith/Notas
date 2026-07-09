@@ -596,12 +596,11 @@ function applyAppNavigationState(state) {
   appNavApplying = true;
   try {
     sidebarView = target.sidebarView;
-    if (target.sidebarOpen) {
+    if (target.sidebarOpen || !isMobile()) {
       setSidebarView(target.sidebarView);
     } else {
       renderSidebar();
-      if (isMobile()) closeDrawer();
-      else setSidebarMinimized(true);
+      closeDrawer();
     }
 
     if (noteVisibleForNavigation(target.noteId, target.sidebarView)) {
@@ -613,7 +612,6 @@ function applyAppNavigationState(state) {
 
     if (!target.sidebarOpen) {
       if (isMobile()) closeDrawer();
-      else setSidebarMinimized(true);
     }
   } finally {
     const actual = currentAppNavigationState();
@@ -712,12 +710,7 @@ function setSidebarView(view) {
 function toggleSidebarView(view) {
   const nextView = SIDEBAR_VIEWS.has(view) ? view : 'notes';
   if (sidebarView === nextView && isSidebarPanelVisible()) {
-    if (nextView === 'notes') {
-      if (isMobile()) closeDrawer();
-      else setSidebarMinimized(true);
-    } else {
-      setSidebarView('notes');
-    }
+    if (nextView !== 'notes') setSidebarView('notes');
     return;
   }
   setSidebarView(nextView);
@@ -861,8 +854,9 @@ function attachSidebarSelectionHandlers(target) {
       master.dataset.selectionHandlerFor = list.id;
       master.addEventListener('change', () => {
         const targetList = document.getElementById(master.dataset.selectionMasterFor || '');
+        const shouldSelect = master.checked;
         targetList?.querySelectorAll('[data-select-key]').forEach(input => {
-          input.checked = master.checked;
+          input.checked = shouldSelect;
           input.dispatchEvent(new Event('change', { bubbles: true }));
         });
         syncSidebarSelectionState(targetList);
@@ -1260,9 +1254,14 @@ function toggleDrawer() {
   document.getElementById('sidebar').classList.contains('open') ? closeDrawer() : openDrawer();
 }
 
-function showSidebarHomeFromLogo(e) {
+function toggleSidebarFromLogo(e) {
   e?.stopPropagation?.();
-  setSidebarView('notes');
+  if (isMobile()) {
+    toggleDrawer();
+    return;
+  }
+  if (isSidebarPanelVisible()) setSidebarMinimized(true);
+  else setSidebarView('notes');
 }
 
 /* Modal */
@@ -1348,13 +1347,16 @@ function confirmCreateFolder() {
 
 /* Settings */
 const FONT_MIN = 12, FONT_MAX = 24;
+const LINE_HEIGHT_MIN = 1.2, LINE_HEIGHT_MAX = 2.2, LINE_HEIGHT_STEP = 0.05, LINE_HEIGHT_DEFAULT = 1.66;
 let editorFontSize = parseInt(localStorage.getItem('notas_font_size') || '15');
+let editorLineHeight = normalizeEditorLineHeight(localStorage.getItem('notas_line_height') || LINE_HEIGHT_DEFAULT);
 const SIDEBAR_NOTE_PREVIEW_STORAGE_KEY = 'notas_sidebar_note_preview_mode';
 const savedSidebarNotePreviewMode = localStorage.getItem(SIDEBAR_NOTE_PREVIEW_STORAGE_KEY);
 let sidebarNotePreviewMode = savedSidebarNotePreviewMode === 'title-only' ? 'title-only' : 'title-text';
 const savedThemeMode = localStorage.getItem('notas_theme');
 let themeMode = ['system', 'dark', 'light'].includes(savedThemeMode) ? savedThemeMode : 'dark';
 let isLightMode = false;
+let _themeTransitionTimer = 0;
 const systemThemeQuery = window.matchMedia ? window.matchMedia('(prefers-color-scheme: light)') : null;
 
 const ACCENT_PALETTES = {
@@ -1705,14 +1707,27 @@ function resolveLightMode() {
   return themeMode === 'system' ? !!systemThemeQuery?.matches : themeMode === 'light';
 }
 
+function setThemeTransitioning(active) {
+  clearTimeout(_themeTransitionTimer);
+  document.documentElement.classList.toggle('theme-changing', !!active);
+  document.body.classList.toggle('theme-changing', !!active);
+  if (!active) return;
+  _themeTransitionTimer = setTimeout(() => setThemeTransitioning(false), 240);
+}
+
 function applyTheme() {
-  isLightMode = resolveLightMode();
-  document.body.classList.toggle('light-mode', isLightMode);
+  const nextLightMode = resolveLightMode();
+  const changed = document.body.classList.contains('light-mode') !== nextLightMode;
+  if (changed) setThemeTransitioning(true);
+  isLightMode = nextLightMode;
   if (_accentApplyFrame) {
     cancelAnimationFrame(_accentApplyFrame);
     _accentApplyFrame = 0;
   }
   applyAccentColor(accentColor);
+  document.documentElement.classList.toggle('light-mode', isLightMode);
+  document.documentElement.style.colorScheme = isLightMode ? 'light' : 'dark';
+  document.body.classList.toggle('light-mode', isLightMode);
   updateThemeToggleUI();
 }
 
@@ -1730,6 +1745,22 @@ function applyFontSize() {
   if (val) val.textContent = editorFontSize;
 }
 
+function normalizeEditorLineHeight(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return LINE_HEIGHT_DEFAULT;
+  return Math.max(LINE_HEIGHT_MIN, Math.min(LINE_HEIGHT_MAX, Math.round(numeric * 100) / 100));
+}
+
+function formatEditorLineHeight(value) {
+  return normalizeEditorLineHeight(value).toFixed(2).replace(/0$/, '').replace(/\.0$/, '');
+}
+
+function applyLineHeight() {
+  document.documentElement.style.setProperty('--editor-line-height', formatEditorLineHeight(editorLineHeight));
+  const val = document.getElementById('ls-val');
+  if (val) val.textContent = formatEditorLineHeight(editorLineHeight);
+}
+
 function applySidebarNotePreviewMode() {
   const toggle = document.getElementById('sidebar-preview-toggle');
   if (toggle) toggle.checked = sidebarNotePreviewMode === 'title-text';
@@ -1739,6 +1770,7 @@ function applySidebarNotePreviewMode() {
 function initSettings() {
   applyTheme(); // also calls applyAccentColor
   applyFontSize();
+  applyLineHeight();
   applySidebarNotePreviewMode();
   const settingsModal = document.getElementById('settings-modal');
   const colorControl = document.getElementById('color-control');
@@ -1866,6 +1898,24 @@ function initSettings() {
       if (typeof notifyDesktopThemeStateChanged === 'function') notifyDesktopThemeStateChanged();
     }
   });
+  document.getElementById('ls-inc')?.addEventListener('click', () => {
+    const nextLineHeight = normalizeEditorLineHeight(editorLineHeight + LINE_HEIGHT_STEP);
+    if (nextLineHeight !== editorLineHeight) {
+      editorLineHeight = nextLineHeight;
+      localStorage.setItem('notas_line_height', formatEditorLineHeight(editorLineHeight));
+      applyLineHeight();
+      if (typeof notifyDesktopThemeStateChanged === 'function') notifyDesktopThemeStateChanged();
+    }
+  });
+  document.getElementById('ls-dec')?.addEventListener('click', () => {
+    const nextLineHeight = normalizeEditorLineHeight(editorLineHeight - LINE_HEIGHT_STEP);
+    if (nextLineHeight !== editorLineHeight) {
+      editorLineHeight = nextLineHeight;
+      localStorage.setItem('notas_line_height', formatEditorLineHeight(editorLineHeight));
+      applyLineHeight();
+      if (typeof notifyDesktopThemeStateChanged === 'function') notifyDesktopThemeStateChanged();
+    }
+  });
 }
 
 function initFolderColorPicker() {
@@ -1931,10 +1981,10 @@ function setSidebarMinimized(val) {
   sidebar.classList.toggle('logo-compact', false);
   const logoBtn = document.getElementById('sidebar-logo-btn');
   if (logoBtn) {
-    logoBtn.title = 'Home';
-    logoBtn.setAttribute('aria-label', 'Home');
+    logoBtn.title = 'Toggle Sidebar';
+    logoBtn.setAttribute('aria-label', 'Toggle Sidebar');
   }
-  localStorage.setItem('notas_sidebar_minimized', val ? '1' : '0');
+  localStorage.removeItem('notas_sidebar_minimized');
   if (!val) {
     // Restore previously-saved resize width
     const saved = parseInt(localStorage.getItem('notas_sidebar_w') || '256');

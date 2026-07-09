@@ -10,6 +10,18 @@
   <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
+  <script>
+    (() => {
+      try {
+        const mode = localStorage.getItem('notas_theme') || 'dark';
+        const systemLight = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches;
+        const isLight = mode === 'light' || (mode === 'system' && systemLight);
+        document.documentElement.classList.toggle('light-mode', isLight);
+        document.documentElement.style.colorScheme = isLight ? 'light' : 'dark';
+        document.body.classList.toggle('light-mode', isLight);
+      } catch {}
+    })();
+  </script>
 
   <div id="loading-overlay"><div class="loading-spinner"></div></div>
 
@@ -27,7 +39,7 @@
   <div id="app">
     <nav id="app-rail" aria-label="App navigation">
       <div class="rail-stack">
-        <button class="rail-logo active" id="rail-notes-btn" data-sidebar-view="notes" type="button" title="Toggle Notes Sidebar" aria-label="Toggle Notes Sidebar" aria-pressed="true">
+        <button class="rail-logo active" id="rail-notes-btn" data-sidebar-view="notes" type="button" title="Toggle Sidebar" aria-label="Toggle Sidebar" aria-pressed="true">
           <img src="notas-icon.png" alt="" />
         </button>
         <button class="rail-btn rail-primary" id="rail-create-btn" type="button" title="Create" aria-label="Create">
@@ -66,7 +78,7 @@
 
     <aside id="sidebar">
       <div class="sidebar-header">
-        <button class="app-logo" id="sidebar-logo-btn" type="button" title="Home" aria-label="Home">
+        <button class="app-logo" id="sidebar-logo-btn" type="button" title="Toggle Sidebar" aria-label="Toggle Sidebar">
           <img class="brand-wordmark" src="notas.png" alt="Notas" />
         </button>
         <div class="app-history-controls" role="group" aria-label="Note Navigation">
@@ -254,9 +266,17 @@
         <div class="settings-row">
           <span class="settings-label"><i class="fa-solid fa-font"></i>Text Size</span>
           <div class="font-size-controls">
-            <button class="fs-btn" id="fs-dec"><i class="fa-solid fa-minus"></i></button>
+            <button class="fs-btn" id="fs-dec" type="button" title="Decrease Text Size" aria-label="Decrease Text Size"><i class="fa-solid fa-minus"></i></button>
             <span class="fs-val" id="fs-val">15</span>
-            <button class="fs-btn" id="fs-inc"><i class="fa-solid fa-plus"></i></button>
+            <button class="fs-btn" id="fs-inc" type="button" title="Increase Text Size" aria-label="Increase Text Size"><i class="fa-solid fa-plus"></i></button>
+          </div>
+        </div>
+        <div class="settings-row">
+          <span class="settings-label"><i class="fa-solid fa-align-left"></i>Line Spacing</span>
+          <div class="line-spacing-controls">
+            <button class="fs-btn" id="ls-dec" type="button" title="Decrease Line Spacing" aria-label="Decrease Line Spacing"><i class="fa-solid fa-minus"></i></button>
+            <span class="fs-val" id="ls-val">1.66</span>
+            <button class="fs-btn" id="ls-inc" type="button" title="Increase Line Spacing" aria-label="Increase Line Spacing"><i class="fa-solid fa-plus"></i></button>
           </div>
         </div>
         <div class="settings-row">
@@ -268,7 +288,7 @@
         </div>
         <div class="settings-row">
           <span class="settings-label"><i class="fa-solid fa-tag"></i>Version</span>
-          <span style="font-size:12px;color:var(--muted);">2</span>
+          <span style="font-size:12px;color:var(--muted);">1.2.2</span>
         </div>
         <div class="settings-row" id="signout-row" style="display:none;">
           <span class="settings-label"><i class="fa-solid fa-arrow-right-from-bracket"></i>Sign Out</span>

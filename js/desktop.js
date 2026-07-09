@@ -66,7 +66,10 @@
     const mode = ['light', 'dark', 'system'].includes(themeMode) ? themeMode : 'dark';
     const accent = typeof normalizeAccentColor === 'function' ? normalizeAccentColor(accentColor) : '#08c1ff';
     const fontSize = Math.max(12, Math.min(24, Math.trunc(Number(editorFontSize) || 15)));
-    return { mode, accent: accent.toLowerCase(), fontSize };
+    const lineHeight = typeof normalizeEditorLineHeight === 'function'
+      ? normalizeEditorLineHeight(editorLineHeight)
+      : Math.max(1.2, Math.min(2.2, Number(editorLineHeight) || 1.66));
+    return { mode, accent: accent.toLowerCase(), fontSize, lineHeight };
   }
 
   function scheduleDesktopThemeStateBroadcast() {
@@ -94,12 +97,16 @@
     const nextMode = ['light', 'dark', 'system'].includes(state.mode) ? state.mode : '';
     const nextAccent = typeof normalizeAccentColor === 'function' ? normalizeAccentColor(state.accent) : '';
     const nextFontSize = Math.max(12, Math.min(24, Math.trunc(Number(state.fontSize) || editorFontSize || 15)));
+    const nextLineHeight = typeof normalizeEditorLineHeight === 'function'
+      ? normalizeEditorLineHeight(state.lineHeight || editorLineHeight || 1.66)
+      : Math.max(1.2, Math.min(2.2, Number(state.lineHeight) || editorLineHeight || 1.66));
     if (!nextMode || !nextAccent) return;
 
     applyingRemoteThemeState = true;
     try {
       let themeChanged = false;
       let fontChanged = false;
+      let lineHeightChanged = false;
       if (themeMode !== nextMode) {
         themeMode = nextMode;
         localStorage.setItem('notas_theme', themeMode);
@@ -115,9 +122,15 @@
         localStorage.setItem('notas_font_size', String(editorFontSize));
         fontChanged = true;
       }
+      if (editorLineHeight !== nextLineHeight) {
+        editorLineHeight = nextLineHeight;
+        localStorage.setItem('notas_line_height', typeof formatEditorLineHeight === 'function' ? formatEditorLineHeight(editorLineHeight) : String(editorLineHeight));
+        lineHeightChanged = true;
+      }
       if (themeChanged && typeof applyTheme === 'function') applyTheme();
       else if (themeChanged && typeof applyAccentColor === 'function') applyAccentColor(accentColor);
       if (fontChanged && typeof applyFontSize === 'function') applyFontSize();
+      if (lineHeightChanged && typeof applyLineHeight === 'function') applyLineHeight();
       if (typeof updateColorPickerUI === 'function') updateColorPickerUI(accentColor);
       if (typeof updateThemeToggleUI === 'function') updateThemeToggleUI();
     } finally {

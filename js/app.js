@@ -142,12 +142,15 @@ function handleEscapeNavigation() {
 
 document.getElementById('drawer-btn').addEventListener('click',     toggleDrawer);
 document.getElementById('mob-logo-btn').addEventListener('click',   toggleDrawer);
-document.getElementById('sidebar-logo-btn').addEventListener('click', showSidebarHomeFromLogo);
+document.getElementById('sidebar-logo-btn').addEventListener('click', toggleSidebarFromLogo);
 document.getElementById('app-back-btn')?.addEventListener('click', () => navigateNoteHistory('back'));
 document.getElementById('app-forward-btn')?.addEventListener('click', () => navigateNoteHistory('forward'));
 document.getElementById('sidebar').addEventListener('click', () => { if (sidebarMinimized && !isMobile()) setSidebarMinimized(false); });
 document.querySelectorAll('[data-sidebar-view]').forEach(btn => {
-  btn.addEventListener('click', () => toggleSidebarView(btn.dataset.sidebarView));
+  btn.addEventListener('click', () => {
+    if (btn.id === 'rail-notes-btn') toggleSidebarFromLogo();
+    else toggleSidebarView(btn.dataset.sidebarView);
+  });
 });
 document.getElementById('rail-create-btn')?.addEventListener('click', () => openModal('note'));
 document.getElementById('shortcuts-btn')?.addEventListener('click', openShortcutsModal);
@@ -982,9 +985,9 @@ renderNotificationButton();
 renderAlarmButton();
 renderProfileConnectionUI();
 updateAppNavigationButtons();
-// Apply persisted sidebar collapsed state (desktop only)
-sidebarMinimized = localStorage.getItem('notas_sidebar_minimized') === '1';
-if (sidebarMinimized && !isMobile()) setSidebarMinimized(true);
+// Always start open; only a direct logo click can fold the desktop sidebar.
+localStorage.removeItem('notas_sidebar_minimized');
+sidebarMinimized = false;
 
 /* ── Sidebar Resize (desktop only) ───────────────────── */
 {
@@ -1029,13 +1032,7 @@ if (sidebarMinimized && !isMobile()) setSidebarMinimized(true);
   document.addEventListener('mousemove', e => {
     if (!dragging) return;
     const intendedW = startW + (e.clientX - startX);
-    if (intendedW < SIDEBAR_ICON_SAFE_WIDTH) {
-      localStorage.removeItem(STORAGE_KEY);
-      finishSidebarResize();
-      setSidebarMinimized(true);
-      return;
-    }
-    const w = Math.min(SIDEBAR_MAX, intendedW);
+    const w = Math.max(SIDEBAR_ICON_SAFE_WIDTH, Math.min(SIDEBAR_MAX, intendedW));
     sidebar.style.width    = w + 'px';
     sidebar.style.minWidth = w + 'px';
     updateSidebarWidthState(w);
