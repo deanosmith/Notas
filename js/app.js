@@ -134,6 +134,10 @@ function handleEscapeNavigation() {
   }
   const activeOverlay = document.activeElement?.closest?.('.modal-overlay');
   if (activeOverlay && !activeOverlay.classList.contains('open')) return true;
+  if (typeof isNoteFocusMode === 'function' && isNoteFocusMode()) {
+    setNoteFocusMode(false);
+    return true;
+  }
   if (typeof navigateAlternatingNoteHistory === 'function' && navigateAlternatingNoteHistory()) {
     return true;
   }
@@ -141,8 +145,11 @@ function handleEscapeNavigation() {
 }
 
 document.getElementById('drawer-btn').addEventListener('click',     toggleDrawer);
-document.getElementById('mob-logo-btn').addEventListener('click',   toggleDrawer);
-document.getElementById('sidebar-logo-btn').addEventListener('click', toggleSidebarFromLogo);
+document.getElementById('mob-logo-btn').addEventListener('click', () => setSidebarView('notes'));
+document.getElementById('sidebar-logo-btn').addEventListener('click', e => {
+  e?.stopPropagation?.();
+  setSidebarView('notes');
+});
 document.getElementById('app-back-btn')?.addEventListener('click', () => navigateNoteHistory('back'));
 document.getElementById('app-forward-btn')?.addEventListener('click', () => navigateNoteHistory('forward'));
 document.getElementById('sidebar').addEventListener('click', () => { if (sidebarMinimized && !isMobile()) setSidebarMinimized(false); });
@@ -156,6 +163,7 @@ document.getElementById('rail-create-btn')?.addEventListener('click', () => open
 document.getElementById('shortcuts-btn')?.addEventListener('click', openShortcutsModal);
 document.getElementById('shortcuts-close')?.addEventListener('click', closeShortcutsModal);
 document.getElementById('shortcuts-modal')?.addEventListener('click', e => { if (e.target === e.currentTarget) closeShortcutsModal(); });
+document.getElementById('note-focus-btn')?.addEventListener('click', toggleNoteFocusMode);
 document.getElementById('mob-new-btn').addEventListener('click',    openModal);
 document.getElementById('google-signin-btn').addEventListener('click', signInWithGoogle);
 document.getElementById('test-password-signin-form')?.addEventListener('submit', signInWithTestPassword);
@@ -811,6 +819,23 @@ editorEl.addEventListener('paste', e => {
   editorEl.dispatchEvent(new Event('input'));
 });
 
+async function pasteTextMatchingFormatting() {
+  if (!editorEl || !navigator.clipboard?.readText) return;
+  const selection = captureEditorSelection(editorEl);
+  let text = '';
+  try {
+    text = await navigator.clipboard.readText();
+  } catch (_) {
+    return;
+  }
+  if (!text) return;
+  restoreEditorSelection(editorEl, selection);
+  pushUndo();
+  document.execCommand('insertText', false, text);
+  editorEl.dispatchEvent(new Event('input'));
+  scheduleUndoSnapshot();
+}
+
 document.getElementById('toolbar').addEventListener('mousedown', e => {
   const btn = e.target.closest('[data-action]');
   if (!btn) return;
@@ -895,6 +920,11 @@ document.addEventListener('keydown', e => {
     activeEl.isContentEditable ||
     ['INPUT', 'TEXTAREA', 'SELECT'].includes(activeEl.tagName)
   );
+  if (key === 'f' && e.shiftKey) {
+    e.preventDefault();
+    toggleNoteFocusMode();
+    return;
+  }
   if (document.activeElement === editorEl) {
     if (key === 'z' && !e.shiftKey) {
       e.preventDefault();
@@ -938,7 +968,12 @@ document.addEventListener('keydown', e => {
       return;
     }
   }
-  if (key === 'p' && window.desktop?.isElectron && typeof window.openActiveDesktopNoteWindow === 'function') {
+  if (key === 'p' && e.shiftKey && document.activeElement === editorEl) {
+    e.preventDefault();
+    pasteTextMatchingFormatting();
+    return;
+  }
+  if (key === 'p' && !e.shiftKey && window.desktop?.isElectron && typeof window.openActiveDesktopNoteWindow === 'function') {
     e.preventDefault();
     window.openActiveDesktopNoteWindow();
     return;

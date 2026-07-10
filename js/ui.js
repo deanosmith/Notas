@@ -1229,8 +1229,8 @@ function updateMobileSidebarToggleLabel(open) {
     if (icon) icon.className = open ? 'fa-solid fa-xmark' : 'fa-solid fa-bars';
   }
   if (mobileLogoBtn) {
-    mobileLogoBtn.title = open ? 'Close Sidebar' : 'Open Sidebar';
-    mobileLogoBtn.setAttribute('aria-label', open ? 'Close Sidebar' : 'Open Sidebar');
+    mobileLogoBtn.title = 'Home';
+    mobileLogoBtn.setAttribute('aria-label', 'Home');
   }
 }
 
@@ -1252,6 +1252,39 @@ function closeDrawer() {
 
 function toggleDrawer() {
   document.getElementById('sidebar').classList.contains('open') ? closeDrawer() : openDrawer();
+}
+
+let noteFocusMode = false;
+
+function isNoteFocusMode() {
+  return noteFocusMode;
+}
+
+function updateNoteFocusButton() {
+  const button = document.getElementById('note-focus-btn');
+  if (!button) return;
+  const editorView = document.getElementById('editorView');
+  const canFocus = !!activeId && editorView?.style.display !== 'none';
+  const active = noteFocusMode && canFocus;
+  button.disabled = !canFocus;
+  button.classList.toggle('active', active);
+  button.title = active ? 'Exit Focus Mode' : 'Focus Note';
+  button.setAttribute('aria-label', button.title);
+  button.setAttribute('aria-pressed', active ? 'true' : 'false');
+  const icon = button.querySelector('i');
+  if (icon) icon.className = active ? 'fa-solid fa-compress' : 'fa-solid fa-expand';
+}
+
+function setNoteFocusMode(enabled) {
+  const editorView = document.getElementById('editorView');
+  const canFocus = !!activeId && editorView?.style.display !== 'none';
+  noteFocusMode = !!enabled && canFocus;
+  document.body.classList.toggle('note-focus-mode', noteFocusMode);
+  updateNoteFocusButton();
+}
+
+function toggleNoteFocusMode() {
+  setNoteFocusMode(!noteFocusMode);
 }
 
 function toggleSidebarFromLogo(e) {
@@ -1981,8 +2014,8 @@ function setSidebarMinimized(val) {
   sidebar.classList.toggle('logo-compact', false);
   const logoBtn = document.getElementById('sidebar-logo-btn');
   if (logoBtn) {
-    logoBtn.title = 'Toggle Sidebar';
-    logoBtn.setAttribute('aria-label', 'Toggle Sidebar');
+    logoBtn.title = 'Home';
+    logoBtn.setAttribute('aria-label', 'Home');
   }
   localStorage.removeItem('notas_sidebar_minimized');
   if (!val) {

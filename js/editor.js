@@ -1569,6 +1569,8 @@ function updateCounts() {
 function showEditorView(show) {
   document.getElementById('empty-state').style.display = show ? 'none' : 'flex';
   document.getElementById('editorView').style.display  = show ? 'flex' : 'none';
+  if (!show && typeof setNoteFocusMode === 'function') setNoteFocusMode(false);
+  if (typeof updateNoteFocusButton === 'function') updateNoteFocusButton();
   if (!show && typeof listenToConversationsForNote === 'function') listenToConversationsForNote(null);
 }
 
@@ -2745,6 +2747,10 @@ function tableScrollWrapForTable(table) {
 function updateTableScrollState(table) {
   const scrollWrap = tableScrollWrapForTable(table);
   if (!scrollWrap) return;
+  if (scrollWrap.classList.contains('is-resizing')) {
+    applyTableChromeWidth(table);
+    return;
+  }
   if (tableShouldFitAvailableWidth(table) && tablePixelStyleWidth(table) > tableAvailableWidth(table)) {
     table.style.width = '100%';
     table.style.minWidth = '';
@@ -3521,6 +3527,7 @@ function startTableColumnResize(e, handle) {
     return;
   }
   const table = handle?.closest('.note-table-scroll')?.querySelector('table');
+  const scrollWrap = tableScrollWrapForTable(table);
   const colIndex = Number(handle?.dataset?.tableResize);
   if (!table || !Number.isInteger(colIndex)) return;
   const colCount = tableColumnCount(table);
@@ -3542,6 +3549,7 @@ function startTableColumnResize(e, handle) {
   const maxDelta = rightStart - minWidth;
   let latestX = startX;
   let frame = 0;
+  scrollWrap?.classList.add('is-resizing');
   handle.classList.add('dragging');
   document.body.style.cursor = 'col-resize';
   document.body.style.userSelect = 'none';
@@ -3580,6 +3588,7 @@ function startTableColumnResize(e, handle) {
     try { handle.releasePointerCapture?.(e.pointerId); } catch (_) {}
     document.body.style.cursor = '';
     document.body.style.userSelect = '';
+    scrollWrap?.classList.remove('is-resizing');
     ensureTableShape(table);
     updateTableResizeHandles(table);
     getEd().dispatchEvent(new Event('input'));

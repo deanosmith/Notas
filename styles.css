@@ -567,6 +567,27 @@ body.desktop-note-window #main {
 body.desktop-note-window .editor-area {
   margin-top: 10px;
 }
+body.note-focus-mode #mob-header,
+body.note-focus-mode #app-rail,
+body.note-focus-mode #sidebar,
+body.note-focus-mode #sidebar-resize,
+body.note-focus-mode #drawer-overlay,
+body.note-focus-mode #conversation-sidebar,
+body.note-focus-mode #conversation-selection-popover,
+body.note-focus-mode .main-header {
+  display: none !important;
+}
+body.note-focus-mode #app,
+body.note-focus-mode #main {
+  width: 100%;
+}
+body.note-focus-mode .editor-area {
+  margin: 10px;
+  border-radius: var(--radius-sm);
+}
+body.note-focus-mode .status-bar {
+  display: none !important;
+}
 .sidebar-search { padding: 0 12px 12px; flex-shrink: 0; }
 .sidebar-search input { width: 100%; padding: 8px 12px 8px 30px; border-radius: var(--radius-sm); border: 1px solid var(--glass-border); background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02)); color: var(--text); font-size: 13px; font-family: var(--font); outline: none; transition: border-color .14s, box-shadow .14s, background .14s; -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='13' height='13' viewBox='0 0 24 24' fill='none' stroke='%238c8c95' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cline x1='21' y1='21' x2='16.65' y2='16.65'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: 9px center; }
 .sidebar-search input:focus { border-color: var(--accent-ink, var(--accent)); box-shadow: 0 0 0 3px rgba(var(--orb-r),var(--orb-g),var(--orb-b),.18); }
@@ -587,17 +608,17 @@ body.desktop-note-window .editor-area {
 .sidebar-page .profile-connect-row { align-items: stretch; flex-direction: column; }
 .sidebar-page .profile-connect-row .modal-btn { justify-content: center; }
 .sidebar-page .share-section-title { margin: 2px 0 4px; }
-.sidebar-page-actions { min-width: 0; max-width: 100%; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 92px), 1fr)); gap: 8px; align-items: stretch; }
+.sidebar-page-actions { width: 100%; min-width: 0; max-width: 100%; box-sizing: border-box; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; align-items: stretch; padding: 6px; border: 1px solid var(--glass-border); border-radius: var(--radius-sm); background: var(--surface); overflow: hidden; }
 .sidebar-page-action { width: 100%; min-width: 0; min-height: 46px; border: 1px solid var(--glass-border); border-radius: var(--radius-sm); background: linear-gradient(180deg, rgba(255,255,255,.055), rgba(255,255,255,.018)); color: var(--text2); font: 650 13px var(--font); cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 9px; padding: 11px 10px; text-align: center; overflow: hidden; transition: color .12s, border-color .12s, background .12s, transform .12s; }
 .sidebar-page-action i { width: 18px; color: var(--accent-ink, var(--accent)); text-align: center; font-size: 15px; }
-.sidebar-page-action span { min-width: 0; overflow: hidden; text-overflow: ellipsis; line-height: 1.15; }
-.sidebar-page-action:hover { color: var(--text); border-color: rgba(var(--orb-r),var(--orb-g),var(--orb-b),.34); background: linear-gradient(135deg, rgba(var(--orb-r),var(--orb-g),var(--orb-b),.14), rgba(255,255,255,.025)); transform: translateX(2px); }
+.sidebar-page-action span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1.15; }
+.sidebar-page-action:hover { color: var(--text); border-color: rgba(var(--orb-r),var(--orb-g),var(--orb-b),.34); background: linear-gradient(135deg, rgba(var(--orb-r),var(--orb-g),var(--orb-b),.14), rgba(255,255,255,.025)); transform: translateY(-1px); }
 .sidebar-page-action.primary { color: var(--accent-text); border-color: rgba(255,255,255,.18); background: linear-gradient(135deg, var(--accent-h), var(--accent)); }
 .sidebar-page-action.primary i { color: var(--accent-text); }
-.sidebar-page-action.compact { min-height: 36px; justify-content: center; gap: 7px; padding: 8px; font-size: 12px; }
+.sidebar-page-action.compact { min-height: 34px; justify-content: center; gap: 5px; padding: 7px 6px; font-size: 11.5px; }
 .sidebar-page-action.compact i { width: auto; font-size: 12px; }
-.sidebar-page-actions.with-selection-toggle { grid-template-columns: repeat(auto-fit, minmax(72px, 1fr)); }
-.sidebar-page-action.icon-only { width: 100%; min-width: 0; padding: 0; }
+.sidebar-page-actions.with-selection-toggle { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.sidebar-page-action.icon-only { grid-column: 1 / -1; justify-self: center; width: min(84px, 100%); min-width: 0; min-height: 32px; padding: 0; }
 .modal-btn.compact.sidebar-selection-toggle { width: 38px; min-width: 38px; padding: 0; }
 .sidebar-page-action.sidebar-selection-toggle[aria-pressed="true"],
 .modal-btn.sidebar-selection-toggle[aria-pressed="true"] {
@@ -1283,6 +1304,7 @@ body.light-mode .editor .note-image { background: rgba(0,0,0,.035); box-shadow: 
 .editor .note-table-wrap { position: relative; margin: 0 0 30px; max-width: 100%; overflow: visible; }
 .editor .note-table-scroll { position: relative; max-width: 100%; overflow-x: hidden; overflow-y: hidden; border: 1px solid var(--border); border-radius: var(--radius-sm); background: rgba(255,255,255,.025); }
 .editor .note-table-scroll.is-scrollable { overflow-x: auto; }
+.editor .note-table-scroll.is-resizing { overflow-x: auto; }
 .editor .table-controls { cursor: default; -webkit-user-select: none; user-select: none; }
 .editor .table-title-input { width: 100%; min-width: 0; height: 36px; border: 0; border-radius: var(--radius-xs) var(--radius-xs) 0 0; background: transparent; color: var(--text); padding: 0 38px 0 10px; outline: none; text-align: center; font-family: var(--font); font-size: inherit; font-weight: 750; }
 .editor .table-title-input:focus { box-shadow: inset 0 0 0 2px rgba(var(--orb-r),var(--orb-g),var(--orb-b),.24); background: transparent; }
@@ -1376,6 +1398,35 @@ body.light-mode .editor .table-reorder-handle.dragging { color: var(--accent-tex
 /* Status Bar */
 .status-bar { height: 38px; padding: 0 24px; display: flex; align-items: center; justify-content: space-between; color: var(--muted); font-size: 11px; flex-shrink: 0; }
 .status-left, .status-right { display: flex; align-items: center; gap: 12px; }
+.note-focus-btn {
+  width: 28px;
+  height: 26px;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-xs);
+  background: var(--surface2);
+  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  cursor: pointer;
+  transition: color .12s, border-color .12s, background .12s, transform .12s;
+}
+.note-focus-btn:hover:not(:disabled),
+.note-focus-btn.active {
+  color: var(--accent-ink, var(--accent));
+  border-color: rgba(var(--orb-r),var(--orb-g),var(--orb-b),.34);
+  background: var(--surface3);
+  transform: translateY(-1px);
+}
+.note-focus-btn:disabled { cursor: default; }
+.note-focus-btn i { font-size: 11px; line-height: 1; }
+.editor-focus-btn {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 5;
+}
 .save-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); transition: background .3s; flex-shrink: 0; }
 .save-dot.saved   { background: var(--success); }
 .save-dot.unsaved { background: var(--warn); }
@@ -2207,8 +2258,8 @@ body.light-mode .conversation-panel-header { background: rgba(255,255,255,.28); 
   --conversation-panel-card-hover-bg: color-mix(in srgb, var(--surface2) 88%, var(--accent) 12%);
   --conversation-panel-card-strong-bg: color-mix(in srgb, var(--surface2) 78%, var(--accent) 22%);
   --conversation-panel-field-bg: color-mix(in srgb, var(--surface2) 80%, transparent);
-  --conversation-panel-control-bg: color-mix(in srgb, var(--surface2) 76%, transparent);
-  --conversation-panel-control-hover-bg: color-mix(in srgb, var(--surface2) 68%, var(--accent) 14%);
+  --conversation-panel-control-bg: var(--surface2);
+  --conversation-panel-control-hover-bg: var(--surface3);
   --conversation-panel-border: color-mix(in srgb, var(--border) 62%, var(--accent) 14%);
   --conversation-panel-card-border: color-mix(in srgb, var(--border) 56%, transparent);
   --conversation-panel-card-hover-border: color-mix(in srgb, var(--border) 58%, var(--accent) 24%);
@@ -2669,8 +2720,8 @@ body.light-mode .conversation-panel-header { background: rgba(255,255,255,.28); 
   --conversation-panel-bg: color-mix(in srgb, var(--surface) 88%, var(--bg) 12%);
   --conversation-panel-card-border: color-mix(in srgb, var(--border) 56%, transparent);
   --conversation-panel-card-hover-border: color-mix(in srgb, var(--border) 58%, var(--accent) 24%);
-  --conversation-panel-control-bg: color-mix(in srgb, var(--surface2) 76%, transparent);
-  --conversation-panel-control-hover-bg: color-mix(in srgb, var(--surface2) 68%, var(--accent) 14%);
+  --conversation-panel-control-bg: var(--surface2);
+  --conversation-panel-control-hover-bg: var(--surface3);
   --conversation-panel-shadow: var(--shadow-lg);
   border-color: transparent;
   background: transparent;
@@ -2688,8 +2739,8 @@ body.light-mode .conversation-selection-popover {
   --conversation-panel-card-hover-bg: color-mix(in srgb, var(--surface) 86%, var(--accent) 14%);
   --conversation-panel-card-strong-bg: color-mix(in srgb, var(--surface) 80%, var(--accent) 20%);
   --conversation-panel-field-bg: color-mix(in srgb, var(--bg) 78%, var(--surface2) 22%);
-  --conversation-panel-control-bg: color-mix(in srgb, var(--bg) 70%, var(--surface2) 30%);
-  --conversation-panel-control-hover-bg: color-mix(in srgb, var(--bg) 82%, var(--accent) 10%);
+  --conversation-panel-control-bg: var(--surface2);
+  --conversation-panel-control-hover-bg: var(--surface3);
   --conversation-panel-card-border: color-mix(in srgb, var(--border) 56%, transparent);
   --conversation-panel-card-hover-border: color-mix(in srgb, var(--border) 54%, var(--accent) 24%);
   --conversation-panel-icon-bg: rgba(var(--orb-r), var(--orb-g), var(--orb-b), .11);

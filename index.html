@@ -27,7 +27,7 @@
 
   <header id="mob-header">
     <button class="mob-btn" id="drawer-btn"><i class="fa-solid fa-bars"></i></button>
-    <button class="mob-logo" id="mob-logo-btn" type="button" title="Open Sidebar" aria-label="Open Sidebar">
+    <button class="mob-logo" id="mob-logo-btn" type="button" title="Home" aria-label="Home">
       <img class="brand-icon" src="notas-icon.png" alt="" />
       <img class="brand-wordmark" src="notas.png" alt="Notas" />
     </button>
@@ -78,7 +78,7 @@
 
     <aside id="sidebar">
       <div class="sidebar-header">
-        <button class="app-logo" id="sidebar-logo-btn" type="button" title="Toggle Sidebar" aria-label="Toggle Sidebar">
+        <button class="app-logo" id="sidebar-logo-btn" type="button" title="Home" aria-label="Home">
           <img class="brand-wordmark" src="notas.png" alt="Notas" />
         </button>
         <div class="app-history-controls" role="group" aria-label="Note Navigation">
@@ -150,6 +150,9 @@
         </div>
 
         <div class="editor-area">
+          <button class="note-focus-btn editor-focus-btn" id="note-focus-btn" type="button" title="Focus Note" aria-label="Focus Note" disabled>
+            <i class="fa-solid fa-expand"></i>
+          </button>
           <div id="editor"
                class="editor is-empty"
                contenteditable="true"
@@ -222,6 +225,7 @@
         <section class="shortcut-section" aria-labelledby="shortcuts-general-title">
           <div class="shortcut-section-title" id="shortcuts-general-title">macOS</div>
           <div class="shortcut-row"><span class="shortcut-label">Toggle Pop Out Note</span><span class="shortcut-keys"><kbd>Command + P</kbd></span></div>
+          <div class="shortcut-row"><span class="shortcut-label">Focus Note</span><span class="shortcut-keys"><kbd>Command + Shift + F</kbd></span></div>
           <div class="shortcut-row"><span class="shortcut-label">Close Pop-Ups Or Toggle Notes</span><span class="shortcut-keys"><kbd>Escape</kbd></span></div>
           <div class="shortcut-row"><span class="shortcut-label">Always On Top</span><span class="shortcut-keys"><kbd>Command + Shift + T</kbd></span></div>
         </section>
@@ -231,6 +235,7 @@
           <div class="shortcut-row"><span class="shortcut-label">Italic</span><span class="shortcut-keys"><kbd>Command + I</kbd></span></div>
           <div class="shortcut-row"><span class="shortcut-label">Inline Code</span><span class="shortcut-keys"><kbd>Command + E</kbd></span></div>
           <div class="shortcut-row"><span class="shortcut-label">Strikethrough</span><span class="shortcut-keys"><kbd>Command + Shift + S</kbd></span></div>
+          <div class="shortcut-row"><span class="shortcut-label">Paste Matching Formatting</span><span class="shortcut-keys"><kbd>Command + Shift + P</kbd></span></div>
           <div class="shortcut-row"><span class="shortcut-label">Indent Or Next Table Cell</span><span class="shortcut-keys"><kbd>Tab</kbd></span></div>
           <div class="shortcut-row"><span class="shortcut-label">Outdent Or Previous Table Cell</span><span class="shortcut-keys"><kbd>Shift + Tab</kbd></span></div>
         </section>

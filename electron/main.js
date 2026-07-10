@@ -229,6 +229,38 @@ function secureWebPreferences(includePreload = true) {
 }
 
 function configureWindowSecurity(win) {
+  win.webContents.on('context-menu', (_event, params) => {
+    const template = [];
+    const hasSelection = !!String(params.selectionText || '').trim();
+    const isEditable = !!params.isEditable;
+
+    if (isEditable) {
+      template.push(
+        { label: 'Undo', role: 'undo' },
+        { label: 'Redo', role: 'redo' },
+        { type: 'separator' },
+        { label: 'Cut', role: 'cut' },
+        { label: 'Copy', role: 'copy', enabled: hasSelection },
+        { label: 'Paste', role: 'paste' },
+        { label: 'Select All', role: 'selectAll' }
+      );
+    } else {
+      template.push(
+        { label: 'Copy', role: 'copy', enabled: hasSelection },
+        { label: 'Select All', role: 'selectAll' }
+      );
+    }
+
+    if (app.isPackaged === false) {
+      template.push(
+        { type: 'separator' },
+        { label: 'Inspect Element', click: () => win.webContents.inspectElement(params.x, params.y) }
+      );
+    }
+
+    Menu.buildFromTemplate(template).popup({ window: win });
+  });
+
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (isLikelyAuthPopupUrl(url)) {
       return {
@@ -380,8 +412,6 @@ function createNoteBrowserWindow(behavior = {}) {
   const noteWindow = createWindow({
     width: 760,
     height: 760,
-    minWidth: 540,
-    minHeight: 520,
     title: 'Notas Note',
     alwaysOnTop: true
   }, behavior);
