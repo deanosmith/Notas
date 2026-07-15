@@ -147,8 +147,7 @@ function handleEscapeNavigation() {
 document.getElementById('drawer-btn').addEventListener('click',     toggleDrawer);
 document.getElementById('mob-logo-btn').addEventListener('click', () => setSidebarView('notes'));
 document.getElementById('sidebar-logo-btn').addEventListener('click', e => {
-  e?.stopPropagation?.();
-  setSidebarView('notes');
+  toggleSidebarFromLogo(e);
 });
 document.getElementById('app-back-btn')?.addEventListener('click', () => navigateNoteHistory('back'));
 document.getElementById('app-forward-btn')?.addEventListener('click', () => navigateNoteHistory('forward'));

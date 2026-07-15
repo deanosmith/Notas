@@ -1,5 +1,4 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.13.0/firebase-app.js';
-import { getAnalytics } from 'https://www.gstatic.com/firebasejs/12.13.0/firebase-analytics.js';
 import {
   getAuth,
   GoogleAuthProvider,
@@ -29,13 +28,16 @@ export const firebaseConfig = {
 };
 
 export const fbApp = initializeApp(firebaseConfig);
-getAnalytics(fbApp);
+if (!window.desktop?.isElectron) {
+  import('https://www.gstatic.com/firebasejs/12.13.0/firebase-analytics.js')
+    .then(({ getAnalytics }) => getAnalytics(fbApp))
+    .catch(err => console.warn('Firebase Analytics:', err));
+}
 export const auth = getAuth(fbApp);
 export const fsDb = getFirestore(fbApp);
 
 export {
   initializeApp,
-  getAnalytics,
   getAuth,
   GoogleAuthProvider,
   signInWithPopup,

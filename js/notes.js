@@ -29,17 +29,20 @@ function openFirstAvailableNote() {
   else showEditorView(false);
 }
 
-function openInitialNoteOrFirst() {
-  const targetId = initialNoteRestoreId && notes[initialNoteRestoreId] && !isTrashedNote(notes[initialNoteRestoreId])
-    ? initialNoteRestoreId
-    : '';
+function openRememberedNoteWhenAvailable() {
+  const targetId = initialNoteRestoreId;
+  const note = targetId ? notes[targetId] : null;
+  if (!note || isTrashedNote(note)) return false;
   initialNoteRestorePending = false;
   initialNoteRestoreId = '';
+  if (activeId !== targetId) openNote(targetId);
+  return true;
+}
 
-  if (targetId) {
-    openNote(targetId);
-    return;
-  }
+function openInitialNoteOrFirst() {
+  if (openRememberedNoteWhenAvailable()) return;
+  initialNoteRestorePending = false;
+  initialNoteRestoreId = '';
 
   if (!activeId || !notes[activeId] || (isTrashedNote(notes[activeId]) && sidebarView !== 'trash')) {
     openFirstAvailableNote();

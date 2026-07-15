@@ -492,6 +492,15 @@ function updateRailActiveState() {
     btn.classList.toggle('active', active);
     btn.setAttribute('aria-pressed', active ? 'true' : 'false');
   });
+  const logoLabel = sidebarVisible && sidebarView === 'notes'
+    ? (isMobile() ? 'Close Sidebar' : 'Fold Sidebar')
+    : 'Home';
+  ['rail-notes-btn', 'sidebar-logo-btn'].forEach(id => {
+    const logo = document.getElementById(id);
+    if (!logo) return;
+    logo.title = logoLabel;
+    logo.setAttribute('aria-label', logoLabel);
+  });
 }
 
 const APP_NAV_STACK_LIMIT = 80;
@@ -1290,11 +1299,15 @@ function toggleNoteFocusMode() {
 function toggleSidebarFromLogo(e) {
   e?.stopPropagation?.();
   if (isMobile()) {
-    toggleDrawer();
+    if (sidebarView !== 'notes') setSidebarView('notes');
+    else toggleDrawer();
     return;
   }
-  if (isSidebarPanelVisible()) setSidebarMinimized(true);
-  else setSidebarView('notes');
+  if (!isSidebarPanelVisible() || sidebarView !== 'notes') {
+    setSidebarView('notes');
+    return;
+  }
+  setSidebarMinimized(true);
 }
 
 /* Modal */
@@ -2012,11 +2025,6 @@ function setSidebarMinimized(val) {
   const sidebar = document.getElementById('sidebar');
   sidebar.classList.toggle('minimized', val);
   sidebar.classList.toggle('logo-compact', false);
-  const logoBtn = document.getElementById('sidebar-logo-btn');
-  if (logoBtn) {
-    logoBtn.title = 'Home';
-    logoBtn.setAttribute('aria-label', 'Home');
-  }
   localStorage.removeItem('notas_sidebar_minimized');
   if (!val) {
     // Restore previously-saved resize width

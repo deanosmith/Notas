@@ -9,12 +9,17 @@
     isAlwaysOnTop: false
   };
   let popoutButton = null;
-  let alwaysOnTopButton = null;
   let requestedNoteOpened = false;
   let lastDockNotificationCount = -1;
   let dockNotificationFrame = 0;
   let noteStateFrame = 0;
   let themeStateFrame = 0;
+  let menuBarCatalogFrame = 0;
+  let menuBarSettings = { mode: 'new', noteId: '', noteTitle: '' };
+  let pendingMenuBarAction = null;
+  let processingMenuBarAction = false;
+  let menuBarNotesReady = false;
+  let hasVisibleNoteWindow = desktopContext.type === 'note';
   let applyingRemoteNoteState = false;
   let applyingRemoteThemeState = false;
 
@@ -33,16 +38,15 @@
     return Array.isArray(value) ? value.slice() : [];
   }
 
-  function activeNoteSnapshot() {
-    const note = activeNote();
+  function desktopNoteSnapshot(note, includeContent = true) {
     if (!note) return null;
     const canEdit = typeof canEditNote === 'function' ? canEditNote(note) : true;
     const directAccess = typeof directAccessForNote === 'function' ? directAccessForNote(note.id) : null;
     return {
       id: note.id,
       title: note.title || 'Untitled Note',
-      content: typeof note.content === 'string' ? note.content : '',
-      bodyLoaded: !!note._bodyLoaded,
+      content: includeContent && typeof note.content === 'string' ? note.content : '',
+      bodyLoaded: includeContent && !!note._bodyLoaded,
       owner: note.owner || '',
       folderId: note.folderId || null,
       public: !!note.public,
@@ -60,6 +64,10 @@
       created: note.created || new Date().toISOString(),
       modified: note.modified || new Date().toISOString()
     };
+  }
+
+  function activeNoteSnapshot() {
+    return desktopNoteSnapshot(activeNote());
   }
 
   function currentDesktopThemeState() {
@@ -84,6 +92,7 @@
 
   function scheduleDesktopNoteStateBroadcast() {
     if (applyingRemoteNoteState || noteStateFrame || !window.desktop?.updateNoteState) return;
+    if (desktopContext.type === 'main' && !hasVisibleNoteWindow) return;
     noteStateFrame = requestAnimationFrame(() => {
       noteStateFrame = 0;
       if (applyingRemoteNoteState) return;
@@ -170,6 +179,127 @@
 
   window.refreshDesktopNotificationBadge = scheduleDockNotificationBadgeSync;
 
+  function availableMenuBarNotes() {
+    return Object.values(notes || {})
+      .filter(note => note?.id && !(typeof isTrashedNote === 'function' && isTrashedNote(note)))
+      .sort((a, b) =>
+        String(a.title || 'Untitled Note').localeCompare(String(b.title || 'Untitled Note'), undefined, { sensitivity: 'base' }) ||
+        String(a.id).localeCompare(String(b.id))
+      );
+  }
+
+  function applyMenuBarSettings(settings) {
+    const noteId = String(settings?.noteId || '').trim();
+    menuBarSettings = {
+      mode: settings?.mode === 'note' && noteId ? 'note' : 'new',
+      noteId,
+      noteTitle: String(settings?.noteTitle || '').trim() || 'Untitled Note'
+    };
+    refreshMenuBarSettingsControls();
+  }
+
+  function refreshMenuBarSettingsControls() {
+    if (desktopContext.type !== 'main') return;
+    const actionSelect = document.getElementById('menubar-action-select');
+    const noteSelect = document.getElementById('menubar-note-select');
+    if (!actionSelect || !noteSelect) return;
+
+    actionSelect.value = menuBarSettings.mode;
+    noteSelect.textContent = '';
+    const availableNotes = availableMenuBarNotes();
+    availableNotes.forEach(note => {
+      const option = document.createElement('option');
+      option.value = note.id;
+      option.textContent = note.title || 'Untitled Note';
+      noteSelect.appendChild(option);
+    });
+    if (menuBarSettings.noteId && !availableNotes.some(note => note.id === menuBarSettings.noteId)) {
+      const option = document.createElement('option');
+      option.value = menuBarSettings.noteId;
+      option.textContent = menuBarSettings.noteTitle;
+      noteSelect.prepend(option);
+    }
+    if (!noteSelect.options.length) {
+      const option = document.createElement('option');
+      option.value = '';
+      option.textContent = 'No Notes Available';
+      noteSelect.appendChild(option);
+    }
+    noteSelect.value = menuBarSettings.noteId || noteSelect.options[0].value;
+    noteSelect.hidden = menuBarSettings.mode !== 'note';
+  }
+
+  function scheduleMenuBarNoteSync() {
+    if (desktopContext.type !== 'main' || menuBarCatalogFrame || !window.desktop?.updateMenuBarNotes) return;
+    menuBarCatalogFrame = requestAnimationFrame(() => {
+      menuBarCatalogFrame = 0;
+      window.desktop.updateMenuBarNotes(availableMenuBarNotes().map(note => desktopNoteSnapshot(note, false)));
+      refreshMenuBarSettingsControls();
+    });
+  }
+
+  async function persistMenuBarSettings(settings) {
+    const saved = await window.desktop.setMenuBarSettings?.(settings);
+    if (saved) applyMenuBarSettings(saved);
+  }
+
+  function initMenuBarSettingsControls() {
+    if (desktopContext.type !== 'main') return;
+    const actionSelect = document.getElementById('menubar-action-select');
+    const noteSelect = document.getElementById('menubar-note-select');
+    actionSelect?.addEventListener('change', () => {
+      if (actionSelect.value === 'new') {
+        persistMenuBarSettings({ mode: 'new' });
+        return;
+      }
+      const selected = availableMenuBarNotes().find(note => note.id === noteSelect?.value) || activeNote() || availableMenuBarNotes()[0];
+      persistMenuBarSettings(selected
+        ? { mode: 'note', noteId: selected.id, noteTitle: selected.title || 'Untitled Note' }
+        : { mode: 'new' });
+    });
+    noteSelect?.addEventListener('change', () => {
+      const selected = availableMenuBarNotes().find(note => note.id === noteSelect.value);
+      if (selected) persistMenuBarSettings({ mode: 'note', noteId: selected.id, noteTitle: selected.title || 'Untitled Note' });
+    });
+    window.desktop.getMenuBarSettings?.()
+      .then(applyMenuBarSettings)
+      .catch(err => console.error('menu bar settings:', err));
+  }
+
+  function queueMenuBarAction(action) {
+    if (desktopContext.type !== 'main') return;
+    pendingMenuBarAction = action;
+    processMenuBarAction();
+  }
+
+  async function processMenuBarAction() {
+    if (processingMenuBarAction || !pendingMenuBarAction || !menuBarNotesReady || !auth?.currentUser) return;
+    const action = pendingMenuBarAction;
+    const selectedNote = action.type === 'note' ? notes[action.noteId] : null;
+    if (action.type === 'note' && (!selectedNote || (typeof isTrashedNote === 'function' && isTrashedNote(selectedNote)))) {
+      pendingMenuBarAction = null;
+      if (typeof showToast === 'function') showToast('Selected Menu Bar Note Is Unavailable', 'error');
+      return;
+    }
+    pendingMenuBarAction = null;
+    processingMenuBarAction = true;
+    try {
+      if (action.type === 'new') {
+        await createNote('Untitled Note', null);
+        await openActiveNoteWindow();
+      } else {
+        await openNoteWindowForNote(selectedNote);
+      }
+      scheduleMenuBarNoteSync();
+    } catch (err) {
+      console.error('menu bar note:', err);
+      if (typeof showToast === 'function') showToast('Could Not Open Note Window', 'error');
+    } finally {
+      processingMenuBarAction = false;
+      if (pendingMenuBarAction) processMenuBarAction();
+    }
+  }
+
   function requestNoteWindowPrewarm() {
     if (desktopContext.type !== 'main') return;
     window.desktop.prewarmNoteWindow?.();
@@ -202,12 +332,6 @@
       actions.appendChild(popoutButton);
     }
 
-    if (!alwaysOnTopButton) {
-      alwaysOnTopButton = createDesktopButton('desktop-always-on-top-btn', 'Always On Top', 'fa-solid fa-thumbtack');
-      alwaysOnTopButton.setAttribute('aria-pressed', 'false');
-      alwaysOnTopButton.addEventListener('click', toggleAlwaysOnTop);
-      actions.appendChild(alwaysOnTopButton);
-    }
   }
 
   function refreshWindowTitle() {
@@ -225,15 +349,20 @@
       popoutButton.disabled = !hasNote;
     }
 
-    if (alwaysOnTopButton) {
-      alwaysOnTopButton.hidden = desktopContext.type !== 'note';
-      alwaysOnTopButton.classList.toggle('active', !!desktopContext.isAlwaysOnTop);
-      alwaysOnTopButton.setAttribute('aria-pressed', desktopContext.isAlwaysOnTop ? 'true' : 'false');
-      alwaysOnTopButton.title = desktopContext.isAlwaysOnTop ? 'Turn Off Always On Top' : 'Always On Top';
-      alwaysOnTopButton.setAttribute('aria-label', alwaysOnTopButton.title);
+    refreshWindowTitle();
+  }
+
+  async function openNoteWindowForNote(note) {
+    const snapshot = desktopNoteSnapshot(note);
+    if (!snapshot) {
+      if (typeof showToast === 'function') showToast('Select A Note First', 'error');
+      return;
     }
 
-    refreshWindowTitle();
+    const result = await window.desktop.openNoteWindow(snapshot.id, snapshot);
+    if (!result?.ok && typeof showToast === 'function') {
+      showToast('Could Not Open Note Window', 'error');
+    }
   }
 
   async function openActiveNoteWindow() {
@@ -243,19 +372,7 @@
     }
 
     if (typeof syncActiveNoteFromEditor === 'function') syncActiveNoteFromEditor();
-    const result = await window.desktop.openNoteWindow(activeId, activeNoteSnapshot());
-    if (!result?.ok && typeof showToast === 'function') {
-      showToast('Could Not Open Note Window', 'error');
-    }
-  }
-
-  async function toggleAlwaysOnTop() {
-    if (desktopContext.type !== 'note') return;
-    const result = await window.desktop.setAlwaysOnTop(!desktopContext.isAlwaysOnTop);
-    if (result?.ok) {
-      desktopContext.isAlwaysOnTop = !!result.enabled;
-      refreshDesktopControls();
-    }
+    await openNoteWindowForNote(activeNote());
   }
 
   function normalizeInitialNoteSnapshot(snapshot) {
@@ -413,6 +530,7 @@
       initialNote: context.initialNote || null,
       isAlwaysOnTop: !!context.isAlwaysOnTop
     };
+    hasVisibleNoteWindow = desktopContext.type === 'note' || !!context.hasVisibleNoteWindow;
     if (context.themeState) applyRemoteThemeState(context.themeState);
     if (previousNoteId !== nextNoteId) requestedNoteOpened = false;
     document.body.classList.toggle('desktop-note-window', desktopContext.type === 'note');
@@ -450,13 +568,18 @@
     window.desktop.onNewNote(() => {
       if (typeof openModal === 'function') openModal('note');
     });
+    window.desktop.onMenuBarSettingsChanged?.(applyMenuBarSettings);
+    window.desktop.onMenuBarOpenNewNote?.(() => queueMenuBarAction({ type: 'new' }));
+    window.desktop.onMenuBarOpenNote?.(payload => {
+      const noteId = String(payload?.noteId || '').trim();
+      if (noteId) queueMenuBarAction({ type: 'note', noteId });
+    });
     window.desktop.onWindowContextUpdated?.(applyDesktopContext);
+    window.desktop.onNoteWindowPresenceChanged?.(payload => {
+      hasVisibleNoteWindow = desktopContext.type === 'note' || !!payload?.hasVisibleNoteWindow;
+    });
     window.desktop.onNoteStateChanged?.(applyRemoteNoteState);
     window.desktop.onThemeStateChanged?.(applyRemoteThemeState);
-    window.desktop.onAlwaysOnTopChanged(enabled => {
-      desktopContext.isAlwaysOnTop = !!enabled;
-      refreshDesktopControls();
-    });
 
     document.getElementById('doc-title')?.addEventListener('input', () => {
       refreshWindowTitle();
@@ -469,12 +592,19 @@
     window.addEventListener('focus', () => {
       refreshDesktopControls();
       requestNoteWindowPrewarm();
+      scheduleMenuBarNoteSync();
     });
     window.addEventListener('notas:home-prepared', () => {
+      menuBarNotesReady = false;
       requestNoteWindowPrewarm();
       openRequestedDesktopNote();
     });
-    window.addEventListener('notas:notes-updated', () => openRequestedDesktopNote());
+    window.addEventListener('notas:notes-updated', () => {
+      menuBarNotesReady = true;
+      openRequestedDesktopNote();
+      scheduleMenuBarNoteSync();
+      processMenuBarAction();
+    });
     window.addEventListener('notas:notifications-updated', scheduleDockNotificationBadgeSync);
   }
 
@@ -485,8 +615,10 @@
   wrapOpenNote();
   wrapSyncActiveNoteFromEditor();
   bindDesktopEvents();
+  initMenuBarSettingsControls();
   refreshDesktopControls();
   if (desktopContext.type === 'main') scheduleDesktopThemeStateBroadcast();
   scheduleDockNotificationBadgeSync();
   openRequestedDesktopNote();
+  window.desktop.rendererReady?.();
 })();

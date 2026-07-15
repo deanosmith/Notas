@@ -39,7 +39,7 @@
   <div id="app">
     <nav id="app-rail" aria-label="App navigation">
       <div class="rail-stack">
-        <button class="rail-logo active" id="rail-notes-btn" data-sidebar-view="notes" type="button" title="Toggle Sidebar" aria-label="Toggle Sidebar" aria-pressed="true">
+        <button class="rail-logo active" id="rail-notes-btn" data-sidebar-view="notes" type="button" title="Home" aria-label="Home" aria-pressed="true">
           <img src="notas-icon.png" alt="" />
         </button>
         <button class="rail-btn rail-primary" id="rail-create-btn" type="button" title="Create" aria-label="Create">
@@ -291,9 +291,19 @@
             <span class="toggle-slider"></span>
           </label>
         </div>
+        <div class="settings-row desktop-setting-row">
+          <span class="settings-label"><i class="fa-solid fa-bars"></i>Menu Bar Click</span>
+          <div class="menubar-settings-controls">
+            <select class="settings-select" id="menubar-action-select" aria-label="Menu Bar Click">
+              <option value="new">New Note</option>
+              <option value="note">Specific Note</option>
+            </select>
+            <select class="settings-select" id="menubar-note-select" aria-label="Menu Bar Note" hidden></select>
+          </div>
+        </div>
         <div class="settings-row">
           <span class="settings-label"><i class="fa-solid fa-tag"></i>Version</span>
-          <span style="font-size:12px;color:var(--muted);">1.2.2</span>
+          <span style="font-size:12px;color:var(--muted);">1.4.8</span>
         </div>
         <div class="settings-row" id="signout-row" style="display:none;">
           <span class="settings-label"><i class="fa-solid fa-arrow-right-from-bracket"></i>Sign Out</span>

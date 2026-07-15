@@ -173,7 +173,8 @@ function listenToNotes() {
     window.dispatchEvent(new CustomEvent('notas:notes-updated'));
     if (typeof renderConversationsSidebar === 'function') renderConversationsSidebar();
     if ((conversationsOpen || sidebarView === 'conversations') && typeof scheduleConversationOverviewRefresh === 'function') scheduleConversationOverviewRefresh();
-    if (!activeId || !notes[activeId] || (isTrashedNote(notes[activeId]) && sidebarView !== 'trash')) {
+    const restoredRememberedNote = !activeId && typeof openRememberedNoteWhenAvailable === 'function' && openRememberedNoteWhenAvailable();
+    if (!restoredRememberedNote && (!activeId || !notes[activeId] || (isTrashedNote(notes[activeId]) && sidebarView !== 'trash'))) {
       if (typeof shouldDeferInitialNoteFallback === 'function' && shouldDeferInitialNoteFallback()) {
         showEditorView(false);
       } else {

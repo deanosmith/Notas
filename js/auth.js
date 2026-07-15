@@ -311,6 +311,7 @@ onAuthStateChanged(auth, async user => {
     if (typeof resetAppNavigationState === 'function') resetAppNavigationState();
     showEditorView(false);
     renderSidebar();
+    window.dispatchEvent(new CustomEvent('notas:notes-updated'));
     renderNotificationButton();
     renderAlarmButton();
     renderProfileConnectionUI();

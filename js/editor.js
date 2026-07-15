@@ -1892,18 +1892,25 @@ function saveCollapsedState(noteId) {
   if (!noteId) return;
   const headings = [...getEd().querySelectorAll('h1,h2,h3,h4')];
   const indices = headings.reduce((acc, h, i) => { if (h.hasAttribute('data-collapsed')) acc.push(i); return acc; }, []);
-  if (indices.length) localStorage.setItem('notas_col_' + noteId, JSON.stringify(indices));
-  else localStorage.removeItem('notas_col_' + noteId);
+  localStorage.setItem('notas_col_' + noteId, JSON.stringify(indices));
 }
 
 function restoreCollapsedState(noteId) {
   const raw = noteId ? localStorage.getItem('notas_col_' + noteId) : null;
+  const headings = [...getEd().querySelectorAll('h1,h2,h3,h4')];
+  let restored = false;
+  headings.forEach(heading => heading.removeAttribute('data-collapsed'));
   if (raw) {
     try {
       const indices = JSON.parse(raw);
-      const headings = [...getEd().querySelectorAll('h1,h2,h3,h4')];
-      indices.forEach(i => { if (headings[i]) headings[i].setAttribute('data-collapsed', ''); });
+      if (Array.isArray(indices)) {
+        indices.forEach(i => { if (headings[i]) headings[i].setAttribute('data-collapsed', ''); });
+        restored = true;
+      }
     } catch (_) {}
+  }
+  if (!restored) {
+    headings.forEach(heading => heading.setAttribute('data-collapsed', ''));
   }
   recomputeCollapsedSections();
 }
@@ -2200,6 +2207,32 @@ function cleanupInlineCodePlaceholders(root = getEd()) {
   root.querySelectorAll?.('code[data-inline-code-typing]').forEach(code => {
     code.removeAttribute('data-inline-code-typing');
   });
+  cleanupInlineCodeExitMarkers(root);
+}
+
+function cleanupInlineCodeExitMarkers(root = getEd()) {
+  const sel = window.getSelection();
+  root.querySelectorAll?.('[data-inline-code-exit]').forEach(marker => {
+    const parent = marker.parentNode;
+    if (!parent) return;
+    const text = marker.textContent.replace(/\u200b/g, '');
+    const containsSelection = sel?.rangeCount && marker.contains(sel.anchorNode);
+    const offset = containsSelection ? sel.anchorOffset : 0;
+    if (!text) {
+      marker.remove();
+      return;
+    }
+    const textNode = document.createTextNode(text);
+    parent.insertBefore(textNode, marker);
+    marker.remove();
+    if (containsSelection) {
+      const range = document.createRange();
+      range.setStart(textNode, Math.max(0, Math.min(text.length, offset - 1)));
+      range.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+  });
 }
 
 function stripZeroWidthText(root = getEd()) {
@@ -2222,6 +2255,7 @@ function textNodeIsInInlineCode(node) {
 
 function cleanupLiveInlineCodeBoundaries(root = getEd(), inputEvent = null) {
   if (!root || !inputEvent?.inputType) return;
+  cleanupInlineCodeExitMarkers(root);
   const sel = window.getSelection();
   const anchor = sel?.rangeCount && sel.isCollapsed && root.contains(sel.anchorNode) ? sel.anchorNode : null;
   let restoredSelection = false;
@@ -2254,18 +2288,14 @@ function cleanupLiveInlineCodeBoundaries(root = getEd(), inputEvent = null) {
   if (restoredSelection) root.focus();
 }
 
-function placeCaretAfterInlineCode(code) {
-  const parent = code?.parentNode;
-  if (!parent) return;
-  let marker = code.nextSibling;
-  if (marker?.nodeType === Node.TEXT_NODE) {
-    if (!marker.textContent.startsWith('\u200b')) marker.textContent = '\u200b' + marker.textContent;
-  } else {
-    marker = document.createTextNode('\u200b');
-    parent.insertBefore(marker, code.nextSibling);
-  }
+function placeCaretAtInlineCodeExit(parent, before) {
+  const marker = document.createElement('span');
+  marker.dataset.inlineCodeExit = '1';
+  const text = document.createTextNode('\u200b');
+  marker.appendChild(text);
+  parent.insertBefore(marker, before);
   const range = document.createRange();
-  range.setStart(marker, 1);
+  range.setStart(text, text.length);
   range.collapse(true);
   const sel = window.getSelection();
   sel.removeAllRanges();
@@ -2273,21 +2303,19 @@ function placeCaretAfterInlineCode(code) {
   getEd().focus();
 }
 
+function placeCaretAfterInlineCode(code) {
+  const parent = code?.parentNode;
+  if (!parent) return;
+  placeCaretAtInlineCodeExit(parent, code.nextSibling);
+}
+
 function exitInlineCode(code) {
   if (!code) return;
   stripInlineCodePlaceholder(code);
   const parent = code.parentNode;
   if (!code.textContent && !code.querySelector('img, br')) {
-    const marker = document.createTextNode('\u200b');
-    parent.insertBefore(marker, code);
+    placeCaretAtInlineCodeExit(parent, code);
     code.remove();
-    const range = document.createRange();
-    range.setStart(marker, 1);
-    range.collapse(true);
-    const sel = window.getSelection();
-    sel.removeAllRanges();
-    sel.addRange(range);
-    getEd().focus();
     return;
   }
   placeCaretAfterInlineCode(code);
@@ -3287,16 +3315,17 @@ function tableReorderCount(table, type) {
   return type === 'row' ? table.rows.length : tableColumnCount(table);
 }
 
-function tableReorderInsertionIndex(table, type, clientX, clientY) {
+function tableReorderMidpoints(table, type) {
   const items = type === 'row' ? [...table.rows] : [...(table.rows[0]?.cells || [])];
-  if (!items.length) return 0;
-  for (let index = 0; index < items.length; index++) {
-    const rect = items[index].getBoundingClientRect();
-    const midpoint = type === 'row' ? rect.top + rect.height / 2 : rect.left + rect.width / 2;
-    const pointer = type === 'row' ? clientY : clientX;
-    if (pointer < midpoint) return index;
-  }
-  return items.length;
+  return items.map(item => {
+    const rect = item.getBoundingClientRect();
+    return type === 'row' ? rect.top + rect.height / 2 : rect.left + rect.width / 2;
+  });
+}
+
+function tableReorderInsertionIndexFromMidpoints(midpoints, pointer) {
+  const index = midpoints.findIndex(midpoint => pointer < midpoint);
+  return index < 0 ? midpoints.length : index;
 }
 
 function tableReorderTargetIndex(fromIndex, insertionIndex, count) {
@@ -3384,6 +3413,61 @@ function moveTableColumn(table, fromIndex, toIndex) {
   return true;
 }
 
+function tableCellRects(table) {
+  return new Map([...table.querySelectorAll('th,td')].map(cell => [cell, cell.getBoundingClientRect()]));
+}
+
+function previewTableColumnDrag(state, clientX) {
+  if (!state || state.type !== 'column') return;
+  const sourceCell = state.sourceCells[0];
+  if (!sourceCell) return;
+  const sourceRect = state.sourceRect;
+  const tableRect = state.tableRect;
+  const delta = clampValue(clientX - state.startX, tableRect.left - sourceRect.left, tableRect.right - sourceRect.right);
+  state.sourceCells.forEach(cell => {
+    cell.classList.add('table-column-drag-source');
+    cell.style.transform = 'translate3d(' + delta + 'px, 0, 0)';
+  });
+}
+
+function clearTableColumnDragPreview(state) {
+  state?.sourceCells?.forEach(cell => {
+    cell.classList.remove('table-column-drag-source');
+    cell.style.transform = '';
+  });
+}
+
+function animateTableColumnMove(table, beforeRects) {
+  if (!table || !beforeRects?.size) return;
+  const animated = [];
+  beforeRects.forEach((before, cell) => {
+    if (!cell.isConnected || !table.contains(cell)) return;
+    const after = cell.getBoundingClientRect();
+    const x = before.left - after.left;
+    const y = before.top - after.top;
+    if (Math.abs(x) < 0.5 && Math.abs(y) < 0.5) return;
+    cell.style.transition = 'none';
+    cell.style.transform = 'translate3d(' + x + 'px, ' + y + 'px, 0)';
+    animated.push(cell);
+  });
+  if (!animated.length) return;
+  table.getBoundingClientRect();
+  requestAnimationFrame(() => {
+    animated.forEach(cell => {
+      cell.classList.add('table-column-settling');
+      cell.style.transition = '';
+      cell.style.transform = '';
+      const cleanup = () => {
+        cell.classList.remove('table-column-settling');
+        cell.style.transition = '';
+        cell.style.transform = '';
+      };
+      cell.addEventListener('transitionend', cleanup, { once: true });
+      setTimeout(cleanup, 260);
+    });
+  });
+}
+
 function startTableReorder(e, handle) {
   if (!activeId || !canEditNote(notes[activeId])) return;
   const type = handle?.dataset?.tableReorder;
@@ -3398,11 +3482,19 @@ function startTableReorder(e, handle) {
   pushUndo();
   if (type === 'column') setTableColumnWidthsFromLayout(table);
 
+  const midpoints = tableReorderMidpoints(table, type);
+  const sourceCells = type === 'column' ? [...table.rows].map(row => row.cells[fromIndex]).filter(Boolean) : [];
+  const sourceRect = sourceCells[0]?.getBoundingClientRect?.() || null;
   _tableReorderState = {
     table,
     type,
     fromIndex,
-    insertionIndex: tableReorderInsertionIndex(table, type, e.clientX, e.clientY)
+    insertionIndex: tableReorderInsertionIndexFromMidpoints(midpoints, type === 'row' ? e.clientY : e.clientX),
+    midpoints,
+    sourceCells,
+    sourceRect,
+    tableRect: table.getBoundingClientRect(),
+    startX: e.clientX
   };
   handle.classList.add('dragging');
   table.closest('.note-table-wrap')?.classList.add('table-reordering');
@@ -3414,7 +3506,9 @@ function startTableReorder(e, handle) {
   const move = evt => {
     evt.preventDefault();
     if (!_tableReorderState || _tableReorderState.table !== table) return;
-    _tableReorderState.insertionIndex = tableReorderInsertionIndex(table, type, evt.clientX, evt.clientY);
+    const pointer = type === 'row' ? evt.clientY : evt.clientX;
+    _tableReorderState.insertionIndex = tableReorderInsertionIndexFromMidpoints(_tableReorderState.midpoints, pointer);
+    if (type === 'column') previewTableColumnDrag(_tableReorderState, evt.clientX);
     updateTableReorderIndicator(table, type, _tableReorderState.insertionIndex);
   };
 
@@ -3430,6 +3524,8 @@ function startTableReorder(e, handle) {
 
     const state = _tableReorderState;
     _tableReorderState = null;
+    const beforeRects = type === 'column' ? tableCellRects(table) : null;
+    clearTableColumnDragPreview(state);
     clearTableReorderIndicator(table);
     if (!state || state.table !== table) return;
 
@@ -3447,6 +3543,7 @@ function startTableReorder(e, handle) {
         : table.rows[0]?.cells[toIndex];
       placeCursorInTableCell(targetCell);
       getEd().dispatchEvent(new Event('input'));
+      if (type === 'column') animateTableColumnMove(table, beforeRects);
     } else {
       updateTableResizeHandles(table);
       updateTableReorderHandles(table);

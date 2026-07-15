@@ -1,5 +1,5 @@
-const { app, BrowserWindow, Menu, ipcMain, shell } = require('electron');
-const { createReadStream } = require('node:fs');
+const { app, BrowserWindow, Menu, Tray, ipcMain, nativeImage, shell } = require('electron');
+const { createReadStream, readFileSync, writeFileSync } = require('node:fs');
 const { stat } = require('node:fs/promises');
 const { createServer } = require('node:http');
 const path = require('node:path');
@@ -9,10 +9,16 @@ const ELECTRON_URL_ENV = 'NOTAS_ELECTRON_URL';
 const serveRoot = path.resolve(__dirname, '..');
 const preloadPath = path.join(__dirname, 'preload.js');
 const iconPath = path.join(serveRoot, 'notas.icns');
+const menuBarIconPath = path.join(serveRoot, 'notas-icon.png');
 
 let appBaseUrl = '';
 let staticServer = null;
 let mainWindow = null;
+let menuBarTray = null;
+let menuBarSettingsPath = '';
+let menuBarSettings = { mode: 'new', noteId: '', noteTitle: '' };
+let mainRendererReadyWindowId = 0;
+const pendingMainRendererMessages = [];
 let prewarmedNoteWindow = null;
 let noteWindowPrewarmTimer = null;
 let noteWindowPrewarmIdleTimer = null;
@@ -23,11 +29,15 @@ let lastThemeState = null;
 const windowContexts = new Map();
 const noteWindows = new Map();
 const windowNotificationCounts = new Map();
+const menuBarNotes = new Map();
 
 const keepMainWindowWarm = process.platform === 'darwin';
 const NOTE_WINDOW_PREWARM_DELAY_MS = 160;
 const NOTE_WINDOW_PREWARM_IDLE_MS = 10 * 60 * 1000;
-const enableNoteWindowPrewarm = true;
+const enableNoteWindowPrewarm = false;
+const LOCAL_SERVER_PORT_MIN = 49152;
+const LOCAL_SERVER_PORT_MAX = 65535;
+const LOCAL_SERVER_PORT_ATTEMPTS = 16;
 
 const allowedTopLevelFiles = new Set([
   'index.html',
@@ -71,41 +81,107 @@ function resolveStaticPath(requestUrl) {
   return filePath;
 }
 
-function startStaticServer() {
+function isUsableLocalServerPort(port) {
+  const normalized = Math.trunc(Number(port));
+  return Number.isInteger(normalized) && normalized >= LOCAL_SERVER_PORT_MIN && normalized <= LOCAL_SERVER_PORT_MAX;
+}
+
+function localServerPortSettingsPath() {
+  return path.join(app.getPath('userData'), 'local-server-port.json');
+}
+
+function loadLocalServerPort() {
+  try {
+    const port = JSON.parse(readFileSync(localServerPortSettingsPath(), 'utf8'))?.port;
+    return isUsableLocalServerPort(port) ? Math.trunc(Number(port)) : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function saveLocalServerPort(port) {
+  if (!isUsableLocalServerPort(port)) return;
+  try {
+    writeFileSync(localServerPortSettingsPath(), JSON.stringify({ port }, null, 2) + '\n', 'utf8');
+  } catch (err) {
+    console.warn('save local server port:', err);
+  }
+}
+
+function localServerPortCandidates() {
+  const portRange = LOCAL_SERVER_PORT_MAX - LOCAL_SERVER_PORT_MIN + 1;
+  const savedPort = loadLocalServerPort();
+  const firstPort = savedPort || LOCAL_SERVER_PORT_MIN + Math.floor(Math.random() * portRange);
+  const candidates = [];
+  for (let offset = 0; offset < LOCAL_SERVER_PORT_ATTEMPTS; offset += 1) {
+    candidates.push(LOCAL_SERVER_PORT_MIN + ((firstPort - LOCAL_SERVER_PORT_MIN + offset) % portRange));
+  }
+  return candidates;
+}
+
+function listenOnLoopbackPort(server, port) {
   return new Promise((resolve, reject) => {
-    const server = createServer(async (req, res) => {
-      const filePath = resolveStaticPath(req.url);
-      if (!filePath) {
-        res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
-        res.end('Forbidden');
-        return;
-      }
-
-      try {
-        const info = await stat(filePath);
-        if (!info.isFile()) throw new Error('Not a file');
-
-        res.writeHead(200, {
-          'Cache-Control': 'no-store',
-          'Content-Type': mimeTypes[path.extname(filePath)] || 'application/octet-stream'
-        });
-        createReadStream(filePath).pipe(res);
-      } catch {
-        res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
-        res.end('Not Found');
-      }
-    });
-
-    server.once('error', reject);
-    server.listen(0, '127.0.0.1', () => {
-      const address = server.address();
-      if (!address || typeof address !== 'object') {
-        reject(new Error('Could not start local app server'));
-        return;
-      }
-      resolve({ server, url: `http://localhost:${address.port}/` });
-    });
+    const cleanup = () => {
+      server.removeListener('error', onError);
+      server.removeListener('listening', onListening);
+    };
+    const onError = err => {
+      cleanup();
+      reject(err);
+    };
+    const onListening = () => {
+      cleanup();
+      resolve();
+    };
+    server.once('error', onError);
+    server.once('listening', onListening);
+    server.listen(port, '127.0.0.1');
   });
+}
+
+function startStaticServer() {
+  const server = createServer(async (req, res) => {
+    const filePath = resolveStaticPath(req.url);
+    if (!filePath) {
+      res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end('Forbidden');
+      return;
+    }
+
+    try {
+      const info = await stat(filePath);
+      if (!info.isFile()) throw new Error('Not a file');
+
+      res.writeHead(200, {
+        'Cache-Control': 'no-store',
+        'Content-Type': mimeTypes[path.extname(filePath)] || 'application/octet-stream'
+      });
+      createReadStream(filePath).pipe(res);
+    } catch {
+      res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end('Not Found');
+    }
+  });
+
+  return (async () => {
+    let lastPortError = null;
+    for (const port of localServerPortCandidates()) {
+      try {
+        await listenOnLoopbackPort(server, port);
+        saveLocalServerPort(port);
+        return { server, url: `http://localhost:${port}/` };
+      } catch (err) {
+        lastPortError = err;
+        if (err?.code !== 'EADDRINUSE') throw err;
+      }
+    }
+    await listenOnLoopbackPort(server, 0);
+    const address = server.address();
+    if (!address || typeof address !== 'object') {
+      throw lastPortError || new Error('Could not start local app server');
+    }
+    return { server, url: `http://localhost:${address.port}/` };
+  })();
 }
 
 function appUrl(params = {}) {
@@ -173,6 +249,38 @@ function normalizeNoteState(snapshot) {
   return normalizeNoteSnapshot(noteId, { ...snapshot, id: noteId });
 }
 
+function normalizeMenuBarSettings(settings) {
+  const noteId = normalizeNoteId(settings?.noteId);
+  const mode = settings?.mode === 'note' && noteId ? 'note' : 'new';
+  return {
+    mode,
+    noteId: mode === 'note' ? noteId : '',
+    noteTitle: mode === 'note'
+      ? noteSnapshotString(settings?.noteTitle, 'Untitled Note').slice(0, 300)
+      : ''
+  };
+}
+
+function loadMenuBarSettings() {
+  menuBarSettingsPath = path.join(app.getPath('userData'), 'menubar-settings.json');
+  try {
+    menuBarSettings = normalizeMenuBarSettings(JSON.parse(readFileSync(menuBarSettingsPath, 'utf8')));
+  } catch {
+    menuBarSettings = normalizeMenuBarSettings(null);
+  }
+}
+
+function saveMenuBarSettings(settings) {
+  menuBarSettings = normalizeMenuBarSettings(settings);
+  try {
+    writeFileSync(menuBarSettingsPath, JSON.stringify(menuBarSettings, null, 2) + '\n', 'utf8');
+  } catch (err) {
+    console.error('save menu bar settings:', err);
+  }
+  sendRendererMessage(mainWindow, 'desktop:menubar-settings-changed', menuBarSettings);
+  return menuBarSettings;
+}
+
 function normalizeThemeState(state) {
   if (!state || typeof state !== 'object') return null;
   const mode = ['light', 'dark', 'system'].includes(state.mode) ? state.mode : '';
@@ -222,7 +330,7 @@ function secureWebPreferences(includePreload = true) {
     contextIsolation: true,
     sandbox: true,
     webSecurity: true,
-    backgroundThrottling: false
+    backgroundThrottling: true
   };
   if (includePreload) preferences.preload = preloadPath;
   return preferences;
@@ -292,6 +400,10 @@ function configureWindowSecurity(win) {
 
 function showAndFocusWindow(win) {
   if (!win || win.isDestroyed()) return;
+  if (process.platform === 'darwin') {
+    if (app.isHidden()) app.show();
+    if (!app.isActive()) app.focus({ steal: true });
+  }
   if (win.isMinimized()) win.restore();
   if (!win.isVisible()) win.show();
   win.focus();
@@ -302,6 +414,18 @@ function hideWarmWindow(win) {
   if (win.isFullScreen()) win.setFullScreen(false);
   win.hide();
   buildApplicationMenu();
+}
+
+function showWindowWhenReady(win) {
+  let didShow = false;
+  const show = () => {
+    if (didShow || win.isDestroyed()) return;
+    didShow = true;
+    win.show();
+  };
+  win.once('ready-to-show', show);
+  win.webContents.once('did-finish-load', show);
+  win.webContents.once('did-fail-load', show);
 }
 
 function showAndFocusWhenReady(win) {
@@ -318,6 +442,7 @@ function showAndFocusWhenReady(win) {
   };
   win.once('ready-to-show', show);
   win.webContents.once('did-finish-load', show);
+  win.webContents.once('did-fail-load', show);
 }
 
 function rendererWindowContext(win, context = windowContext(win)) {
@@ -327,7 +452,8 @@ function rendererWindowContext(win, context = windowContext(win)) {
     noteId: context?.noteId || null,
     initialNote: context?.initialNote || null,
     themeState: lastThemeState,
-    isAlwaysOnTop: !!context?.alwaysOnTop
+    isAlwaysOnTop: !!context?.alwaysOnTop,
+    hasVisibleNoteWindow: context?.type === 'main' && hasVisibleNoteWindow()
   };
 }
 
@@ -351,22 +477,33 @@ function createWindow(options, behavior = {}) {
     backgroundColor: '#050a12',
     icon: iconPath,
     show: false,
+    skipTaskbar: false,
+    focusable: true,
+    ...(process.platform === 'darwin' ? {
+      titleBarStyle: 'hiddenInset',
+      trafficLightPosition: { x: 13, y: 15 }
+    } : {}),
     webPreferences: secureWebPreferences(true),
     ...options
   });
 
   configureWindowSecurity(win);
   if (behavior.showImmediately) win.show();
-  else if (behavior.showOnReady !== false) win.once('ready-to-show', () => win.show());
+  else if (behavior.showOnReady !== false) showWindowWhenReady(win);
   win.on('close', event => {
     const context = windowContexts.get(win.id);
-    const shouldKeepWarm = keepMainWindowWarm && !isQuitting && context?.type === 'main';
-    if (!shouldKeepWarm) return;
+    if (!keepMainWindowWarm || isQuitting || context?.type !== 'main') return;
     event.preventDefault();
     hideWarmWindow(win);
   });
   win.on('focus', buildApplicationMenu);
   win.on('blur', buildApplicationMenu);
+  win.on('show', () => {
+    if (windowContext(win)?.type === 'note') notifyMainNoteWindowPresence();
+  });
+  win.on('hide', () => {
+    if (windowContext(win)?.type === 'note') notifyMainNoteWindowPresence();
+  });
   win.on('closed', () => {
     const context = windowContexts.get(win.id);
     const shouldSuppressPrewarm = suppressNextNoteWindowPrewarm;
@@ -384,15 +521,16 @@ function createWindow(options, behavior = {}) {
     windowNotificationCounts.delete(win.id);
     updateDockNotificationBadge();
     if (!isQuitting && context?.type === 'note' && !shouldSuppressPrewarm) scheduleNoteWindowPrewarm();
+    if (context?.type === 'note') notifyMainNoteWindowPresence();
     buildApplicationMenu();
   });
 
   return win;
 }
 
-function createMainWindow() {
+function createMainWindow(behavior = {}) {
   if (mainWindow && !mainWindow.isDestroyed()) {
-    showAndFocusWindow(mainWindow);
+    if (behavior.showExisting !== false) showAndFocusWindow(mainWindow);
     return mainWindow;
   }
 
@@ -402,8 +540,12 @@ function createMainWindow() {
     minWidth: 900,
     minHeight: 620,
     title: APP_NAME
-  });
+  }, behavior);
   windowContexts.set(mainWindow.id, { type: 'main', alwaysOnTop: false });
+  mainRendererReadyWindowId = 0;
+  mainWindow.webContents.on('did-start-loading', () => {
+    if (mainWindow && mainWindow.id === mainRendererReadyWindowId) mainRendererReadyWindowId = 0;
+  });
   mainWindow.loadURL(appUrl({ desktopWindow: 'main' }));
   return mainWindow;
 }
@@ -415,19 +557,18 @@ function createNoteBrowserWindow(behavior = {}) {
     title: 'Notas Note',
     alwaysOnTop: true
   }, behavior);
-  applyNoteWindowFloatingBehavior(noteWindow, true);
+  applyNoteWindowFloatingBehavior(noteWindow);
   return noteWindow;
 }
 
-function applyNoteWindowFloatingBehavior(win, enabled) {
+function applyNoteWindowFloatingBehavior(win) {
   if (!win || win.isDestroyed()) return;
-  const shouldFloat = !!enabled;
-  win.setAlwaysOnTop(shouldFloat, shouldFloat ? 'floating' : 'normal');
-  if (typeof win.setVisibleOnAllWorkspaces === 'function') {
+  win.setAlwaysOnTop(true, 'floating');
+  if (process.platform === 'darwin' && typeof win.setVisibleOnAllWorkspaces === 'function') {
     try {
-      win.setVisibleOnAllWorkspaces(shouldFloat, { visibleOnFullScreen: true });
+      win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
     } catch (err) {
-      console.error('set visible on all workspaces:', err);
+      console.error('set pop-out visible on all workspaces:', err);
     }
   }
 }
@@ -447,7 +588,7 @@ function setNoteWindowContext(noteWindow, noteId, initialNote) {
   windowContexts.set(noteWindow.id, context);
   if (noteId) noteWindows.set(noteId, noteWindow);
   noteWindow.setTitle(initialNote?.title ? `${initialNote.title} - ${APP_NAME}` : 'Notas Note');
-  applyNoteWindowFloatingBehavior(noteWindow, true);
+  applyNoteWindowFloatingBehavior(noteWindow);
   sendWindowContext(noteWindow);
   buildApplicationMenu();
 }
@@ -520,17 +661,20 @@ function toggleNoteWindow(noteId, noteSnapshot) {
   const initialNote = normalizeNoteSnapshot(normalizedNoteId, noteSnapshot);
   if (!initialNote) return { ok: false, error: 'Missing Note Snapshot' };
   const warmedWindow = usablePrewarmedNoteWindow();
-  const noteWindow = warmedWindow || createNoteBrowserWindow({ showOnReady: true });
-  const reused = !!warmedWindow;
+  const existingNoteWindow = [...noteWindows.values()].find(win => win && !win.isDestroyed());
+  const noteWindow = warmedWindow || existingNoteWindow || createNoteBrowserWindow({ showOnReady: true });
+  const reused = !!warmedWindow || !!existingNoteWindow;
   if (reused) {
-    prewarmedNoteWindow = null;
-    clearNoteWindowPrewarmIdleTimer();
+    if (warmedWindow) {
+      prewarmedNoteWindow = null;
+      clearNoteWindowPrewarmIdleTimer();
+    }
   }
 
   setNoteWindowContext(noteWindow, normalizedNoteId, initialNote);
   if (reused) {
     showAndFocusWhenReady(noteWindow);
-    scheduleNoteWindowPrewarm();
+    if (warmedWindow) scheduleNoteWindowPrewarm();
   } else {
     noteWindow.loadURL(appUrl({
       desktopWindow: 'note',
@@ -540,9 +684,40 @@ function toggleNoteWindow(noteId, noteSnapshot) {
   return { ok: true, windowId: noteWindow.id, reused };
 }
 
+function openNoteWindow(noteId, noteSnapshot) {
+  const normalizedNoteId = normalizeNoteId(noteId);
+  if (!normalizedNoteId) return { ok: false, error: 'Missing Note' };
+  const existing = noteWindows.get(normalizedNoteId);
+  if (existing && !existing.isDestroyed()) {
+    applyNoteWindowFloatingBehavior(existing);
+    showAndFocusWhenReady(existing);
+    return { ok: true, windowId: existing.id, reused: true };
+  }
+  return toggleNoteWindow(normalizedNoteId, noteSnapshot);
+}
+
 function windowContext(win) {
   if (!win || win.isDestroyed()) return null;
   return windowContexts.get(win.id) || null;
+}
+
+function hasVisibleApplicationWindow() {
+  return BrowserWindow.getAllWindows().some(win =>
+    !win.isDestroyed() && win.isVisible() && !win.isMinimized()
+  );
+}
+
+function hasVisibleNoteWindow() {
+  return [...noteWindows.values()].some(win =>
+    !win.isDestroyed() && win.isVisible() && !win.isMinimized()
+  );
+}
+
+function notifyMainNoteWindowPresence() {
+  if (!mainWindow || mainWindow.isDestroyed() || windowContext(mainWindow)?.type !== 'main') return;
+  sendRendererMessage(mainWindow, 'desktop:note-window-presence-changed', {
+    hasVisibleNoteWindow: hasVisibleNoteWindow()
+  });
 }
 
 function focusedWindowContext() {
@@ -555,19 +730,6 @@ function sendToFocusedWindow(channel, payload) {
   if (!win || win.isDestroyed()) return;
   if (!focusedWindow && win === mainWindow) showAndFocusWindow(win);
   win.webContents.send(channel, payload);
-}
-
-function setWindowAlwaysOnTop(win, enabled) {
-  const context = windowContext(win);
-  if (!win || !context || context.type !== 'note') {
-    return { ok: false, enabled: false };
-  }
-  const next = !!enabled;
-  applyNoteWindowFloatingBehavior(win, next);
-  context.alwaysOnTop = next;
-  win.webContents.send('desktop:always-on-top-changed', next);
-  buildApplicationMenu();
-  return { ok: true, enabled: next };
 }
 
 function broadcastNoteState(senderWin, state) {
@@ -597,11 +759,96 @@ function updateDockNotificationBadge() {
   }
 }
 
-function toggleFocusedAlwaysOnTop() {
-  const win = BrowserWindow.getFocusedWindow();
-  const context = windowContext(win);
-  if (!win || context?.type !== 'note') return;
-  setWindowAlwaysOnTop(win, !context.alwaysOnTop);
+function menuBarNoteItems() {
+  return [...menuBarNotes.values()].sort((a, b) =>
+    a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }) || a.id.localeCompare(b.id)
+  );
+}
+
+function updateMenuBarNotes(snapshots) {
+  menuBarNotes.clear();
+  if (!Array.isArray(snapshots)) return;
+  snapshots.slice(0, 2000).forEach(snapshot => {
+    const noteId = normalizeNoteId(snapshot?.id || snapshot?.noteId);
+    if (!noteId) return;
+    const normalized = normalizeNoteSnapshot(noteId, snapshot);
+    if (!normalized || normalized.deletedAt) return;
+    menuBarNotes.set(noteId, normalized);
+  });
+}
+
+function revealMainWindow() {
+  if (!appBaseUrl) return null;
+  const win = createMainWindow({ showOnReady: false, showExisting: false });
+  showAndFocusWhenReady(win);
+  return win;
+}
+
+function flushPendingMainRendererMessages() {
+  const win = mainWindow;
+  if (!win || win.isDestroyed() || mainRendererReadyWindowId !== win.id) return;
+  const messages = pendingMainRendererMessages.splice(0);
+  messages.forEach(({ channel, payload }) => win.webContents.send(channel, payload));
+}
+
+function requestMainRenderer(channel, payload) {
+  const win = revealMainWindow();
+  if (!win) return;
+  pendingMainRendererMessages.push({ channel, payload });
+  flushPendingMainRendererMessages();
+}
+
+function openMenuBarTarget() {
+  if (menuBarSettings.mode === 'note' && menuBarSettings.noteId) {
+    const snapshot = menuBarNotes.get(menuBarSettings.noteId);
+    if (snapshot) {
+      openNoteWindow(menuBarSettings.noteId, snapshot);
+      return;
+    }
+    requestMainRenderer('desktop:menubar-open-note', { noteId: menuBarSettings.noteId });
+    return;
+  }
+  requestMainRenderer('desktop:menubar-open-new-note');
+}
+
+function selectMenuBarNote(note) {
+  saveMenuBarSettings({ mode: 'note', noteId: note.id, noteTitle: note.title });
+}
+
+function buildMenuBarContextMenu() {
+  const notes = menuBarNoteItems();
+  const noteSubmenu = notes.length
+    ? notes.map(note => ({
+        label: note.title.slice(0, 70),
+        type: 'radio',
+        checked: menuBarSettings.mode === 'note' && menuBarSettings.noteId === note.id,
+        click: () => selectMenuBarNote(note)
+      }))
+    : [{ label: 'No Notes Available', enabled: false }];
+
+  return Menu.buildFromTemplate([
+    {
+      label: 'New Note',
+      type: 'radio',
+      checked: menuBarSettings.mode === 'new',
+      click: () => saveMenuBarSettings({ mode: 'new' })
+    },
+    { label: 'Specific Note', submenu: noteSubmenu },
+    { type: 'separator' },
+    { label: 'Open Notas', click: revealMainWindow },
+    { label: 'Quit Notas', role: 'quit' }
+  ]);
+}
+
+function createMenuBarTray() {
+  if (menuBarTray) return menuBarTray;
+  let trayImage = nativeImage.createFromPath(menuBarIconPath);
+  if (!trayImage.isEmpty()) trayImage = trayImage.resize({ width: 18, height: 18 });
+  menuBarTray = new Tray(trayImage);
+  menuBarTray.setToolTip(APP_NAME);
+  menuBarTray.on('click', openMenuBarTarget);
+  menuBarTray.on('right-click', () => menuBarTray?.popUpContextMenu(buildMenuBarContextMenu()));
+  return menuBarTray;
 }
 
 function toggleFocusedNoteWindow() {
@@ -615,8 +862,6 @@ function toggleFocusedNoteWindow() {
 }
 
 function buildApplicationMenu() {
-  const context = focusedWindowContext();
-  const isNoteWindow = context?.type === 'note';
   const template = [];
 
   if (process.platform === 'darwin') {
@@ -684,15 +929,6 @@ function buildApplicationMenu() {
     {
       label: 'Window',
       submenu: [
-        {
-          label: 'Always On Top',
-          type: 'checkbox',
-          accelerator: 'CmdOrCtrl+Shift+T',
-          enabled: isNoteWindow,
-          checked: !!context?.alwaysOnTop,
-          click: toggleFocusedAlwaysOnTop
-        },
-        { type: 'separator' },
         { label: 'Minimize', role: 'minimize' },
         { label: 'Zoom', role: 'zoom' },
         ...(process.platform === 'darwin'
@@ -709,6 +945,13 @@ function buildApplicationMenu() {
 }
 
 function registerIpcHandlers() {
+  ipcMain.on('desktop:renderer-ready', event => {
+    const senderWin = BrowserWindow.fromWebContents(event.sender);
+    if (!senderWin || senderWin !== mainWindow || windowContext(senderWin)?.type !== 'main') return;
+    mainRendererReadyWindowId = senderWin.id;
+    flushPendingMainRendererMessages();
+  });
+
   ipcMain.on('desktop:prewarm-note-window', event => {
     if (!enableNoteWindowPrewarm) return;
     const senderWin = BrowserWindow.fromWebContents(event.sender);
@@ -739,6 +982,12 @@ function registerIpcHandlers() {
     broadcastThemeState(senderWin, state);
   });
 
+  ipcMain.on('desktop:menubar-notes-changed', (event, snapshots) => {
+    const senderWin = BrowserWindow.fromWebContents(event.sender);
+    if (!senderWin || windowContext(senderWin)?.type !== 'main') return;
+    updateMenuBarNotes(snapshots);
+  });
+
   ipcMain.handle('desktop:get-window-context', event => {
     const win = BrowserWindow.fromWebContents(event.sender);
     const context = windowContext(win) || { type: 'main', alwaysOnTop: false };
@@ -747,9 +996,12 @@ function registerIpcHandlers() {
 
   ipcMain.handle('desktop:open-note-window', (_event, noteId, noteSnapshot) => toggleNoteWindow(noteId, noteSnapshot));
 
-  ipcMain.handle('desktop:set-always-on-top', (event, enabled) => {
-    const win = BrowserWindow.fromWebContents(event.sender);
-    return setWindowAlwaysOnTop(win, enabled);
+  ipcMain.handle('desktop:get-menubar-settings', () => menuBarSettings);
+
+  ipcMain.handle('desktop:set-menubar-settings', (event, settings) => {
+    const senderWin = BrowserWindow.fromWebContents(event.sender);
+    if (!senderWin || windowContext(senderWin)?.type !== 'main') return menuBarSettings;
+    return saveMenuBarSettings(settings);
   });
 
   ipcMain.handle('desktop:set-window-title', (event, title) => {
@@ -772,6 +1024,37 @@ function registerIpcHandlers() {
 }
 
 app.setName(APP_NAME);
+const hasSingleInstanceLock = app.requestSingleInstanceLock();
+
+if (!hasSingleInstanceLock) app.quit();
+
+function configureMacDesktopApp() {
+  if (process.platform !== 'darwin') return;
+  app.setActivationPolicy('regular');
+}
+
+function showMacDesktopApp() {
+  if (process.platform !== 'darwin') return;
+  app.dock.show();
+}
+
+function restoreMainWindowIfNeeded() {
+  if (!appBaseUrl || hasVisibleApplicationWindow()) return;
+  revealMainWindow();
+}
+
+if (hasSingleInstanceLock) {
+  configureMacDesktopApp();
+
+  app.on('second-instance', () => {
+    revealMainWindow();
+  });
+
+  if (process.platform === 'darwin') {
+    app.on('activate', restoreMainWindowIfNeeded);
+    app.on('did-become-active', restoreMainWindowIfNeeded);
+  }
+}
 
 app.on('web-contents-created', (_event, contents) => {
   contents.on('will-attach-webview', event => {
@@ -780,7 +1063,10 @@ app.on('web-contents-created', (_event, contents) => {
 });
 
 app.whenReady().then(async () => {
+  if (!hasSingleInstanceLock) return;
+  showMacDesktopApp();
   registerIpcHandlers();
+  loadMenuBarSettings();
 
   const externalUrl = process.env[ELECTRON_URL_ENV];
   if (externalUrl) {
@@ -792,12 +1078,8 @@ app.whenReady().then(async () => {
   }
 
   createMainWindow();
+  createMenuBarTray();
   buildApplicationMenu();
-
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createMainWindow();
-    else if (mainWindow && !mainWindow.isDestroyed()) showAndFocusWindow(mainWindow);
-  });
 });
 
 app.on('window-all-closed', () => {
@@ -806,6 +1088,10 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   isQuitting = true;
+  if (menuBarTray) {
+    menuBarTray.destroy();
+    menuBarTray = null;
+  }
   if (noteWindowPrewarmTimer) {
     clearTimeout(noteWindowPrewarmTimer);
     noteWindowPrewarmTimer = null;
