@@ -16,6 +16,8 @@
   let themeStateFrame = 0;
   let menuBarCatalogFrame = 0;
   let menuBarSettings = { mode: 'new', noteId: '', noteTitle: '' };
+  let menuBarPreloadedNoteKey = '';
+  let menuBarNotePreloadInFlightKey = '';
   let pendingMenuBarAction = null;
   let processingMenuBarAction = false;
   let menuBarNotesReady = false;
@@ -196,6 +198,7 @@
       noteTitle: String(settings?.noteTitle || '').trim() || 'Untitled Note'
     };
     refreshMenuBarSettingsControls();
+    preloadMenuBarSelectedNote();
   }
 
   function refreshMenuBarSettingsControls() {
@@ -233,9 +236,53 @@
     if (desktopContext.type !== 'main' || menuBarCatalogFrame || !window.desktop?.updateMenuBarNotes) return;
     menuBarCatalogFrame = requestAnimationFrame(() => {
       menuBarCatalogFrame = 0;
-      window.desktop.updateMenuBarNotes(availableMenuBarNotes().map(note => desktopNoteSnapshot(note, false)));
+      window.desktop.updateMenuBarNotes(availableMenuBarNotes().map(note =>
+        desktopNoteSnapshot(note, note.id === menuBarSettings.noteId && !!note._bodyLoaded)
+      ));
       refreshMenuBarSettingsControls();
+      preloadMenuBarSelectedNote();
     });
+  }
+
+  function menuBarPreloadKey(note) {
+    return String(note?.id || '') + ':' + String(note?.modified || '');
+  }
+
+  function preloadMenuBarSelectedNote() {
+    if (desktopContext.type !== 'main' || menuBarSettings.mode !== 'note' || !menuBarSettings.noteId) {
+      menuBarPreloadedNoteKey = '';
+      menuBarNotePreloadInFlightKey = '';
+      return;
+    }
+
+    const note = notes[menuBarSettings.noteId];
+    if (!note || (typeof isTrashedNote === 'function' && isTrashedNote(note))) return;
+    const preloadKey = menuBarPreloadKey(note);
+    if (menuBarPreloadedNoteKey === preloadKey || menuBarNotePreloadInFlightKey === preloadKey) return;
+
+    const sendPreloadedNote = snapshot => {
+      if (menuBarSettings.mode !== 'note' || menuBarSettings.noteId !== note.id) return;
+      window.desktop.preloadMenuBarNote?.(snapshot);
+      menuBarPreloadedNoteKey = menuBarPreloadKey(notes[note.id] || note);
+    };
+
+    if (note._bodyLoaded) {
+      sendPreloadedNote(desktopNoteSnapshot(note, true));
+      return;
+    }
+
+    if (typeof readNoteBodyContent !== 'function') return;
+    menuBarNotePreloadInFlightKey = preloadKey;
+    readNoteBodyContent(note.id)
+      .then(content => {
+        const currentNote = notes[note.id];
+        if (!currentNote || menuBarSettings.mode !== 'note' || menuBarSettings.noteId !== note.id) return;
+        sendPreloadedNote(desktopNoteSnapshot({ ...currentNote, content, _bodyLoaded: true }, true));
+      })
+      .catch(err => console.error('preload menu bar note:', err))
+      .finally(() => {
+        if (menuBarNotePreloadInFlightKey === preloadKey) menuBarNotePreloadInFlightKey = '';
+      });
   }
 
   async function persistMenuBarSettings(settings) {
@@ -410,16 +457,23 @@
     return !!(activeId === desktopContext.noteId && notes[desktopContext.noteId] && editorView?.style.display !== 'none');
   }
 
-  function openRequestedDesktopNote(attempt = 0) {
+  async function openRequestedDesktopNote(attempt = 0) {
     if (desktopContext.type !== 'note' || !desktopContext.noteId) return;
     if (requestedNoteOpened && requestedNoteIsVisible()) return;
 
     seedInitialNoteSnapshot();
 
     if (notes[desktopContext.noteId]) {
+      const requestedNoteId = desktopContext.noteId;
       requestedNoteOpened = true;
-      openNote(desktopContext.noteId);
-      refreshDesktopControls();
+      try {
+        await openNote(requestedNoteId);
+      } finally {
+        if (desktopContext.type === 'note' && desktopContext.noteId === requestedNoteId && activeId === requestedNoteId) {
+          window.desktop.noteWindowReady?.(requestedNoteId);
+          refreshDesktopControls();
+        }
+      }
       return;
     }
 
@@ -556,7 +610,10 @@
     const originalSyncActiveNoteFromEditor = syncActiveNoteFromEditor;
     syncActiveNoteFromEditor = function desktopSyncActiveNoteFromEditorWrapper() {
       const result = originalSyncActiveNoteFromEditor.apply(this, arguments);
-      if (result) scheduleDesktopNoteStateBroadcast();
+      if (result) {
+        scheduleDesktopNoteStateBroadcast();
+        scheduleMenuBarNoteSync();
+      }
       return result;
     };
     syncActiveNoteFromEditor.desktopWrapped = true;

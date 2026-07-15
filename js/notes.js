@@ -20,7 +20,9 @@ function beginInitialNoteRestore() {
 }
 
 function shouldDeferInitialNoteFallback() {
-  return !!(initialNoteRestorePending && initialNoteRestoreId && !notes[initialNoteRestoreId]);
+  const params = new URLSearchParams(location.search);
+  const isDesktopNoteWindow = !!window.desktop?.isElectron && params.get('desktopWindow') === 'note';
+  return isDesktopNoteWindow || !!(initialNoteRestorePending && initialNoteRestoreId && !notes[initialNoteRestoreId]);
 }
 
 function openFirstAvailableNote() {

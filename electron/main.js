@@ -34,7 +34,7 @@ const menuBarNotes = new Map();
 const keepMainWindowWarm = process.platform === 'darwin';
 const NOTE_WINDOW_PREWARM_DELAY_MS = 160;
 const NOTE_WINDOW_PREWARM_IDLE_MS = 10 * 60 * 1000;
-const enableNoteWindowPrewarm = false;
+const enableNoteWindowPrewarm = true;
 const LOCAL_SERVER_PORT_MIN = 49152;
 const LOCAL_SERVER_PORT_MAX = 65535;
 const LOCAL_SERVER_PORT_ATTEMPTS = 16;
@@ -573,7 +573,7 @@ function applyNoteWindowFloatingBehavior(win) {
   }
 }
 
-function setNoteWindowContext(noteWindow, noteId, initialNote) {
+function setNoteWindowContext(noteWindow, noteId, initialNote, options = {}) {
   const previousContext = windowContext(noteWindow);
   if (previousContext?.type === 'note' && previousContext.noteId && previousContext.noteId !== noteId) {
     if (noteWindows.get(previousContext.noteId) === noteWindow) noteWindows.delete(previousContext.noteId);
@@ -583,7 +583,8 @@ function setNoteWindowContext(noteWindow, noteId, initialNote) {
     type: 'note',
     noteId,
     initialNote,
-    alwaysOnTop: true
+    alwaysOnTop: true,
+    pendingShow: options.deferReveal === true
   };
   windowContexts.set(noteWindow.id, context);
   if (noteId) noteWindows.set(noteId, noteWindow);
@@ -653,16 +654,16 @@ function toggleNoteWindow(noteId, noteSnapshot) {
       return { ok: true, windowId: existing.id, closed: true };
     }
     const initialNote = normalizeNoteSnapshot(normalizedNoteId, noteSnapshot);
-    if (initialNote) setNoteWindowContext(existing, normalizedNoteId, initialNote);
-    showAndFocusWhenReady(existing);
-    return { ok: true, windowId: existing.id, reused: true };
+    if (!initialNote) return { ok: false, error: 'Missing Note Snapshot' };
+    setNoteWindowContext(existing, normalizedNoteId, initialNote, { deferReveal: true });
+    return { ok: true, windowId: existing.id, reused: true, pending: true };
   }
 
   const initialNote = normalizeNoteSnapshot(normalizedNoteId, noteSnapshot);
   if (!initialNote) return { ok: false, error: 'Missing Note Snapshot' };
   const warmedWindow = usablePrewarmedNoteWindow();
   const existingNoteWindow = [...noteWindows.values()].find(win => win && !win.isDestroyed());
-  const noteWindow = warmedWindow || existingNoteWindow || createNoteBrowserWindow({ showOnReady: true });
+  const noteWindow = warmedWindow || existingNoteWindow || createNoteBrowserWindow({ showOnReady: false });
   const reused = !!warmedWindow || !!existingNoteWindow;
   if (reused) {
     if (warmedWindow) {
@@ -671,9 +672,9 @@ function toggleNoteWindow(noteId, noteSnapshot) {
     }
   }
 
-  setNoteWindowContext(noteWindow, normalizedNoteId, initialNote);
+  if (existingNoteWindow?.isVisible()) hideWarmWindow(existingNoteWindow);
+  setNoteWindowContext(noteWindow, normalizedNoteId, initialNote, { deferReveal: true });
   if (reused) {
-    showAndFocusWhenReady(noteWindow);
     if (warmedWindow) scheduleNoteWindowPrewarm();
   } else {
     noteWindow.loadURL(appUrl({
@@ -766,15 +767,31 @@ function menuBarNoteItems() {
 }
 
 function updateMenuBarNotes(snapshots) {
-  menuBarNotes.clear();
+  const previousNotes = new Map(menuBarNotes);
+  const nextNotes = new Map();
   if (!Array.isArray(snapshots)) return;
   snapshots.slice(0, 2000).forEach(snapshot => {
     const noteId = normalizeNoteId(snapshot?.id || snapshot?.noteId);
     if (!noteId) return;
     const normalized = normalizeNoteSnapshot(noteId, snapshot);
     if (!normalized || normalized.deletedAt) return;
-    menuBarNotes.set(noteId, normalized);
+    const preloaded = previousNotes.get(noteId);
+    if (noteId === menuBarSettings.noteId && preloaded?.bodyLoaded && !normalized.bodyLoaded) {
+      normalized.content = preloaded.content;
+      normalized.bodyLoaded = true;
+    }
+    nextNotes.set(noteId, normalized);
   });
+  menuBarNotes.clear();
+  nextNotes.forEach((note, noteId) => menuBarNotes.set(noteId, note));
+}
+
+function updatePreloadedMenuBarNote(snapshot) {
+  const noteId = normalizeNoteId(snapshot?.id || snapshot?.noteId);
+  if (!noteId || menuBarSettings.mode !== 'note' || menuBarSettings.noteId !== noteId) return;
+  const normalized = normalizeNoteSnapshot(noteId, snapshot);
+  if (!normalized || normalized.deletedAt || !normalized.bodyLoaded) return;
+  menuBarNotes.set(noteId, normalized);
 }
 
 function revealMainWindow() {
@@ -986,6 +1003,22 @@ function registerIpcHandlers() {
     const senderWin = BrowserWindow.fromWebContents(event.sender);
     if (!senderWin || windowContext(senderWin)?.type !== 'main') return;
     updateMenuBarNotes(snapshots);
+  });
+
+  ipcMain.on('desktop:menubar-note-preloaded', (event, snapshot) => {
+    const senderWin = BrowserWindow.fromWebContents(event.sender);
+    if (!senderWin || windowContext(senderWin)?.type !== 'main') return;
+    updatePreloadedMenuBarNote(snapshot);
+  });
+
+  ipcMain.on('desktop:note-window-ready', (event, noteId) => {
+    const noteWindow = BrowserWindow.fromWebContents(event.sender);
+    const context = windowContext(noteWindow);
+    const normalizedNoteId = normalizeNoteId(noteId);
+    if (!noteWindow || context?.type !== 'note' || !context.pendingShow || !normalizedNoteId || context.noteId !== normalizedNoteId) return;
+    context.pendingShow = false;
+    applyNoteWindowFloatingBehavior(noteWindow);
+    showAndFocusWindow(noteWindow);
   });
 
   ipcMain.handle('desktop:get-window-context', event => {

@@ -20,6 +20,8 @@ contextBridge.exposeInMainWorld('desktop', {
   getMenuBarSettings: () => ipcRenderer.invoke('desktop:get-menubar-settings'),
   setMenuBarSettings: settings => ipcRenderer.invoke('desktop:set-menubar-settings', settings || null),
   updateMenuBarNotes: notes => ipcRenderer.send('desktop:menubar-notes-changed', Array.isArray(notes) ? notes : []),
+  preloadMenuBarNote: note => ipcRenderer.send('desktop:menubar-note-preloaded', note || null),
+  noteWindowReady: noteId => ipcRenderer.send('desktop:note-window-ready', noteId || ''),
   onWindowContextUpdated: callback => on('desktop:window-context-updated', callback),
   onNoteWindowPresenceChanged: callback => on('desktop:note-window-presence-changed', callback),
   onNoteStateChanged: callback => on('desktop:note-state-changed', callback),
