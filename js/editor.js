@@ -2903,6 +2903,19 @@ function updateTableResizeHandles(table) {
   });
 }
 
+function updateActiveTableColumnResizeHandle(table, handle, colIndex) {
+  const scrollWrap = tableScrollWrapForTable(table);
+  const controls = scrollWrap?.querySelector(':scope > .table-resize-controls');
+  const cell = table?.rows[0]?.cells[colIndex];
+  if (!table || !scrollWrap || !controls || !handle || !cell) return;
+
+  const scrollRect = scrollWrap.getBoundingClientRect();
+  const tableRect = table.getBoundingClientRect();
+  controls.style.width = Math.max(scrollWrap.clientWidth, tableRect.width) + 'px';
+  controls.style.height = tableRect.height + 'px';
+  handle.style.left = (cell.getBoundingClientRect().right - scrollRect.left + scrollWrap.scrollLeft) + 'px';
+}
+
 function updateTableReorderHandles(table) {
   const scrollWrap = tableScrollWrapForTable(table);
   const wrap = table?.closest?.('.note-table-wrap');
@@ -3658,8 +3671,7 @@ function startTableColumnResize(e, handle) {
     nextWidths[colIndex] = leftStart + delta;
     nextWidths[colIndex + 1] = rightStart - delta;
     setTableColumnPercents(table, nextWidths.map(width => (width / totalWidth) * 100));
-    updateTableResizeHandles(table);
-    updateTableReorderHandles(table);
+    updateActiveTableColumnResizeHandle(table, handle, colIndex);
   };
 
   const move = evt => {

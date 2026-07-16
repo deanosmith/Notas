@@ -1530,6 +1530,7 @@ function renderConversationSidebarPage(target = 'sidebar-conversations-list') {
       openConversationSubjectDeleteModal(btn.dataset.conversationDeleteSubject);
     });
   });
+  if (typeof applySidebarPageSearch === 'function') applySidebarPageSearch(list);
 }
 
 async function markSidebarConversationsRead(keys = []) {

@@ -479,6 +479,49 @@ function attachFolderReorderHandlers(row, folder) {
 }
 
 const SIDEBAR_VIEWS = new Set(['notes', 'notifications', 'alarms', 'conversations', 'friends', 'trash']);
+const SIDEBAR_SEARCH_PLACEHOLDERS = {
+  notes: 'Search Notes',
+  notifications: 'Search Notifications',
+  alarms: 'Search Reminders',
+  conversations: 'Search Conversations',
+  friends: 'Search Friends',
+  trash: 'Search Trash'
+};
+
+function currentSidebarSearchFilter() {
+  const input = document.getElementById('search-input');
+  return String(input?.value ?? sidebarFilter ?? '').trim().toLowerCase();
+}
+
+function updateSidebarSearchControl(view = sidebarView) {
+  const input = document.getElementById('search-input');
+  const clearButton = document.getElementById('search-clear-btn');
+  if (!input) return;
+  input.placeholder = SIDEBAR_SEARCH_PLACEHOLDERS[view] || SIDEBAR_SEARCH_PLACEHOLDERS.notes;
+  if (clearButton) clearButton.hidden = !input.value.trim();
+}
+
+function applySidebarPageSearch(root, filter = currentSidebarSearchFilter()) {
+  if (!root) return;
+  root.querySelectorAll('.sidebar-page-search-empty').forEach(empty => empty.remove());
+
+  const query = String(filter || '').trim().toLowerCase();
+  const rows = [...root.querySelectorAll('.profile-row, .trash-row, .conversation-scope-row, .conversation-thread-row')];
+  rows.forEach(row => {
+    row.hidden = !!query && !row.textContent.toLowerCase().includes(query);
+  });
+
+  if (query && rows.length && rows.every(row => row.hidden)) {
+    const empty = document.createElement('div');
+    empty.className = 'sidebar-page-empty sidebar-page-search-empty';
+    empty.textContent = 'No Matches Found';
+    root.appendChild(empty);
+  }
+
+  const selectionLists = [root, ...root.querySelectorAll('[id]')]
+    .filter(list => list.id && list.querySelector('[data-select-key]'));
+  selectionLists.forEach(list => syncSidebarSelectionState(list));
+}
 
 function isSidebarPanelVisible() {
   const sidebar = document.getElementById('sidebar');
@@ -771,8 +814,14 @@ function selectedSidebarKeys(target) {
   const list = sidebarListFromTarget(target);
   if (!list) return [];
   return [...list.querySelectorAll('[data-select-key]:checked')]
+    .filter(input => !input.closest('[hidden]'))
     .map(input => input.dataset.selectKey)
     .filter(Boolean);
+}
+
+function sidebarSelectionBoxes(list) {
+  return [...list.querySelectorAll('[data-select-key]')]
+    .filter(input => !input.closest('[hidden]'));
 }
 
 function setSidebarSelectionMode(target, active) {
@@ -798,7 +847,7 @@ function setSidebarSelectionMode(target, active) {
 function syncSidebarSelectionState(target) {
   const list = sidebarListFromTarget(target);
   if (!list?.id) return;
-  const boxes = [...list.querySelectorAll('[data-select-key]')];
+  const boxes = sidebarSelectionBoxes(list);
   const checked = boxes.filter(box => box.checked);
   const selectionMode = list.classList.contains('selection-mode');
   document.querySelectorAll('[data-selection-master-for]').forEach(master => {
@@ -864,7 +913,7 @@ function attachSidebarSelectionHandlers(target) {
       master.addEventListener('change', () => {
         const targetList = document.getElementById(master.dataset.selectionMasterFor || '');
         const shouldSelect = master.checked;
-        targetList?.querySelectorAll('[data-select-key]').forEach(input => {
+        sidebarSelectionBoxes(targetList || document.createElement('div')).forEach(input => {
           input.checked = shouldSelect;
           input.dispatchEvent(new Event('change', { bubbles: true }));
         });
@@ -877,11 +926,12 @@ function attachSidebarSelectionHandlers(target) {
   setSidebarSelectionMode(list, keepSelectionMode);
 }
 
-function renderSidebarPage(view) {
+function renderSidebarPage(view, filter = currentSidebarSearchFilter()) {
   const list = document.getElementById('sidebar-list');
   const sidebar = document.getElementById('sidebar');
   if (!list) return;
   sidebar?.classList.add('sidebar-page-mode');
+  updateSidebarSearchControl(view);
   updateRailActiveState();
 
   const meta = {
@@ -914,6 +964,7 @@ function renderSidebarPage(view) {
     document.getElementById('sidebar-notifications-delete-read')?.addEventListener('click', () => deleteReadNotifications());
     document.querySelector('[data-selection-unread-for="sidebar-notifications-list"]')?.addEventListener('click', () => markNotificationsUnread(selectedSidebarKeys('sidebar-notifications-list')));
     document.querySelector('[data-selection-delete-for="sidebar-notifications-list"]')?.addEventListener('click', () => deleteReadNotifications(selectedSidebarKeys('sidebar-notifications-list')));
+    applySidebarPageSearch(content, filter);
     return;
   }
 
@@ -927,6 +978,7 @@ function renderSidebarPage(view) {
     document.getElementById('sidebar-alarms-delete-read')?.addEventListener('click', () => deleteReadReminderItems());
     document.querySelector('[data-selection-unread-for="sidebar-alarms-list"]')?.addEventListener('click', () => markReminderItemsUnread(selectedSidebarKeys('sidebar-alarms-list')));
     document.querySelector('[data-selection-delete-for="sidebar-alarms-list"]')?.addEventListener('click', () => deleteReadReminderItems(selectedSidebarKeys('sidebar-alarms-list')));
+    applySidebarPageSearch(content, filter);
     return;
   }
 
@@ -942,6 +994,7 @@ function renderSidebarPage(view) {
     document.getElementById('sidebar-conversations-delete-read')?.addEventListener('click', () => deleteReadSidebarConversationAlerts());
     document.querySelector('[data-selection-unread-for="sidebar-conversations-list"]')?.addEventListener('click', () => markSidebarConversationsUnread(selectedSidebarKeys('sidebar-conversations-list')));
     document.querySelector('[data-selection-delete-for="sidebar-conversations-list"]')?.addEventListener('click', () => deleteReadSidebarConversationAlerts(selectedSidebarKeys('sidebar-conversations-list')));
+    applySidebarPageSearch(content, filter);
     return;
   }
 
@@ -967,6 +1020,7 @@ function renderSidebarPage(view) {
     document.getElementById('sidebar-connect-profile-email-input')?.addEventListener('keydown', e => {
       if (e.key === 'Enter') connectProfileByEmail('sidebar-connect-profile-email-input');
     });
+    applySidebarPageSearch(content, filter);
     return;
   }
 
@@ -976,7 +1030,10 @@ function renderSidebarPage(view) {
       ? '<div class="trash-list" id="sidebar-trash-list"></div>'
       : '<div class="sidebar-page-empty">Deleted notes stay here for 30 days.</div>';
     const trashList = document.getElementById('sidebar-trash-list');
-    if (!trashList) return;
+    if (!trashList) {
+      applySidebarPageSearch(content, filter);
+      return;
+    }
     trashList.innerHTML = trashIds.map(id => {
       const note = notes[id];
       const days = trashDaysRemaining(note);
@@ -1001,6 +1058,7 @@ function renderSidebarPage(view) {
     trashList.querySelectorAll('[data-delete-trash-note]').forEach(btn => {
       btn.addEventListener('click', () => openDeleteModal('trash-note', btn.dataset.deleteTrashNote));
     });
+    applySidebarPageSearch(content, filter);
   }
 }
 
@@ -1013,8 +1071,9 @@ function renderSidebar(filter) {
   filter = (sidebarFilter || '').toLowerCase();
   const list = document.getElementById('sidebar-list');
   const sidebar = document.getElementById('sidebar');
+  updateSidebarSearchControl(sidebarView);
   if (sidebarView !== 'notes') {
-    renderSidebarPage(sidebarView);
+    renderSidebarPage(sidebarView, filter);
     renderNotificationButton();
     renderAlarmButton();
     return;
@@ -1428,6 +1487,8 @@ const ACCENT_PALETTES = {
 const DEFAULT_ACCENT = ACCENT_PALETTES.blue.accent;
 let accentColor = localStorage.getItem('notas_accent') || DEFAULT_ACCENT;
 let _accentApplyFrame = 0;
+let _accentScrubbing = false;
+let _accentDesktopSyncPending = false;
 
 function clampColor(n) {
   return Math.max(0, Math.min(255, Math.round(n)));
@@ -1670,7 +1731,7 @@ function brightenDarkUiColor(hex, weight) {
   return rgbToHex(mixColor(rgb, { r: 255, g: 255, b: 255 }, weight));
 }
 
-function applyAccentColor(value) {
+function applyAccentColor(value, { refreshPicker = true } = {}) {
   const normalized = normalizeAccentColor(value);
   const p = accentPalette(normalized);
   const s = document.documentElement.style; // <html>
@@ -1711,16 +1772,21 @@ function applyAccentColor(value) {
   b.setProperty('--ambient-b', `rgba(${p.r2},${p.g2},${p.b2},${lm ? '.16' : '.12'})`);
   b.setProperty('--ambient-c', `rgba(${Math.min(p.r+90,255)},${Math.min(p.g+30,255)},${Math.min(p.b+10,255)},${lm ? '.14' : '.08'})`);
 
-  updateColorPickerUI(normalized);
+  if (refreshPicker) updateColorPickerUI(normalized);
 }
 
 function setAccentColor(value) {
   accentColor = normalizeAccentColor(value);
   localStorage.setItem('notas_accent', accentColor);
+  if (_accentScrubbing) _accentDesktopSyncPending = true;
   if (_accentApplyFrame) cancelAnimationFrame(_accentApplyFrame);
   _accentApplyFrame = requestAnimationFrame(() => {
     _accentApplyFrame = 0;
-    applyAccentColor(accentColor);
+    applyAccentColor(accentColor, { refreshPicker: !_accentScrubbing });
+    if (_accentScrubbing) {
+      _accentDesktopSyncPending = true;
+      return;
+    }
     if (typeof notifyDesktopThemeStateChanged === 'function') notifyDesktopThemeStateChanged();
   });
 }
@@ -1836,9 +1902,21 @@ function initSettings() {
   function setAccentScrubbing(active) {
     clearTimeout(accentScrubTimer);
     if (active) {
+      _accentScrubbing = true;
       document.body.classList.add('accent-scrubbing');
       return;
     }
+    if (!_accentScrubbing) return;
+    _accentScrubbing = false;
+    if (_accentApplyFrame) {
+      cancelAnimationFrame(_accentApplyFrame);
+      _accentApplyFrame = 0;
+    }
+    applyAccentColor(accentColor);
+    if (_accentDesktopSyncPending && typeof notifyDesktopThemeStateChanged === 'function') {
+      notifyDesktopThemeStateChanged();
+    }
+    _accentDesktopSyncPending = false;
     accentScrubTimer = setTimeout(() => {
       document.body.classList.remove('accent-scrubbing');
     }, 90);

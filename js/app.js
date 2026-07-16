@@ -901,9 +901,19 @@ document.getElementById('doc-title').addEventListener('blur', () => {
 });
 
 let _searchTimer;
-document.getElementById('search-input').addEventListener('input', e => {
+const sidebarSearchInput = document.getElementById('search-input');
+sidebarSearchInput?.addEventListener('input', e => {
+  if (typeof updateSidebarSearchControl === 'function') updateSidebarSearchControl();
   clearTimeout(_searchTimer);
   _searchTimer = setTimeout(() => renderSidebar(e.target.value), 150);
+});
+document.getElementById('search-clear-btn')?.addEventListener('click', () => {
+  if (!sidebarSearchInput) return;
+  clearTimeout(_searchTimer);
+  sidebarSearchInput.value = '';
+  if (typeof updateSidebarSearchControl === 'function') updateSidebarSearchControl();
+  renderSidebar('');
+  sidebarSearchInput.focus();
 });
 
 document.addEventListener('keydown', e => {

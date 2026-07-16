@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, Tray, ipcMain, nativeImage, shell } = require('electron');
+const { app, BrowserWindow, Menu, Tray, ipcMain, nativeImage, screen, shell } = require('electron');
 const { createReadStream, readFileSync, writeFileSync } = require('node:fs');
 const { stat } = require('node:fs/promises');
 const { createServer } = require('node:http');
@@ -9,7 +9,7 @@ const ELECTRON_URL_ENV = 'NOTAS_ELECTRON_URL';
 const serveRoot = path.resolve(__dirname, '..');
 const preloadPath = path.join(__dirname, 'preload.js');
 const iconPath = path.join(serveRoot, 'notas.icns');
-const menuBarIconPath = path.join(serveRoot, 'notas-icon.png');
+const menuBarIconPath = path.join(serveRoot, 'notas-menubar-icon.png');
 
 let appBaseUrl = '';
 let staticServer = null;
@@ -561,6 +561,23 @@ function createNoteBrowserWindow(behavior = {}) {
   return noteWindow;
 }
 
+function positionNoteWindowOnCursorDisplay(win) {
+  if (!win || win.isDestroyed()) return;
+  const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+  const workArea = display?.workArea;
+  if (!workArea) return;
+
+  const bounds = win.getBounds();
+  const width = Math.min(bounds.width, workArea.width);
+  const height = Math.min(bounds.height, workArea.height);
+  win.setBounds({
+    x: workArea.x + Math.round((workArea.width - width) / 2),
+    y: workArea.y + Math.round((workArea.height - height) / 2),
+    width,
+    height
+  });
+}
+
 function applyNoteWindowFloatingBehavior(win) {
   if (!win || win.isDestroyed()) return;
   win.setAlwaysOnTop(true, 'floating');
@@ -656,6 +673,7 @@ function toggleNoteWindow(noteId, noteSnapshot) {
     const initialNote = normalizeNoteSnapshot(normalizedNoteId, noteSnapshot);
     if (!initialNote) return { ok: false, error: 'Missing Note Snapshot' };
     setNoteWindowContext(existing, normalizedNoteId, initialNote, { deferReveal: true });
+    positionNoteWindowOnCursorDisplay(existing);
     return { ok: true, windowId: existing.id, reused: true, pending: true };
   }
 
@@ -674,6 +692,7 @@ function toggleNoteWindow(noteId, noteSnapshot) {
 
   if (existingNoteWindow?.isVisible()) hideWarmWindow(existingNoteWindow);
   setNoteWindowContext(noteWindow, normalizedNoteId, initialNote, { deferReveal: true });
+  positionNoteWindowOnCursorDisplay(noteWindow);
   if (reused) {
     if (warmedWindow) scheduleNoteWindowPrewarm();
   } else {
@@ -691,6 +710,7 @@ function openNoteWindow(noteId, noteSnapshot) {
   const existing = noteWindows.get(normalizedNoteId);
   if (existing && !existing.isDestroyed()) {
     applyNoteWindowFloatingBehavior(existing);
+    if (!existing.isVisible() || existing.isMinimized()) positionNoteWindowOnCursorDisplay(existing);
     showAndFocusWhenReady(existing);
     return { ok: true, windowId: existing.id, reused: true };
   }
@@ -815,7 +835,21 @@ function requestMainRenderer(channel, payload) {
   flushPendingMainRendererMessages();
 }
 
-function openMenuBarTarget() {
+function isVisibleWindow(win) {
+  return !!win && !win.isDestroyed() && win.isVisible() && !win.isMinimized();
+}
+
+function hideMenuBarTargetIfVisible() {
+  const targetWindow = menuBarSettings.mode === 'note' && menuBarSettings.noteId
+    ? noteWindows.get(menuBarSettings.noteId)
+    : mainWindow;
+  if (!isVisibleWindow(targetWindow)) return false;
+  hideWarmWindow(targetWindow);
+  return true;
+}
+
+function toggleMenuBarTarget() {
+  if (hideMenuBarTargetIfVisible()) return;
   if (menuBarSettings.mode === 'note' && menuBarSettings.noteId) {
     const snapshot = menuBarNotes.get(menuBarSettings.noteId);
     if (snapshot) {
@@ -863,7 +897,7 @@ function createMenuBarTray() {
   if (!trayImage.isEmpty()) trayImage = trayImage.resize({ width: 18, height: 18 });
   menuBarTray = new Tray(trayImage);
   menuBarTray.setToolTip(APP_NAME);
-  menuBarTray.on('click', openMenuBarTarget);
+  menuBarTray.on('click', toggleMenuBarTarget);
   menuBarTray.on('right-click', () => menuBarTray?.popUpContextMenu(buildMenuBarContextMenu()));
   return menuBarTray;
 }
@@ -1066,9 +1100,10 @@ function configureMacDesktopApp() {
   app.setActivationPolicy('regular');
 }
 
-function showMacDesktopApp() {
+async function showMacDesktopApp() {
   if (process.platform !== 'darwin') return;
-  app.dock.show();
+  app.setActivationPolicy('regular');
+  await app.dock.show();
 }
 
 function restoreMainWindowIfNeeded() {
@@ -1097,7 +1132,7 @@ app.on('web-contents-created', (_event, contents) => {
 
 app.whenReady().then(async () => {
   if (!hasSingleInstanceLock) return;
-  showMacDesktopApp();
+  await showMacDesktopApp();
   registerIpcHandlers();
   loadMenuBarSettings();
 

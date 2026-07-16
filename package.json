@@ -1,6 +1,6 @@
 {
   "name": "notas-electron",
-  "version": "1.4.12",
+  "version": "1.4.17",
   "description": "Standalone Electron desktop clone of Notas",
   "private": true,
   "main": "electron/main.js",
@@ -31,16 +31,14 @@
       "firebase-config.local.js",
       "notas.png",
       "notas-icon.png",
+      "notas-menubar-icon.png",
       "notas.icns",
       "package.json"
     ],
     "mac": {
       "category": "public.app-category.productivity",
       "icon": "notas.icns",
-      "hardenedRuntime": false,
-      "extendInfo": {
-        "LSUIElement": false
-      }
+      "hardenedRuntime": false
     },
     "dmg": {
       "artifactName": "${productName}-${version}-${arch}.${ext}"
