@@ -388,14 +388,30 @@ body.desktop-app:not(.desktop-note-window) #app-rail::after {
   pointer-events: none;
 }
 body.desktop-app:not(.desktop-note-window) #sidebar {
-  background: linear-gradient(180deg, rgba(10, 15, 23, .98), rgba(6, 10, 17, .97));
+  isolation: auto;
+  background:
+    radial-gradient(ellipse 105% 54% at 100% 70%,
+      rgba(var(--orb-r), var(--orb-g), var(--orb-b), .34) 0%,
+      rgba(var(--orb-r), var(--orb-g), var(--orb-b), .21) 30%,
+      rgba(var(--orb-r), var(--orb-g), var(--orb-b), .09) 55%,
+      rgba(var(--orb-r), var(--orb-g), var(--orb-b), 0) 82%),
+    linear-gradient(180deg, rgba(10, 15, 23, .98), rgba(6, 10, 17, .97));
   border-right: 0;
   box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 body.light-mode.desktop-app:not(.desktop-note-window) #app-rail,
 body.light-mode.desktop-app:not(.desktop-note-window) #sidebar {
-  background: var(--surface);
+  background:
+    radial-gradient(ellipse 105% 54% at 100% 70%,
+      rgba(var(--orb-r), var(--orb-g), var(--orb-b), .32) 0%,
+      rgba(var(--orb-r), var(--orb-g), var(--orb-b), .2) 32%,
+      rgba(var(--orb-r), var(--orb-g), var(--orb-b), .09) 58%,
+      rgba(var(--orb-r), var(--orb-g), var(--orb-b), 0) 84%),
+    var(--surface);
 }
+body.desktop-app:not(.desktop-note-window) #sidebar::after { content: none; }
 .rail-stack { display: flex; flex-direction: column; align-items: center; gap: 10px; width: 100%; }
 .rail-account-stack { gap: 16px; }
 .rail-account-stack .rail-btn { width: 44px; height: 44px; border-radius: 12px; }

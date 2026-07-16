@@ -24,6 +24,7 @@
   let hasVisibleNoteWindow = desktopContext.type === 'note';
   let applyingRemoteNoteState = false;
   let applyingRemoteThemeState = false;
+  let foregroundRefreshFrame = 0;
 
   document.body.classList.add('desktop-app');
   if (desktopContext.type === 'note') document.body.classList.add('desktop-note-window');
@@ -399,6 +400,24 @@
     refreshWindowTitle();
   }
 
+  function refreshForegroundPresentation() {
+    if (document.visibilityState === 'hidden' || foregroundRefreshFrame) return;
+    foregroundRefreshFrame = requestAnimationFrame(() => {
+      foregroundRefreshFrame = 0;
+      if (document.visibilityState === 'hidden') return;
+      refreshDesktopControls();
+      if (desktopContext.type === 'main' && typeof updateSidebarWidthState === 'function') {
+        updateSidebarWidthState();
+      }
+      if (typeof refreshTableResizeHandles === 'function') {
+        refreshTableResizeHandles(document.getElementById('editor'));
+      }
+      if (typeof updateCounts === 'function') updateCounts();
+      scheduleDockNotificationBadgeSync();
+      scheduleMenuBarNoteSync();
+    });
+  }
+
   async function openNoteWindowForNote(note) {
     const snapshot = desktopNoteSnapshot(note);
     if (!snapshot) {
@@ -637,6 +656,7 @@
     });
     window.desktop.onNoteStateChanged?.(applyRemoteNoteState);
     window.desktop.onThemeStateChanged?.(applyRemoteThemeState);
+    window.desktop.onWindowForegrounded?.(refreshForegroundPresentation);
 
     document.getElementById('doc-title')?.addEventListener('input', () => {
       refreshWindowTitle();
@@ -647,9 +667,13 @@
       scheduleDesktopNoteStateBroadcast();
     });
     window.addEventListener('focus', () => {
-      refreshDesktopControls();
+      refreshForegroundPresentation();
       requestNoteWindowPrewarm();
       scheduleMenuBarNoteSync();
+    });
+    window.addEventListener('pageshow', refreshForegroundPresentation);
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') refreshForegroundPresentation();
     });
     window.addEventListener('notas:home-prepared', () => {
       menuBarNotesReady = false;

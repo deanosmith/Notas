@@ -401,12 +401,14 @@ function configureWindowSecurity(win) {
 function showAndFocusWindow(win) {
   if (!win || win.isDestroyed()) return;
   if (process.platform === 'darwin') {
+    ensureMacDesktopAppVisible();
     if (app.isHidden()) app.show();
     if (!app.isActive()) app.focus({ steal: true });
   }
   if (win.isMinimized()) win.restore();
   if (!win.isVisible()) win.show();
   win.focus();
+  refreshWindowAfterForegrounding(win);
 }
 
 function hideWarmWindow(win) {
@@ -426,6 +428,25 @@ function showWindowWhenReady(win) {
   win.once('ready-to-show', show);
   win.webContents.once('did-finish-load', show);
   win.webContents.once('did-fail-load', show);
+}
+
+function repaintWindow(win) {
+  if (!win || win.isDestroyed() || win.isMinimized()) return;
+  try {
+    win.webContents.invalidate();
+  } catch (err) {
+    if (!isQuitting) console.warn('refresh window surface:', err);
+  }
+  sendRendererMessage(win, 'desktop:window-foregrounded');
+}
+
+function refreshWindowAfterForegrounding(win) {
+  repaintWindow(win);
+  setTimeout(() => repaintWindow(win), 120);
+}
+
+function refreshApplicationWindowsAfterForegrounding() {
+  BrowserWindow.getAllWindows().forEach(refreshWindowAfterForegrounding);
 }
 
 function showAndFocusWhenReady(win) {
@@ -473,18 +494,23 @@ function sendWindowContext(win) {
 }
 
 function createWindow(options, behavior = {}) {
+  const { webPreferences: webPreferencesOverrides, ...windowOptions } = options;
   const win = new BrowserWindow({
     backgroundColor: '#050a12',
     icon: iconPath,
     show: false,
+    paintWhenInitiallyHidden: true,
     skipTaskbar: false,
     focusable: true,
     ...(process.platform === 'darwin' ? {
       titleBarStyle: 'hiddenInset',
       trafficLightPosition: { x: 13, y: 15 }
     } : {}),
-    webPreferences: secureWebPreferences(true),
-    ...options
+    ...windowOptions,
+    webPreferences: {
+      ...secureWebPreferences(true),
+      ...webPreferencesOverrides
+    }
   });
 
   configureWindowSecurity(win);
@@ -496,14 +522,20 @@ function createWindow(options, behavior = {}) {
     event.preventDefault();
     hideWarmWindow(win);
   });
-  win.on('focus', buildApplicationMenu);
+  win.on('focus', () => {
+    buildApplicationMenu();
+    refreshWindowAfterForegrounding(win);
+  });
   win.on('blur', buildApplicationMenu);
   win.on('show', () => {
+    refreshWindowAfterForegrounding(win);
     if (windowContext(win)?.type === 'note') notifyMainNoteWindowPresence();
   });
+  win.on('restore', () => refreshWindowAfterForegrounding(win));
   win.on('hide', () => {
     if (windowContext(win)?.type === 'note') notifyMainNoteWindowPresence();
   });
+  win.webContents.on('did-finish-load', () => refreshWindowAfterForegrounding(win));
   win.on('closed', () => {
     const context = windowContexts.get(win.id);
     const shouldSuppressPrewarm = suppressNextNoteWindowPrewarm;
@@ -539,7 +571,10 @@ function createMainWindow(behavior = {}) {
     height: 880,
     minWidth: 900,
     minHeight: 620,
-    title: APP_NAME
+    title: APP_NAME,
+    webPreferences: {
+      backgroundThrottling: false
+    }
   }, behavior);
   windowContexts.set(mainWindow.id, { type: 'main', alwaysOnTop: false });
   mainRendererReadyWindowId = 0;
@@ -581,13 +616,6 @@ function positionNoteWindowOnCursorDisplay(win) {
 function applyNoteWindowFloatingBehavior(win) {
   if (!win || win.isDestroyed()) return;
   win.setAlwaysOnTop(true, 'floating');
-  if (process.platform === 'darwin' && typeof win.setVisibleOnAllWorkspaces === 'function') {
-    try {
-      win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-    } catch (err) {
-      console.error('set pop-out visible on all workspaces:', err);
-    }
-  }
 }
 
 function setNoteWindowContext(noteWindow, noteId, initialNote, options = {}) {
@@ -720,12 +748,6 @@ function openNoteWindow(noteId, noteSnapshot) {
 function windowContext(win) {
   if (!win || win.isDestroyed()) return null;
   return windowContexts.get(win.id) || null;
-}
-
-function hasVisibleApplicationWindow() {
-  return BrowserWindow.getAllWindows().some(win =>
-    !win.isDestroyed() && win.isVisible() && !win.isMinimized()
-  );
 }
 
 function hasVisibleNoteWindow() {
@@ -1100,15 +1122,32 @@ function configureMacDesktopApp() {
   app.setActivationPolicy('regular');
 }
 
-async function showMacDesktopApp() {
+function ensureMacDesktopAppVisible() {
   if (process.platform !== 'darwin') return;
-  app.setActivationPolicy('regular');
-  await app.dock.show();
+  configureMacDesktopApp();
+  if (!app.dock || app.dock.isVisible()) return;
+  app.dock.show().catch(err => console.warn('show Dock icon:', err));
 }
 
-function restoreMainWindowIfNeeded() {
-  if (!appBaseUrl || hasVisibleApplicationWindow()) return;
+async function showMacDesktopApp() {
+  if (process.platform !== 'darwin') return;
+  configureMacDesktopApp();
+  if (app.dock && !app.dock.isVisible()) await app.dock.show();
+}
+
+function restoreMainWindowIfNeeded(_event, hasVisibleWindows) {
+  ensureMacDesktopAppVisible();
+  if (!appBaseUrl) return;
+  if (hasVisibleWindows) {
+    refreshApplicationWindowsAfterForegrounding();
+    return;
+  }
   revealMainWindow();
+}
+
+function refreshMacApplicationAfterActivation() {
+  ensureMacDesktopAppVisible();
+  refreshApplicationWindowsAfterForegrounding();
 }
 
 if (hasSingleInstanceLock) {
@@ -1120,7 +1159,7 @@ if (hasSingleInstanceLock) {
 
   if (process.platform === 'darwin') {
     app.on('activate', restoreMainWindowIfNeeded);
-    app.on('did-become-active', restoreMainWindowIfNeeded);
+    app.on('did-become-active', refreshMacApplicationAfterActivation);
   }
 }
 

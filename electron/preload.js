@@ -26,6 +26,7 @@ contextBridge.exposeInMainWorld('desktop', {
   onNoteWindowPresenceChanged: callback => on('desktop:note-window-presence-changed', callback),
   onNoteStateChanged: callback => on('desktop:note-state-changed', callback),
   onThemeStateChanged: callback => on('desktop:theme-state-changed', callback),
+  onWindowForegrounded: callback => on('desktop:window-foregrounded', callback),
   onOpenActiveNote: callback => on('desktop:open-active-note', callback),
   onNewNote: callback => on('desktop:new-note', callback),
   onMenuBarSettingsChanged: callback => on('desktop:menubar-settings-changed', callback),
