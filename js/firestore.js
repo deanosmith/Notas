@@ -46,8 +46,9 @@ function clearActiveNoteBodyListener() {
 }
 
 function releaseInactiveNoteBodies(keepId = '') {
+  const splitPeerId = typeof getNoteSplitPeerId === 'function' ? getNoteSplitPeerId() : '';
   Object.keys(notes || {}).forEach(id => {
-    if (id === keepId) return;
+    if (id === keepId || id === splitPeerId) return;
     const note = notes[id];
     if (!note?._bodyLoaded) return;
     note.content = '';
@@ -256,19 +257,21 @@ function listenToFolders() {
 /* Write / Delete */
 async function saveDoc(note) {
   if (!userId) return false;
+  const isActiveNote = () => activeId === note?.id;
   if (!canEditNote(note)) {
-    setSaveState('readonly');
+    if (isActiveNote()) setSaveState('readonly');
     return false;
   }
-  setSaveState('saving');
+  if (isActiveNote()) setSaveState('saving');
+  const contentLoaded = !!note._bodyLoaded;
+  const content = contentLoaded ? String(note.content || '') : '';
+  const snapshot = { ...note, content, _bodyLoaded: contentLoaded };
   try {
-    const isOwner = !note.owner || note.owner === userId;
-    const contentLoaded = !!note._bodyLoaded;
-    const content = contentLoaded ? String(note.content || '') : '';
-    const bodyStored = contentLoaded ? await writeNoteBodyDoc(note, content) : true;
+    const isOwner = !snapshot.owner || snapshot.owner === userId;
+    const bodyStored = contentLoaded ? await writeNoteBodyDoc(snapshot, content) : true;
     // Shared users only update title/content; owner fields stay untouched (merge preserves sharedWith)
     const payload = {
-      title:    note.title,
+      title:    snapshot.title,
       modified: serverTimestamp()
     };
     if (contentLoaded) {
@@ -278,24 +281,24 @@ async function saveDoc(note) {
     }
     if (isOwner) {
       payload.owner   = userId;
-      payload.public  = computeEffectiveNotePublic(note);
-      payload.linkPublic = !!note.linkPublic;
-      payload.publicFolderIds = normalizePublicFolderIds(note.publicFolderIds);
-      payload.created = Timestamp.fromDate(new Date(note.created));
-      payload.pinnedAt = note.pinnedAt ? Timestamp.fromDate(new Date(note.pinnedAt)) : deleteField();
-      payload.pinScope = note.pinnedAt ? (note.pinScope === 'minor' ? 'minor' : 'major') : deleteField();
-      if (Array.isArray(note.mentionedUids)) payload.mentionedUids = note.mentionedUids;
-      if (note.folderId) payload.folderId = note.folderId;
+      payload.public  = computeEffectiveNotePublic(snapshot);
+      payload.linkPublic = !!snapshot.linkPublic;
+      payload.publicFolderIds = normalizePublicFolderIds(snapshot.publicFolderIds);
+      payload.created = Timestamp.fromDate(new Date(snapshot.created));
+      payload.pinnedAt = snapshot.pinnedAt ? Timestamp.fromDate(new Date(snapshot.pinnedAt)) : deleteField();
+      payload.pinScope = snapshot.pinnedAt ? (snapshot.pinScope === 'minor' ? 'minor' : 'major') : deleteField();
+      if (Array.isArray(snapshot.mentionedUids)) payload.mentionedUids = snapshot.mentionedUids;
+      if (snapshot.folderId) payload.folderId = snapshot.folderId;
     }
-    await setDoc(doc(fsDb, 'notes', note.id), payload, { merge: true });
-    if (contentLoaded) applyNoteBodyContent(note.id, content);
-    setSaveState('saved');
+    await setDoc(doc(fsDb, 'notes', snapshot.id), payload, { merge: true });
+    if (contentLoaded && isActiveNote()) applyNoteBodyContent(snapshot.id, content);
+    if (isActiveNote()) setSaveState('saved');
     return true;
   } catch (err) {
     console.error('setDoc:', err);
-    setSaveState('error');
+    if (isActiveNote()) setSaveState('error');
     showToast('Failed To Save — Check Connection', 'error');
-    _persistOffline(note);
+    _persistOffline(snapshot);
     return false;
   }
 }

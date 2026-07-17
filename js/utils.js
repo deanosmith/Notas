@@ -728,10 +728,11 @@ function inlineAlarmsFromRoot(root) {
   return [...root.querySelectorAll('.note-alarm')].map((mark, index) => {
     const alarmAt = normalizeAlarmAt(mark.dataset.alarmAt);
     if (!alarmAt) return null;
+    const imageLabel = mark.querySelector('img')?.getAttribute('alt') || '';
     return {
       alarmId: mark.dataset.alarmId || 'alarm_' + index,
       alarmAt,
-      text: normalizeNotePlainText(mark.textContent || 'Reminder', 180) || 'Reminder',
+      text: normalizeNotePlainText(mark.textContent || imageLabel || 'Reminder', 180) || 'Reminder',
       direction: mark.dataset.alarmDirection === 'sent' ? 'sent' : 'mine',
       targetUid: mark.dataset.alarmTargetUid || '',
       targetName: normalizeNotePlainText(mark.dataset.alarmTargetName || '', 120)

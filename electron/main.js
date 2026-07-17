@@ -294,7 +294,8 @@ function normalizeThemeState(state) {
     fontSize,
     lineHeight: Number.isFinite(lineHeight)
       ? Math.max(1.2, Math.min(2.2, Math.round(lineHeight * 100) / 100))
-      : 1.66
+      : 1.66,
+    textStylingVisible: state.textStylingVisible !== false
   };
 }
 
@@ -336,8 +337,34 @@ function secureWebPreferences(includePreload = true) {
   return preferences;
 }
 
+function showEditorImageContextMenu(win, payload = {}) {
+  if (!win || win.isDestroyed()) return;
+  const editable = payload?.editable === true;
+  const template = editable
+    ? [
+        { label: 'Undo', role: 'undo' },
+        { label: 'Redo', role: 'redo' },
+        { type: 'separator' },
+        { label: 'Cut', role: 'cut' },
+        { label: 'Copy', role: 'copy' },
+        { label: 'Paste', role: 'paste' },
+        { label: 'Select All', role: 'selectAll' }
+      ]
+    : [
+        { label: 'Copy', role: 'copy' },
+        { label: 'Select All', role: 'selectAll' }
+      ];
+  const options = { window: win };
+  if (Number.isFinite(payload?.x) && Number.isFinite(payload?.y)) {
+    options.x = Math.max(0, Math.trunc(payload.x));
+    options.y = Math.max(0, Math.trunc(payload.y));
+  }
+  Menu.buildFromTemplate(template).popup(options);
+}
+
 function configureWindowSecurity(win) {
   win.webContents.on('context-menu', (_event, params) => {
+    if (params.mediaType === 'image' && isAppUrl(params.pageURL || win.webContents.getURL())) return;
     const template = [];
     const hasSelection = !!String(params.selectionText || '').trim();
     const isEditable = !!params.isEditable;
@@ -1053,6 +1080,12 @@ function registerIpcHandlers() {
     if (!state) return;
     lastThemeState = state;
     broadcastThemeState(senderWin, state);
+  });
+
+  ipcMain.on('desktop:editor-image-context-menu', (event, payload) => {
+    const senderWin = BrowserWindow.fromWebContents(event.sender);
+    if (!senderWin || !windowContext(senderWin) || !isAppUrl(event.sender.getURL())) return;
+    showEditorImageContextMenu(senderWin, payload);
   });
 
   ipcMain.on('desktop:menubar-notes-changed', (event, snapshots) => {

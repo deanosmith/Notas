@@ -34,9 +34,76 @@ function closeTransientSurfaces() {
   }
 }
 
+function resetAuthenticatedWorkspaceState() {
+  clearTimeout(saveTimer);
+  saveTimer = null;
+  if (unsubscribe) { unsubscribe(); unsubscribe = null; }
+  if (unsubFolders) { unsubFolders(); unsubFolders = null; }
+  if (unsubUserDoc) { unsubUserDoc(); unsubUserDoc = null; }
+  if (unsubProfileShares) { unsubProfileShares(); unsubProfileShares = null; }
+  if (unsubProfileLinkRequests) { unsubProfileLinkRequests(); unsubProfileLinkRequests = null; }
+  if (unsubFriends) { unsubFriends(); unsubFriends = null; }
+  if (unsubIncomingFriendRequests) { unsubIncomingFriendRequests(); unsubIncomingFriendRequests = null; }
+  if (unsubSentFriendRequests) { unsubSentFriendRequests(); unsubSentFriendRequests = null; }
+  if (unsubOwnedNoteAccess) { unsubOwnedNoteAccess(); unsubOwnedNoteAccess = null; }
+  if (unsubSharedWithMe) { unsubSharedWithMe(); unsubSharedWithMe = null; }
+  if (typeof clearActiveNoteBodyListener === 'function') clearActiveNoteBodyListener();
+  if (typeof clearConversationState === 'function') clearConversationState({ close: true });
+  directShareUnsubs.forEach(fn => fn());
+  directShareUnsubs = [];
+  Object.values(sharedNoteUnsubs).forEach(fn => fn());
+  sharedNoteUnsubs = {};
+  sharedNoteInitialLoads = {};
+  sharedLibraryMeta = {};
+  removedSharedNoteIds = {};
+  currentProfile = null;
+  linkedProfiles = {};
+  friends = {};
+  incomingFriendRequests = {};
+  sentFriendRequests = {};
+  noteAccessByNote = {};
+  noteAccessById = {};
+  myNoteAccessByNote = {};
+  profileLinkRequests = {};
+  profileLinkRequestSources = {};
+  readNotifications = {};
+  noteAlarms = {};
+  sentReminders = {};
+  profileShareNotifications = {};
+  notificationsUnavailable = false;
+  noteConversations = {};
+  allConversations = {};
+  conversationMessages = {};
+  conversationMessageUnsubs = {};
+  unsubNoteConversations = null;
+  activeNoteBodyUnsub = null;
+  activeNoteBodyListeningId = null;
+  activeNoteBodyRequestSeq += 1;
+  legacyBodyMigrationIds = new Set();
+  activeConversationId = null;
+  conversationsOpen = false;
+  conversationComposeAnchor = null;
+  conversationListeningNoteId = null;
+  _processingProfileLinkResponses = new Set();
+  _processingAcceptedFriendRequests = new Set();
+  _sendingFriendRequests = new Set();
+  declinedMentionShares = new Set();
+  notes = {};
+  folders = {};
+  activeId = null;
+  activeFolderId = null;
+  expandedFolders = new Set();
+  initialNoteRestoreId = '';
+  initialNoteRestorePending = false;
+  appUndoStack.length = 0;
+  appRedoStack.length = 0;
+}
+
 function prepareAuthenticatedHome() {
   closeTransientSurfaces();
+  resetAuthenticatedWorkspaceState();
   if (typeof resetAppNavigationState === 'function') resetAppNavigationState();
+  if (typeof clearNoteSplitView === 'function') clearNoteSplitView();
   activeFolderId = null;
   sidebarView = 'notes';
   sidebarFilter = '';
@@ -204,7 +271,11 @@ async function authenticateTestPasswordUser(email, password) {
 }
 
 /* Auth */
+let _authStartupSequence = 0;
+
 onAuthStateChanged(auth, async user => {
+  const startupSequence = ++_authStartupSequence;
+  const isCurrentStartup = () => startupSequence === _authStartupSequence && (!user || userId === user.uid);
   const overlay = document.getElementById('auth-overlay');
   if (user) {
     showLoadingOverlay();
@@ -217,7 +288,9 @@ onAuthStateChanged(auth, async user => {
       const signoutRow = document.getElementById('signout-row');
       if (signoutRow) signoutRow.style.display = '';
       await migrateFromLocalStorage();
+      if (!isCurrentStartup()) return;
       await ensureProfileDocument(user);
+      if (!isCurrentStartup()) return;
       linkedProfiles = _readLinkedProfilesFromLocal();
       removedSharedNoteIds = _readRemovedSharedIdsFromLocal();
       renderProfileConnectionUI();
@@ -237,12 +310,12 @@ onAuthStateChanged(auth, async user => {
       if (_sharedNoteId)   handleShareLink(_sharedNoteId);
       if (_sharedFolderId) importSharedFolder(_sharedFolderId);
       await Promise.all([initialNotesLoad, initialFoldersLoad, initialSharedLibraryLoad, initialSharedWithMeLoad]);
-      if (!isDesktopNoteWindow() && typeof openInitialNoteOrFirst === 'function') openInitialNoteOrFirst();
+      if (isCurrentStartup() && !isDesktopNoteWindow() && typeof openInitialNoteOrFirst === 'function') openInitialNoteOrFirst();
     } catch (err) {
       console.error('auth state startup:', err);
-      showToast('Could Not Finish Loading Notes', 'error');
+      if (isCurrentStartup()) showToast('Could Not Finish Loading Notes', 'error');
     } finally {
-      hideLoadingOverlay();
+      if (isCurrentStartup()) hideLoadingOverlay();
     }
   } else {
     closeTransientSurfaces();
@@ -307,6 +380,7 @@ onAuthStateChanged(auth, async user => {
     notes = {}; folders = {}; activeId = null; activeFolderId = null; sidebarView = 'notes'; sidebarFilter = '';
     initialNoteRestoreId = '';
     initialNoteRestorePending = false;
+    if (typeof clearNoteSplitView === 'function') clearNoteSplitView();
     if (typeof resetAppNavigationState === 'function') resetAppNavigationState();
     showEditorView(false);
     renderSidebar();

@@ -8,6 +8,7 @@ let sidebarFilter = '';
 const LAST_OPEN_NOTE_STORAGE_KEY = 'notas_last_open_note_id';
 let initialNoteRestoreId = '';
 let initialNoteRestorePending = false;
+let noteSplitView = { peerId: '', side: 'right', awaiting: false, activePane: 'live', dividerRatio: .5 };
 let expandedFolders = new Set();
 let sidebarMinimized = false; // initialised after DOM ready
 let userId        = null;

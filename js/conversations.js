@@ -541,11 +541,15 @@ function conversationAnchorFromSelection() {
   const range = editorRangeForConversation();
   const bookmark = captureRangeBookmark(ed, range);
   const selectedText = conversationText(range.toString(), 260);
-  const context = conversationText(selectedText || blockTextForRange(range) || notes[activeId]?.title || 'Cursor location', 260);
+  const selectedImage = typeof noteImageBlockForRange === 'function' ? noteImageBlockForRange(range, ed) : null;
+  const imageLabel = selectedImage && typeof selectedNoteImageLabel === 'function'
+    ? selectedNoteImageLabel(selectedImage)
+    : '';
+  const context = conversationText(selectedText || imageLabel || blockTextForRange(range) || notes[activeId]?.title || 'Cursor location', 260);
   return {
     noteId: activeId || '',
     mode: range.collapsed ? 'cursor' : 'selection',
-    text: selectedText,
+    text: selectedText || imageLabel,
     context,
     start: bookmark?.start || 0,
     end: bookmark?.end || bookmark?.start || 0,
@@ -1022,7 +1026,9 @@ function restoreConversationAnchorMarks(root = getEd()) {
     if (!updateConversationAnchorMarkDisplay(mark)) {
       unwrapConversationAnchorMark(mark);
       changed = true;
+      return;
     }
+    if (typeof syncNoteImageAnnotationMark === 'function') syncNoteImageAnnotationMark(mark);
   });
   return changed;
 }
@@ -1082,6 +1088,7 @@ async function applyConversationAnchorMark(conversationId, anchor) {
     } else {
       mark.appendChild(range.extractContents());
       mark.querySelectorAll('.note-conversation-anchor').forEach(nested => unwrapConversationAnchorMark(nested));
+      if (typeof syncNoteImageAnnotationMark === 'function') syncNoteImageAnnotationMark(mark);
       range.insertNode(mark);
     }
     restoreConversationAnchorMarks(ed);
@@ -1129,12 +1136,14 @@ async function ensureConversationAnchorPresent(conversation, options = {}) {
     const mark = createConversationAnchorMark(latest.id, anchor);
     const anchorText = anchor.text || '';
     const selectedText = range.collapsed ? '' : range.toString();
+    const selectedImage = typeof selectionContainsNoteImage === 'function' && selectionContainsNoteImage(range, ed);
     const selectedMatchesAnchor = !!anchorText &&
-      normalizedConversationAnchorText(selectedText) === normalizedConversationAnchorText(anchorText);
+      (normalizedConversationAnchorText(selectedText) === normalizedConversationAnchorText(anchorText) || !!selectedImage);
 
     if (anchor.mode !== 'cursor' && selectedMatchesAnchor) {
       mark.appendChild(range.extractContents());
       mark.querySelectorAll('.note-conversation-anchor').forEach(nested => unwrapConversationAnchorMark(nested));
+      if (typeof syncNoteImageAnnotationMark === 'function') syncNoteImageAnnotationMark(mark);
       range.insertNode(mark);
     } else {
       if (!range.collapsed) range.collapse(true);
@@ -2322,7 +2331,9 @@ function selectionRangeIsInEditor() {
   const owner = range.commonAncestorContainer.nodeType === Node.ELEMENT_NODE
     ? range.commonAncestorContainer
     : range.commonAncestorContainer.parentElement;
-  if (!owner || !ed.contains(owner) || !range.toString().trim()) return null;
+  const hasText = !!range.toString().trim();
+  const hasImage = typeof selectionContainsNoteImage === 'function' && selectionContainsNoteImage(range, ed);
+  if (!owner || !ed.contains(owner) || (!hasText && !hasImage)) return null;
   return range;
 }
 
@@ -2349,7 +2360,8 @@ function renderConversationSelectionPopover() {
     hideConversationSelectionPopover();
     return;
   }
-  const rect = range.getBoundingClientRect();
+  const imageBlock = typeof noteImageBlockForRange === 'function' ? noteImageBlockForRange(range) : null;
+  const rect = imageBlock?.getBoundingClientRect?.() || range.getBoundingClientRect();
   if (!rect || (!rect.width && !rect.height)) {
     hideConversationSelectionPopover();
     return;

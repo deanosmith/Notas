@@ -1,4 +1,10 @@
 /* Editor helpers, toolbar actions, reminders, and mentions. */
+let _editorActionRoot = null;
+
+function isSecondaryEditorActionRoot() {
+  return !!_editorActionRoot && _editorActionRoot !== document.getElementById('editor');
+}
+
 function makeUndoSnapshot(ed = getEd()) {
   if (!ed) return null;
   return {
@@ -50,6 +56,7 @@ function refreshUndoSnapshotSelection() {
 }
 
 function pushUndo() {
+  if (isSecondaryEditorActionRoot()) return;
   const ed = getEd();
   if (!ed) return;
   clearTimeout(_undoDebounceTimer);
@@ -118,6 +125,7 @@ function restoreUndoSnapshot(snapshot) {
   normalizeCodeThemeStyles(ed);
   restoreChecklistState(ed);
   restoreAlarmMarks(ed);
+  if (typeof restoreConversationAnchorMarks === 'function') restoreConversationAnchorMarks(ed);
   decorateTables(ed);
   decorateNoteImages(ed);
   recomputeCollapsedSections();
@@ -332,6 +340,7 @@ async function performAppRedo() {
 
 // Debounced snapshot for regular typing — captures state periodically
 function scheduleUndoSnapshot() {
+  if (isSecondaryEditorActionRoot()) return;
   clearTimeout(_undoDebounceTimer);
   _undoDebounceTimer = setTimeout(() => {
     commitUndoSnapshot();
@@ -640,6 +649,60 @@ function syncSelectedNoteImageState(root = getEd()) {
   });
 }
 
+function noteImageBlockForRange(range, root = getEd()) {
+  if (!range || range.collapsed || !root) return null;
+  const selected = selectedNoteImageBlock(root);
+  if (selected) {
+    try {
+      if (range.intersectsNode(selected)) return selected;
+    } catch (_) {}
+  }
+  return [...root.querySelectorAll('.note-image-block')].find(block => {
+    try { return range.intersectsNode(block); }
+    catch (_) { return false; }
+  }) || null;
+}
+
+function selectionContainsNoteImage(range, root = getEd()) {
+  return !!noteImageBlockForRange(range, root);
+}
+
+function selectedNoteImageLabel(block = selectedNoteImageBlock()) {
+  const img = block?.matches?.('img') ? block : block?.querySelector?.('img.note-image, img');
+  const alt = String(img?.alt || '').replace(/^Pasted image:\s*/i, '').trim();
+  return alt || 'Selected Image';
+}
+
+function syncNoteImageAnnotationMark(mark) {
+  if (!mark?.classList) return false;
+  const hasImage = !!mark.querySelector?.('.note-image-block, img.note-image, img[data-note-image]');
+  const hasText = String(mark.textContent || '').replace(/\u200b/g, '').trim().length > 0;
+  mark.classList.toggle('note-image-annotation', hasImage && !hasText);
+  return hasImage;
+}
+
+function removeEmptyNoteImageAnnotations(root = getEd()) {
+  if (!root) return;
+  root.querySelectorAll('.note-alarm.note-image-annotation, .note-conversation-anchor.note-image-annotation').forEach(mark => {
+    const wasImageAnnotation = mark.classList.contains('note-image-annotation');
+    if (syncNoteImageAnnotationMark(mark) || !wasImageAnnotation) return;
+    if (mark.classList.contains('note-alarm') && typeof unwrapAlarmMark === 'function') unwrapAlarmMark(mark);
+    else if (mark.classList.contains('note-conversation-anchor') && typeof unwrapConversationAnchorMark === 'function') unwrapConversationAnchorMark(mark);
+  });
+}
+
+function shouldBlockSelectedNoteImageReplacement() {
+  const block = selectedNoteImageBlock();
+  const mark = block?.closest?.('.note-conversation-anchor');
+  const conversation = mark && typeof conversationById === 'function'
+    ? conversationById(mark.dataset.conversationId || '')
+    : null;
+  if (!block || !mark || !conversation || conversation.resolved) return false;
+  selectNoteImageBlock(block);
+  showToast('Resolve Conversation Before Removing Topic', 'error');
+  return true;
+}
+
 function cleanNoteImageBlockHTML(block) {
   if (!block) return '';
   const wrapper = document.createElement('div');
@@ -666,11 +729,13 @@ function copySelectedNoteImage(clipboardData) {
 function cutSelectedNoteImage(clipboardData) {
   const block = selectedNoteImageBlock();
   if (!block || !activeId || !canEditNote(notes[activeId])) return false;
+  if (shouldBlockSelectedNoteImageReplacement()) return true;
   if (!writeSelectedNoteImageToClipboard(clipboardData)) return false;
   pushUndo();
   const marker = document.createTextNode('\u200b');
   block.after(marker);
   block.remove();
+  removeEmptyNoteImageAnnotations(getEd());
   clearSelectedNoteImages(getEd());
   const range = document.createRange();
   range.setStart(marker, 1);
@@ -1570,7 +1635,6 @@ function showEditorView(show) {
   document.getElementById('empty-state').style.display = show ? 'none' : 'flex';
   document.getElementById('editorView').style.display  = show ? 'flex' : 'none';
   if (!show && typeof setNoteFocusMode === 'function') setNoteFocusMode(false);
-  if (typeof updateNoteFocusButton === 'function') updateNoteFocusButton();
   if (!show && typeof listenToConversationsForNote === 'function') listenToConversationsForNote(null);
 }
 
@@ -1940,7 +2004,8 @@ function getCleanHTML() {
 
 function syncActiveNoteFromEditor() {
   if (!activeId || !notes[activeId]) return false;
-  if (!canEditNote(notes[activeId])) return false;
+  const ed = getEd();
+  if (!canEditNote(notes[activeId]) || !notes[activeId]._bodyLoaded || ed?.classList.contains('is-loading')) return false;
   applyNoteBodyContent(activeId, getCleanHTML(), { text: editorEl.innerText || editorEl.textContent || '' });
   notes[activeId].modified = new Date().toISOString();
   updateCounts();
@@ -1959,7 +2024,43 @@ function showToast(msg, type) {
 }
 
 
-const getEd = () => document.getElementById('editor');
+const getEd = () => _editorActionRoot || document.getElementById('editor');
+
+function runEditorOperationOnRoot(root, operation) {
+  if (!root || typeof operation !== 'function') return false;
+  const previousRoot = _editorActionRoot;
+  _editorActionRoot = root;
+  try {
+    return operation();
+  } finally {
+    _editorActionRoot = previousRoot;
+  }
+}
+
+function editorRootForElement(element) {
+  return element?.closest?.('#editor, #note-split-peer-body') || getEd();
+}
+
+function editorRootNoteId(root = getEd()) {
+  if (root?.id === 'note-split-peer-body' && typeof getNoteSplitPeerId === 'function') {
+    return getNoteSplitPeerId();
+  }
+  return activeId;
+}
+
+function canEditEditorRoot(root = getEd()) {
+  const noteId = editorRootNoteId(root);
+  return !!noteId && !!notes?.[noteId] && canEditNote(notes[noteId]);
+}
+
+function scheduleEditorRootUndoSnapshot(root) {
+  if (root === document.getElementById('editor')) scheduleUndoSnapshot();
+}
+
+function dispatchEditorRootInput(root) {
+  root?.dispatchEvent?.(new Event('input', { bubbles: true }));
+}
+
 const cmd   = (command, value) => { getEd().focus(); document.execCommand(command, false, value || null); };
 
 function currentBlockFromSelection() {
@@ -2772,6 +2873,15 @@ function tableScrollWrapForTable(table) {
   return table?.closest?.('.note-table-scroll') || null;
 }
 
+function tableEditorRoot(table) {
+  return editorRootForElement(table);
+}
+
+function tableEditorIsEditable(table) {
+  const root = tableEditorRoot(table);
+  return !!root && (root.isContentEditable || root.getAttribute?.('contenteditable') === 'true');
+}
+
 function updateTableScrollState(table) {
   const scrollWrap = tableScrollWrapForTable(table);
   if (!scrollWrap) return;
@@ -2853,8 +2963,8 @@ function updateTableResizeHandles(table) {
   if (!table || !scrollWrap || !controls) return;
   updateTableScrollState(table);
   const colCount = tableColumnCount(table);
-  if (!getEd()?.isContentEditable) {
-    controls.replaceChildren();
+  if (!tableEditorIsEditable(table)) {
+    if (controls.childElementCount) controls.replaceChildren();
     return;
   }
   const firstRow = table.rows[0];
@@ -2877,26 +2987,29 @@ function updateTableResizeHandles(table) {
       const key = String(index);
       const handle = existing.get(key) || document.createElement('span');
       const wasDragging = handle.classList.contains('dragging') || draggingIndex === key;
-      handle.className = 'table-resize-handle';
-      if (wasDragging) handle.classList.add('dragging');
-      handle.dataset.tableResize = key;
-      handle.setAttribute('contenteditable', 'false');
-      handle.style.left = left + 'px';
-      controls.appendChild(handle);
+      handle.classList.add('table-resize-handle');
+      handle.classList.remove('table-edge-resize-handle');
+      handle.classList.toggle('dragging', wasDragging);
+      if (handle.dataset.tableResize !== key) handle.dataset.tableResize = key;
+      if (handle.getAttribute('contenteditable') !== 'false') handle.setAttribute('contenteditable', 'false');
+      const nextLeft = left + 'px';
+      if (handle.style.left !== nextLeft) handle.style.left = nextLeft;
+      if (handle.parentNode !== controls) controls.appendChild(handle);
       keep.add(key);
     }
   }
   const edgeLeft = tableRect.right - scrollRect.left + scrollWrap.scrollLeft;
   const edgeHandle = existing.get(TABLE_EDGE_RESIZE_KEY) || document.createElement('span');
   const edgeWasDragging = edgeHandle.classList.contains('dragging') || draggingIndex === TABLE_EDGE_RESIZE_KEY;
-  edgeHandle.className = 'table-resize-handle table-edge-resize-handle';
-  if (edgeWasDragging) edgeHandle.classList.add('dragging');
-  edgeHandle.dataset.tableResize = TABLE_EDGE_RESIZE_KEY;
-  edgeHandle.setAttribute('contenteditable', 'false');
-  edgeHandle.setAttribute('title', 'Resize Table');
-  edgeHandle.setAttribute('aria-label', 'Resize Table');
-  edgeHandle.style.left = edgeLeft + 'px';
-  controls.appendChild(edgeHandle);
+  edgeHandle.classList.add('table-resize-handle', 'table-edge-resize-handle');
+  edgeHandle.classList.toggle('dragging', edgeWasDragging);
+  if (edgeHandle.dataset.tableResize !== TABLE_EDGE_RESIZE_KEY) edgeHandle.dataset.tableResize = TABLE_EDGE_RESIZE_KEY;
+  if (edgeHandle.getAttribute('contenteditable') !== 'false') edgeHandle.setAttribute('contenteditable', 'false');
+  if (edgeHandle.getAttribute('title') !== 'Resize Table') edgeHandle.setAttribute('title', 'Resize Table');
+  if (edgeHandle.getAttribute('aria-label') !== 'Resize Table') edgeHandle.setAttribute('aria-label', 'Resize Table');
+  const nextEdgeLeft = edgeLeft + 'px';
+  if (edgeHandle.style.left !== nextEdgeLeft) edgeHandle.style.left = nextEdgeLeft;
+  if (edgeHandle.parentNode !== controls) controls.appendChild(edgeHandle);
   keep.add(TABLE_EDGE_RESIZE_KEY);
   existing.forEach((handle, key) => {
     if (!keep.has(key)) handle.remove();
@@ -2916,6 +3029,17 @@ function updateActiveTableColumnResizeHandle(table, handle, colIndex) {
   handle.style.left = (cell.getBoundingClientRect().right - scrollRect.left + scrollWrap.scrollLeft) + 'px';
 }
 
+function updateActiveTableWidthResizeHandle(table, handle) {
+  const scrollWrap = tableScrollWrapForTable(table);
+  const controls = scrollWrap?.querySelector(':scope > .table-resize-controls');
+  if (!table || !scrollWrap || !controls || !handle) return;
+  const scrollRect = scrollWrap.getBoundingClientRect();
+  const tableRect = table.getBoundingClientRect();
+  controls.style.width = Math.max(scrollWrap.clientWidth, tableRect.width) + 'px';
+  controls.style.height = tableRect.height + 'px';
+  handle.style.left = (tableRect.right - scrollRect.left + scrollWrap.scrollLeft) + 'px';
+}
+
 function updateTableReorderHandles(table) {
   const scrollWrap = tableScrollWrapForTable(table);
   const wrap = table?.closest?.('.note-table-wrap');
@@ -2923,8 +3047,8 @@ function updateTableReorderHandles(table) {
   if (!table || !scrollWrap || !wrap || !controls) return;
   const rows = [...table.rows];
   const colCount = tableColumnCount(table);
-  if (!rows.length || !getEd()?.isContentEditable) {
-    controls.replaceChildren();
+  if (!rows.length || !tableEditorIsEditable(table)) {
+    if (controls.childElementCount) controls.replaceChildren();
     return;
   }
 
@@ -2949,18 +3073,22 @@ function updateTableReorderHandles(table) {
     const key = 'row:' + index;
     const handle = existing.get(key) || document.createElement('button');
     const active = _tableReorderState?.type === 'row' && _tableReorderState.table === table && _tableReorderState.fromIndex === index;
-    handle.className = 'table-reorder-handle table-row-reorder-handle';
-    if (active) handle.classList.add('dragging');
+    handle.classList.add('table-reorder-handle', 'table-row-reorder-handle');
+    handle.classList.remove('table-column-reorder-handle');
+    handle.classList.toggle('dragging', active);
     handle.type = 'button';
-    handle.dataset.tableReorder = 'row';
-    handle.dataset.tableRowReorder = String(index);
-    handle.setAttribute('contenteditable', 'false');
-    handle.setAttribute('title', 'Move Row');
-    handle.setAttribute('aria-label', 'Move Row');
-    handle.innerHTML = '<i class="fa-solid fa-up-down"></i>';
-    handle.style.left = tableLeft + 'px';
-    handle.style.top = (rect.top - wrapRect.top + rect.height / 2) + 'px';
-    controls.appendChild(handle);
+    if (handle.dataset.tableReorder !== 'row') handle.dataset.tableReorder = 'row';
+    const rowIndex = String(index);
+    if (handle.dataset.tableRowReorder !== rowIndex) handle.dataset.tableRowReorder = rowIndex;
+    if (handle.getAttribute('contenteditable') !== 'false') handle.setAttribute('contenteditable', 'false');
+    if (handle.getAttribute('title') !== 'Move Row') handle.setAttribute('title', 'Move Row');
+    if (handle.getAttribute('aria-label') !== 'Move Row') handle.setAttribute('aria-label', 'Move Row');
+    if (!handle.querySelector(':scope > i.fa-up-down')) handle.innerHTML = '<i class="fa-solid fa-up-down"></i>';
+    const rowLeft = tableLeft + 'px';
+    const rowTop = (rect.top - wrapRect.top + rect.height / 2) + 'px';
+    if (handle.style.left !== rowLeft) handle.style.left = rowLeft;
+    if (handle.style.top !== rowTop) handle.style.top = rowTop;
+    if (handle.parentNode !== controls) controls.appendChild(handle);
     keep.add(key);
   });
 
@@ -2971,23 +3099,27 @@ function updateTableReorderHandles(table) {
     const key = 'column:' + index;
     const handle = existing.get(key) || document.createElement('button');
     const active = _tableReorderState?.type === 'column' && _tableReorderState.table === table && _tableReorderState.fromIndex === index;
-    handle.className = 'table-reorder-handle table-column-reorder-handle';
-    if (active) handle.classList.add('dragging');
+    handle.classList.add('table-reorder-handle', 'table-column-reorder-handle');
+    handle.classList.remove('table-row-reorder-handle');
+    handle.classList.toggle('dragging', active);
     handle.type = 'button';
-    handle.dataset.tableReorder = 'column';
-    handle.dataset.tableColumnReorder = String(index);
-    handle.setAttribute('contenteditable', 'false');
-    handle.setAttribute('title', 'Move Column');
-    handle.setAttribute('aria-label', 'Move Column');
-    handle.innerHTML = '<i class="fa-solid fa-left-right"></i>';
+    if (handle.dataset.tableReorder !== 'column') handle.dataset.tableReorder = 'column';
+    const columnIndex = String(index);
+    if (handle.dataset.tableColumnReorder !== columnIndex) handle.dataset.tableColumnReorder = columnIndex;
+    if (handle.getAttribute('contenteditable') !== 'false') handle.setAttribute('contenteditable', 'false');
+    if (handle.getAttribute('title') !== 'Move Column') handle.setAttribute('title', 'Move Column');
+    if (handle.getAttribute('aria-label') !== 'Move Column') handle.setAttribute('aria-label', 'Move Column');
+    if (!handle.querySelector(':scope > i.fa-left-right')) handle.innerHTML = '<i class="fa-solid fa-left-right"></i>';
     const left = rect.left - wrapRect.left + rect.width / 2;
     if (left < visibleLeft || left > visibleRight) {
       handle.remove();
       continue;
     }
-    handle.style.left = left + 'px';
-    handle.style.top = tableTop + 'px';
-    controls.appendChild(handle);
+    const columnLeft = left + 'px';
+    const columnTop = tableTop + 'px';
+    if (handle.style.left !== columnLeft) handle.style.left = columnLeft;
+    if (handle.style.top !== columnTop) handle.style.top = columnTop;
+    if (handle.parentNode !== controls) controls.appendChild(handle);
     keep.add(key);
   }
 
@@ -3443,6 +3575,17 @@ function previewTableColumnDrag(state, clientX) {
   });
 }
 
+function previewTableRowDrag(state, clientY) {
+  if (!state || state.type !== 'row' || !state.sourceRect) return;
+  const sourceRect = state.sourceRect;
+  const tableRect = state.tableRect;
+  const delta = clampValue(clientY - state.startY, tableRect.top - sourceRect.top, tableRect.bottom - sourceRect.bottom);
+  state.sourceCells.forEach(cell => {
+    cell.classList.add('table-row-drag-source');
+    cell.style.transform = 'translate3d(0, ' + delta + 'px, 0)';
+  });
+}
+
 function clearTableColumnDragPreview(state) {
   state?.sourceCells?.forEach(cell => {
     cell.classList.remove('table-column-drag-source');
@@ -3450,8 +3593,21 @@ function clearTableColumnDragPreview(state) {
   });
 }
 
-function animateTableColumnMove(table, beforeRects) {
+function clearTableRowDragPreview(state) {
+  state?.sourceCells?.forEach(cell => {
+    cell.classList.remove('table-row-drag-source');
+    cell.style.transform = '';
+  });
+}
+
+function clearTableReorderDragPreview(state) {
+  if (state?.type === 'row') clearTableRowDragPreview(state);
+  else clearTableColumnDragPreview(state);
+}
+
+function animateTableReorderMove(table, beforeRects, type) {
   if (!table || !beforeRects?.size) return;
+  const settlingClass = type === 'row' ? 'table-row-settling' : 'table-column-settling';
   const animated = [];
   beforeRects.forEach((before, cell) => {
     if (!cell.isConnected || !table.contains(cell)) return;
@@ -3467,22 +3623,25 @@ function animateTableColumnMove(table, beforeRects) {
   table.getBoundingClientRect();
   requestAnimationFrame(() => {
     animated.forEach(cell => {
-      cell.classList.add('table-column-settling');
+      cell.classList.add(settlingClass);
       cell.style.transition = '';
       cell.style.transform = '';
-      const cleanup = () => {
-        cell.classList.remove('table-column-settling');
+      const cleanup = event => {
+        if (event && (event.target !== cell || event.propertyName !== 'transform')) return;
+        cell.removeEventListener('transitionend', cleanup);
+        cell.classList.remove(settlingClass);
         cell.style.transition = '';
         cell.style.transform = '';
       };
-      cell.addEventListener('transitionend', cleanup, { once: true });
-      setTimeout(cleanup, 260);
+      cell.addEventListener('transitionend', cleanup);
+      setTimeout(() => cleanup(), 260);
     });
   });
 }
 
 function startTableReorder(e, handle) {
-  if (!activeId || !canEditNote(notes[activeId])) return;
+  const root = tableEditorRoot(handle);
+  if (!canEditEditorRoot(root)) return;
   const type = handle?.dataset?.tableReorder;
   if (type !== 'row' && type !== 'column') return;
   const table = tableForReorderHandle(handle);
@@ -3493,11 +3652,21 @@ function startTableReorder(e, handle) {
   e.preventDefault();
   e.stopPropagation();
   pushUndo();
+  table.querySelectorAll('.table-column-settling, .table-row-settling').forEach(cell => {
+    cell.classList.remove('table-column-settling', 'table-row-settling');
+    cell.style.transition = '';
+    cell.style.transform = '';
+  });
   if (type === 'column') setTableColumnWidthsFromLayout(table);
 
   const midpoints = tableReorderMidpoints(table, type);
-  const sourceCells = type === 'column' ? [...table.rows].map(row => row.cells[fromIndex]).filter(Boolean) : [];
-  const sourceRect = sourceCells[0]?.getBoundingClientRect?.() || null;
+  const sourceRow = type === 'row' ? table.rows[fromIndex] : null;
+  const sourceCells = type === 'column'
+    ? [...table.rows].map(row => row.cells[fromIndex]).filter(Boolean)
+    : [...(sourceRow?.cells || [])];
+  const sourceRect = type === 'row'
+    ? sourceRow?.getBoundingClientRect?.() || null
+    : sourceCells[0]?.getBoundingClientRect?.() || null;
   _tableReorderState = {
     table,
     type,
@@ -3507,7 +3676,8 @@ function startTableReorder(e, handle) {
     sourceCells,
     sourceRect,
     tableRect: table.getBoundingClientRect(),
-    startX: e.clientX
+    startX: e.clientX,
+    startY: e.clientY
   };
   handle.classList.add('dragging');
   table.closest('.note-table-wrap')?.classList.add('table-reordering');
@@ -3516,19 +3686,40 @@ function startTableReorder(e, handle) {
   document.body.style.userSelect = 'none';
   try { handle.setPointerCapture?.(e.pointerId); } catch (_) {}
 
+  let latestX = e.clientX;
+  let latestY = e.clientY;
+  let previewFrame = 0;
+  const updatePreview = () => {
+    const state = _tableReorderState;
+    if (!state || state.table !== table) return;
+    const pointer = type === 'row' ? latestY : latestX;
+    state.insertionIndex = tableReorderInsertionIndexFromMidpoints(state.midpoints, pointer);
+    if (type === 'column') previewTableColumnDrag(state, latestX);
+    else previewTableRowDrag(state, latestY);
+    updateTableReorderIndicator(table, type, state.insertionIndex);
+  };
+
   const move = evt => {
     evt.preventDefault();
     if (!_tableReorderState || _tableReorderState.table !== table) return;
-    const pointer = type === 'row' ? evt.clientY : evt.clientX;
-    _tableReorderState.insertionIndex = tableReorderInsertionIndexFromMidpoints(_tableReorderState.midpoints, pointer);
-    if (type === 'column') previewTableColumnDrag(_tableReorderState, evt.clientX);
-    updateTableReorderIndicator(table, type, _tableReorderState.insertionIndex);
+    latestX = evt.clientX;
+    latestY = evt.clientY;
+    if (previewFrame) return;
+    previewFrame = requestAnimationFrame(() => {
+      previewFrame = 0;
+      updatePreview();
+    });
   };
 
-  const finish = () => {
+  const finish = evt => {
     document.removeEventListener('pointermove', move);
     document.removeEventListener('pointerup', finish);
     document.removeEventListener('pointercancel', finish);
+    if (previewFrame) {
+      cancelAnimationFrame(previewFrame);
+      previewFrame = 0;
+      if (evt?.type !== 'pointercancel') updatePreview();
+    }
     handle.classList.remove('dragging');
     try { handle.releasePointerCapture?.(e.pointerId); } catch (_) {}
     document.body.style.cursor = '';
@@ -3537,10 +3728,16 @@ function startTableReorder(e, handle) {
 
     const state = _tableReorderState;
     _tableReorderState = null;
-    const beforeRects = type === 'column' ? tableCellRects(table) : null;
-    clearTableColumnDragPreview(state);
+    const beforeRects = tableCellRects(table);
+    clearTableReorderDragPreview(state);
     clearTableReorderIndicator(table);
     if (!state || state.table !== table) return;
+    if (evt?.type === 'pointercancel') {
+      updateTableResizeHandles(table);
+      updateTableReorderHandles(table);
+      scheduleEditorRootUndoSnapshot(root);
+      return;
+    }
 
     const nextCount = tableReorderCount(table, type);
     const toIndex = tableReorderTargetIndex(state.fromIndex, state.insertionIndex, nextCount);
@@ -3550,18 +3747,18 @@ function startTableReorder(e, handle) {
 
     if (moved) {
       ensureTableShape(table);
-      decorateTables(getEd());
+      if (root !== document.getElementById('editor')) decorateTables(root);
       const targetCell = type === 'row'
         ? table.rows[toIndex]?.cells[0]
         : table.rows[0]?.cells[toIndex];
       placeCursorInTableCell(targetCell);
-      getEd().dispatchEvent(new Event('input'));
-      if (type === 'column') animateTableColumnMove(table, beforeRects);
+      dispatchEditorRootInput(root);
+      animateTableReorderMove(table, beforeRects, type);
     } else {
       updateTableResizeHandles(table);
       updateTableReorderHandles(table);
     }
-    scheduleUndoSnapshot();
+    scheduleEditorRootUndoSnapshot(root);
   };
 
   document.addEventListener('pointermove', move, { passive: false });
@@ -3583,7 +3780,8 @@ function deleteTable(table) {
 }
 
 function openTableDeleteModal(table) {
-  if (!table || !activeId || !canEditNote(notes[activeId])) return;
+  const root = tableEditorRoot(table);
+  if (!table || !canEditEditorRoot(root)) return;
   _deletePending = { type: 'table', table };
   const titleEl = document.getElementById('delete-modal-title');
   const bodyEl = document.getElementById('delete-modal-body');
@@ -3599,15 +3797,21 @@ function openTableDeleteModal(table) {
 }
 
 function confirmTableDelete(table) {
-  if (!table || !activeId || !canEditNote(notes[activeId]) || !getEd().contains(table)) return;
-  pushUndo();
-  deleteTable(table);
-  getEd().dispatchEvent(new Event('input'));
-  scheduleUndoSnapshot();
+  const root = tableEditorRoot(table);
+  if (!table || !canEditEditorRoot(root) || !root?.contains(table)) return;
+  const remove = () => {
+    pushUndo();
+    deleteTable(table);
+    dispatchEditorRootInput(root);
+    scheduleEditorRootUndoSnapshot(root);
+  };
+  if (root === document.getElementById('editor')) remove();
+  else runEditorOperationOnRoot(root, remove);
 }
 
 function handleTableControl(btn) {
-  if (!activeId || !canEditNote(notes[activeId])) return;
+  const root = tableEditorRoot(btn);
+  if (!canEditEditorRoot(root)) return;
   const table = tableForButton(btn);
   if (!table) return;
   const action = btn.dataset.tableAction;
@@ -3625,13 +3829,14 @@ function handleTableControl(btn) {
   if (action === 'add-column') addTableColumn(table);
   if (action === 'remove-column') removeTableColumn(table);
   ensureTableShape(table);
-  decorateTables(getEd());
-  getEd().dispatchEvent(new Event('input'));
-  scheduleUndoSnapshot();
+  if (root !== document.getElementById('editor')) decorateTables(root);
+  dispatchEditorRootInput(root);
+  scheduleEditorRootUndoSnapshot(root);
 }
 
 function startTableColumnResize(e, handle) {
-  if (!activeId || !canEditNote(notes[activeId])) return;
+  const root = tableEditorRoot(handle);
+  if (!canEditEditorRoot(root)) return;
   if (handle?.dataset?.tableResize === TABLE_EDGE_RESIZE_KEY) {
     startTableWidthResize(e, handle);
     return;
@@ -3700,8 +3905,9 @@ function startTableColumnResize(e, handle) {
     scrollWrap?.classList.remove('is-resizing');
     ensureTableShape(table);
     updateTableResizeHandles(table);
-    getEd().dispatchEvent(new Event('input'));
-    scheduleUndoSnapshot();
+    updateTableReorderHandles(table);
+    dispatchEditorRootInput(root);
+    scheduleEditorRootUndoSnapshot(root);
   };
 
   document.addEventListener('pointermove', move, { passive: false });
@@ -3710,8 +3916,10 @@ function startTableColumnResize(e, handle) {
 }
 
 function startTableWidthResize(e, handle) {
-  if (!activeId || !canEditNote(notes[activeId])) return;
+  const root = tableEditorRoot(handle);
+  if (!canEditEditorRoot(root)) return;
   const table = handle?.closest('.note-table-scroll')?.querySelector('table');
+  const scrollWrap = tableScrollWrapForTable(table);
   if (!table) return;
 
   e.preventDefault();
@@ -3724,6 +3932,7 @@ function startTableWidthResize(e, handle) {
   const startX = e.clientX;
   let latestX = startX;
   let frame = 0;
+  scrollWrap?.classList.add('is-resizing');
   handle.classList.add('dragging');
   document.body.style.cursor = 'col-resize';
   document.body.style.userSelect = 'none';
@@ -3732,8 +3941,7 @@ function startTableWidthResize(e, handle) {
   const applyResize = clientX => {
     const nextWidth = clampValue(startWidth + clientX - startX, minWidth, maxWidth);
     setTablePixelWidth(table, nextWidth);
-    updateTableResizeHandles(table);
-    updateTableReorderHandles(table);
+    updateActiveTableWidthResizeHandle(table, handle);
   };
 
   const move = evt => {
@@ -3759,12 +3967,13 @@ function startTableWidthResize(e, handle) {
     try { handle.releasePointerCapture?.(e.pointerId); } catch (_) {}
     document.body.style.cursor = '';
     document.body.style.userSelect = '';
+    scrollWrap?.classList.remove('is-resizing');
     ensureTableShape(table);
     applyTableChromeWidth(table);
     updateTableResizeHandles(table);
     updateTableReorderHandles(table);
-    getEd().dispatchEvent(new Event('input'));
-    scheduleUndoSnapshot();
+    dispatchEditorRootInput(root);
+    scheduleEditorRootUndoSnapshot(root);
   };
 
   document.addEventListener('pointermove', move, { passive: false });
@@ -3791,9 +4000,11 @@ function moveTableSelection(delta) {
 }
 
 let _linkSavedRange = null;
+let _linkSavedRoot = null;
 function insertLink() {
   const sel = window.getSelection();
   _linkSavedRange = (sel && sel.rangeCount) ? sel.getRangeAt(0).cloneRange() : null;
+  _linkSavedRoot = getEd();
   document.getElementById('link-modal').classList.add('open');
   const inp = document.getElementById('link-modal-url');
   inp.value = 'https://';
@@ -3806,31 +4017,42 @@ function _confirmInsertLink() {
   if (!raw) return;
   const href = normalizeHttpUrlValue(raw);
   if (!href) return;
-  getEd().focus();
-  if (_linkSavedRange) {
-    const sel = window.getSelection();
-    sel.removeAllRanges();
-    sel.addRange(_linkSavedRange);
-  }
-  pushUndo();
-  const sel = window.getSelection();
-  if (!sel || sel.isCollapsed || !applyLinkToSelection(href)) {
-    const link = document.createElement('a');
-    decorateLink(link, href);
-    link.textContent = href;
-    const range = getEditorSelectionRange();
-    if (!range) return;
-    range.insertNode(link);
-    range.setStartAfter(link);
-    range.collapse(true);
-    const nextSel = window.getSelection();
-    if (nextSel) {
-      nextSel.removeAllRanges();
-      nextSel.addRange(range);
+  const root = _linkSavedRoot || getEd();
+  const savedRange = _linkSavedRange;
+  _linkSavedRoot = null;
+  _linkSavedRange = null;
+  if (!root) return;
+  const previousRoot = _editorActionRoot;
+  _editorActionRoot = root;
+  try {
+    getEd().focus();
+    if (savedRange) {
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(savedRange);
     }
+    pushUndo();
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed || !applyLinkToSelection(href)) {
+      const link = document.createElement('a');
+      decorateLink(link, href);
+      link.textContent = href;
+      const range = getEditorSelectionRange();
+      if (!range) return;
+      range.insertNode(link);
+      range.setStartAfter(link);
+      range.collapse(true);
+      const nextSel = window.getSelection();
+      if (nextSel) {
+        nextSel.removeAllRanges();
+        nextSel.addRange(range);
+      }
+    }
+    if (root === document.getElementById('editor')) scheduleUndoSnapshot();
+    getEd().dispatchEvent(new Event('input'));
+  } finally {
+    _editorActionRoot = previousRoot;
   }
-  scheduleUndoSnapshot();
-  getEd().dispatchEvent(new Event('input'));
 }
 
 // Returns editor-level block elements covered by the current selection,
@@ -4030,6 +4252,18 @@ const ACTIONS = {
   }
 };
 
+function runEditorActionOnRoot(root, action) {
+  if (!root || !ACTIONS[action]) return false;
+  const previousRoot = _editorActionRoot;
+  _editorActionRoot = root;
+  try {
+    ACTIONS[action]();
+    return true;
+  } finally {
+    _editorActionRoot = previousRoot;
+  }
+}
+
 function makeAlarmId() {
   return 'alarm_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7);
 }
@@ -4047,7 +4281,10 @@ function formatAlarmDateTime(iso) {
 }
 
 function alarmTextFromMark(mark) {
-  return (mark?.textContent || '').replace(/\u200b/g, ' ').replace(/\s+/g, ' ').trim() || 'Reminder';
+  const text = (mark?.textContent || '').replace(/\u200b/g, ' ').replace(/\s+/g, ' ').trim();
+  if (text) return text;
+  const imageBlock = mark?.querySelector?.('.note-image-block, img');
+  return imageBlock && typeof selectedNoteImageLabel === 'function' ? selectedNoteImageLabel(imageBlock) : 'Reminder';
 }
 
 function createAlarmMark(alarmAt, alarmId = makeAlarmId()) {
@@ -4084,7 +4321,11 @@ function updateAlarmMarkDisplay(mark) {
 
 function restoreAlarmMarks(root) {
   root.querySelectorAll('.note-alarm').forEach(mark => {
-    if (!updateAlarmMarkDisplay(mark)) unwrapAlarmMark(mark);
+    if (!updateAlarmMarkDisplay(mark)) {
+      unwrapAlarmMark(mark);
+      return;
+    }
+    if (typeof syncNoteImageAnnotationMark === 'function') syncNoteImageAnnotationMark(mark);
   });
 }
 
@@ -4620,9 +4861,12 @@ function openNoteAlarmModal(noteId = activeId) {
   const timeInput = document.getElementById('alarm-time-input');
   const targetText = document.getElementById('alarm-target-text');
   const clearBtn = document.getElementById('alarm-clear');
+  const selectedImage = typeof noteImageBlockForRange === 'function' ? noteImageBlockForRange(range) : null;
   const selectedText = existingMark
     ? alarmTextFromMark(existingMark)
-    : (range.collapsed ? 'New reminder text' : (range.toString().replace(/\s+/g, ' ').trim() || 'Selected text'));
+    : (range.collapsed
+      ? 'New reminder text'
+      : (range.toString().replace(/\s+/g, ' ').trim() || (selectedImage ? selectedNoteImageLabel(selectedImage) : 'Selected text')));
 
   _alarmNoteId = noteId;
   _alarmContext = {
@@ -4674,6 +4918,7 @@ function applyAlarmToRange(range, alarmAt, options = {}) {
   }
   mark.appendChild(range.extractContents());
   mark.querySelectorAll('.note-alarm').forEach(nested => unwrapAlarmMark(nested));
+  if (typeof syncNoteImageAnnotationMark === 'function') syncNoteImageAnnotationMark(mark);
   range.insertNode(mark);
   placeCursorAfterNode(mark);
   return mark;

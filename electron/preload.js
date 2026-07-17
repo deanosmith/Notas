@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld('desktop', {
   getWindowContext: () => ipcRenderer.invoke('desktop:get-window-context'),
   openNoteWindow: (noteId, initialNote) => ipcRenderer.invoke('desktop:open-note-window', noteId, initialNote || null),
   prewarmNoteWindow: () => ipcRenderer.send('desktop:prewarm-note-window'),
+  showEditorImageContextMenu: payload => ipcRenderer.send('desktop:editor-image-context-menu', payload || {}),
   updateNoteState: noteState => ipcRenderer.send('desktop:note-state-changed', noteState || null),
   updateThemeState: themeState => ipcRenderer.send('desktop:theme-state-changed', themeState || null),
   setDockNotificationCount: count => ipcRenderer.invoke('desktop:set-dock-notification-count', count),

@@ -108,68 +108,91 @@
       </div>
 
       <div id="editorView">
-        <div class="main-header">
-          <div class="main-title-row">
-            <input class="doc-title-input" id="doc-title" type="text" placeholder="Untitled Note" autocomplete="off" />
-            <div id="doc-access-avatars" aria-hidden="true"></div>
-          </div>
-          <div class="main-toolbar-row">
-            <div class="toolbar" id="toolbar">
-              <div class="toolbar-group">
-                <button class="tb-btn" data-action="h1"            title="Heading 1">H1</button>
-                <button class="tb-btn" data-action="bold"          title="Bold (Cmd+B)"><b>B</b></button>
-                <button class="tb-btn" data-action="italic"        title="Italic (Cmd+I)"><i>I</i></button>
-                <button class="tb-btn" data-action="strikethrough" title="Strikethrough (Cmd+Shift+S)"><s>S</s></button>
+        <div class="note-workspace" id="note-workspace">
+          <section class="note-live-pane" id="note-live-pane" aria-label="Active Note">
+            <div class="main-header">
+              <div class="main-title-row">
+                <input class="doc-title-input" id="doc-title" type="text" placeholder="Untitled Note" autocomplete="off" />
+                <button class="note-split-toggle-btn" id="note-split-toggle-btn" type="button" title="Open Split View" aria-label="Open Split View" aria-pressed="false" disabled>
+                  <i class="fa-solid fa-table-columns"></i>
+                </button>
+                <div id="doc-access-avatars" aria-hidden="true"></div>
               </div>
-              <div class="toolbar-sep"></div>
-              <div class="toolbar-group">
-                <button class="tb-btn" data-action="ul"        title="Bullet List"><i class="fa-solid fa-list-ul"></i></button>
-                <button class="tb-btn" data-action="checklist" title="Checklist"><i class="fa-solid fa-list-check"></i></button>
-                <button class="tb-btn" data-action="ol"        title="Numbered List"><i class="fa-solid fa-list-ol"></i></button>
-              </div>
-              <div class="toolbar-sep"></div>
-              <div class="toolbar-group">
-                <button class="tb-btn" data-action="indentLeft"  title="Outdent (Shift+Tab)"><i class="fa-solid fa-outdent"></i></button>
-                <button class="tb-btn" data-action="indentRight" title="Indent (Tab)"><i class="fa-solid fa-indent"></i></button>
-              </div>
-              <div class="toolbar-sep"></div>
-              <div class="toolbar-group">
-                <button class="tb-btn" data-action="table"     title="Table"><i class="fa-solid fa-table"></i></button>
-                <button class="tb-btn" data-action="code"      title="Inline Code (Cmd+E)"><i class="fa-solid fa-code"></i></button>
-                <button class="tb-btn" data-action="codeblock" title="Code Block"><i class="fa-solid fa-terminal"></i></button>
-              </div>
-              <div class="toolbar-sep"></div>
-              <div class="toolbar-group">
-                <button class="tb-btn" data-action="alarm" title="Set Reminder"><i class="fa-solid fa-clock"></i></button>
-                <button class="tb-btn" data-action="conversation" title="Start Conversation"><i class="fa-solid fa-comments"></i></button>
+              <div class="main-toolbar-row">
+                <div class="toolbar" id="toolbar">
+                  <div class="toolbar-group">
+                    <button class="tb-btn" data-action="h1"            title="Heading 1">H1</button>
+                    <button class="tb-btn" data-action="bold"          title="Bold (Cmd+B)"><b>B</b></button>
+                    <button class="tb-btn" data-action="italic"        title="Italic (Cmd+I)"><i>I</i></button>
+                    <button class="tb-btn" data-action="strikethrough" title="Strikethrough (Cmd+Shift+S)"><s>S</s></button>
+                  </div>
+                  <div class="toolbar-sep"></div>
+                  <div class="toolbar-group">
+                    <button class="tb-btn" data-action="ul"        title="Bullet List"><i class="fa-solid fa-list-ul"></i></button>
+                    <button class="tb-btn" data-action="checklist" title="Checklist"><i class="fa-solid fa-list-check"></i></button>
+                    <button class="tb-btn" data-action="ol"        title="Numbered List"><i class="fa-solid fa-list-ol"></i></button>
+                  </div>
+                  <div class="toolbar-sep"></div>
+                  <div class="toolbar-group">
+                    <button class="tb-btn" data-action="indentLeft"  title="Outdent (Shift+Tab)"><i class="fa-solid fa-outdent"></i></button>
+                    <button class="tb-btn" data-action="indentRight" title="Indent (Tab)"><i class="fa-solid fa-indent"></i></button>
+                  </div>
+                  <div class="toolbar-sep"></div>
+                  <div class="toolbar-group">
+                    <button class="tb-btn" data-action="table"     title="Table"><i class="fa-solid fa-table"></i></button>
+                    <button class="tb-btn" data-action="code"      title="Inline Code (Cmd+E)"><i class="fa-solid fa-code"></i></button>
+                    <button class="tb-btn" data-action="codeblock" title="Code Block"><i class="fa-solid fa-terminal"></i></button>
+                  </div>
+                  <div class="toolbar-sep"></div>
+                  <div class="toolbar-group">
+                    <button class="tb-btn" data-action="alarm" title="Set Reminder"><i class="fa-solid fa-clock"></i></button>
+                    <button class="tb-btn" data-action="conversation" title="Start Conversation"><i class="fa-solid fa-comments"></i></button>
+                  </div>
+                </div>
+                <div class="header-actions" id="header-actions">
+                  <button class="new-note-btn header-action-btn" id="share-btn" type="button" title="Share Note"><i class="fa-solid fa-arrow-up-from-bracket"></i></button>
+                </div>
               </div>
             </div>
-            <div class="header-actions" id="header-actions">
-              <button class="new-note-btn header-action-btn" id="share-btn" type="button" title="Share Note"><i class="fa-solid fa-arrow-up-from-bracket"></i></button>
+
+            <div class="editor-area">
+              <div id="editor"
+                   class="editor is-empty"
+                   contenteditable="true"
+                   spellcheck="true"
+                   data-placeholder="Start Writing..."></div>
             </div>
-          </div>
+
+            <div class="status-bar">
+              <div class="status-left">
+                <div class="save-dot local" id="save-dot"></div>
+                <span id="save-label">Connecting...</span>
+              </div>
+              <div class="status-right">
+                <span id="word-count">0 Words</span>
+                <span id="char-count">0 Characters</span>
+              </div>
+            </div>
+          </section>
+
+          <div class="note-split-divider" id="note-split-divider" role="separator" aria-orientation="vertical" aria-label="Resize Split View" aria-valuemin="20" aria-valuemax="80" aria-valuenow="50" tabindex="0"></div>
+
+          <section class="note-split-peer-pane" id="note-split-peer-pane" aria-label="Split Note" aria-hidden="true">
+            <div class="note-split-peer-header">
+              <input class="note-split-peer-title" id="note-split-peer-title" type="text" placeholder="Untitled Note" autocomplete="off" />
+              <div class="note-split-peer-actions">
+                <button class="note-split-peer-action" id="note-split-close-btn" type="button" title="Close Split" aria-label="Close Split">
+                  <i class="fa-solid fa-xmark"></i>
+                </button>
+              </div>
+            </div>
+            <div class="note-split-peer-body editor" id="note-split-peer-body" contenteditable="false" spellcheck="true" data-placeholder="Start Writing..."></div>
+          </section>
         </div>
 
-        <div class="editor-area">
-          <button class="note-focus-btn editor-focus-btn" id="note-focus-btn" type="button" title="Focus Note" aria-label="Focus Note" disabled>
-            <i class="fa-solid fa-expand"></i>
-          </button>
-          <div id="editor"
-               class="editor is-empty"
-               contenteditable="true"
-               spellcheck="true"
-               data-placeholder="Start Writing..."></div>
-        </div>
-
-        <div class="status-bar">
-          <div class="status-left">
-            <div class="save-dot local" id="save-dot"></div>
-            <span id="save-label">Connecting...</span>
-          </div>
-          <div class="status-right">
-            <span id="word-count">0 Words</span>
-            <span id="char-count">0 Characters</span>
-          </div>
+        <div class="note-split-drop-overlay" id="note-split-drop-overlay" aria-hidden="true">
+          <div class="note-split-drop-zone split-left"><i class="fa-solid fa-table-columns"></i><span>Split Left</span></div>
+          <div class="note-split-drop-zone split-right"><i class="fa-solid fa-table-columns"></i><span>Split Right</span></div>
         </div>
       </div>
     </main>
@@ -195,6 +218,9 @@
   <div id="conversation-selection-popover" class="conversation-selection-popover" hidden>
     <button id="conversation-selection-start-btn" type="button" title="Start Conversation" aria-label="Start Conversation">
       <i class="fa-solid fa-comment-dots"></i>
+    </button>
+    <button id="conversation-selection-reminder-btn" type="button" title="Set Reminder" aria-label="Set Reminder">
+      <i class="fa-solid fa-clock"></i>
     </button>
   </div>
 
@@ -292,6 +318,13 @@
             <span class="toggle-slider"></span>
           </label>
         </div>
+        <div class="settings-row">
+          <span class="settings-label"><i class="fa-solid fa-wand-magic-sparkles"></i>Text Styling</span>
+          <label class="toggle" title="Show text styling controls">
+            <input id="text-styling-toggle" type="checkbox" aria-label="Show text styling controls" />
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
         <div class="settings-row desktop-setting-row">
           <span class="settings-label"><i class="fa-solid fa-bars"></i>Menu Bar Click</span>
           <div class="menubar-settings-controls">
@@ -304,7 +337,7 @@
         </div>
         <div class="settings-row">
           <span class="settings-label"><i class="fa-solid fa-tag"></i>Version</span>
-          <span style="font-size:12px;color:var(--muted);">1.4.17</span>
+          <span style="font-size:12px;color:var(--muted);">1.6.3</span>
         </div>
         <div class="settings-row" id="signout-row" style="display:none;">
           <span class="settings-label"><i class="fa-solid fa-arrow-right-from-bracket"></i>Sign Out</span>

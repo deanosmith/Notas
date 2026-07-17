@@ -1,4 +1,28 @@
 /* Note CRUD and current-note loading. */
+function noteCanAppearInSplit(note) {
+  return !!note && !isTrashedNote(note);
+}
+
+function reconcileNoteSplit() {
+  const splitPeerId = typeof getNoteSplitPeerId === 'function' ? getNoteSplitPeerId() : '';
+  if (splitPeerId && !noteCanAppearInSplit(notes[splitPeerId]) && typeof clearNoteSplitView === 'function') {
+    clearNoteSplitView();
+  }
+}
+
+window.addEventListener('notas:notes-updated', reconcileNoteSplit);
+
+function flushActiveNoteBeforeSwitch(nextNoteId = '') {
+  const outgoingId = activeId;
+  const outgoing = outgoingId ? notes[outgoingId] : null;
+  if (!outgoing || outgoingId === nextNoteId || !canEditNote(outgoing)) return;
+  clearTimeout(saveTimer);
+  saveTimer = null;
+  const ed = getEd();
+  if (outgoing._bodyLoaded && !ed?.classList.contains('is-loading')) syncActiveNoteFromEditor();
+  void saveDoc(outgoing);
+}
+
 function readLastOpenNoteId() {
   try {
     return String(localStorage.getItem(LAST_OPEN_NOTE_STORAGE_KEY) || '').trim();
@@ -75,9 +99,7 @@ async function createNote(title, folderId) {
   };
   notes[id] = note;
   applyNoteBodyContent(id, '');
-  activeId  = id;
   if (folderId) expandedFolders.add(folderId);
-  renderSidebar();
   openNote(id);
   try {
     await saveDoc(note);
@@ -107,7 +129,10 @@ async function _execDeleteNote(id) {
 async function moveNoteToTrash(id) {
   const note = notes[id];
   if (!note || !isOwnedNote(note)) return;
-  if (activeId === id && canEditNote(note)) syncActiveNoteFromEditor();
+  if ((activeId === id || (typeof getNoteSplitPeerId === 'function' && getNoteSplitPeerId() === id)) && typeof clearNoteSplitView === 'function') {
+    clearNoteSplitView();
+  }
+  if (activeId === id && canEditNote(note)) flushActiveNoteBeforeSwitch('__trash__');
   const deletedAt = new Date();
   const trashExpiresAt = new Date(deletedAt.getTime() + TRASH_RETENTION_DAYS * 24 * 60 * 60 * 1000);
   note.deletedAt = deletedAt.toISOString();
@@ -119,6 +144,7 @@ async function moveNoteToTrash(id) {
     const ids = sortedIds();
     activeId = ids.length ? ids[0] : null;
   }
+  reconcileNoteSplit();
   renderSidebar();
   activeId ? openNote(activeId) : showEditorView(false);
   try {
@@ -150,6 +176,9 @@ async function restoreTrashedNote(id) {
 function permanentlyDeleteTrashedNote(id) {
   const note = notes[id];
   if (!note || !isOwnedNote(note)) return;
+  if ((activeId === id || (typeof getNoteSplitPeerId === 'function' && getNoteSplitPeerId() === id)) && typeof clearNoteSplitView === 'function') {
+    clearNoteSplitView();
+  }
   delete notes[id];
   if (activeId === id) {
     clearActiveNoteBodyListener();
@@ -157,6 +186,7 @@ function permanentlyDeleteTrashedNote(id) {
     activeId = ids.length ? ids[0] : null;
     activeId ? openNote(activeId) : showEditorView(false);
   }
+  reconcileNoteSplit();
   renderSidebar();
   deleteDocNote(id);
   showToast('Note Permanently Deleted', 'success');
@@ -175,6 +205,7 @@ function purgeExpiredTrashNotes() {
     activeId = ids.length ? ids[0] : null;
     activeId ? openNote(activeId) : showEditorView(false);
   }
+  reconcileNoteSplit();
   renderSidebar();
 }
 
@@ -245,6 +276,9 @@ function applyRemoteNoteBodyContent(noteId, content) {
 async function openNote(id, options = {}) {
   const note = notes[id];
   if (!note) return;
+  if (options?.source === 'sidebar' && typeof routeSidebarNoteOpenInSplit === 'function' && routeSidebarNoteOpenInSplit(id)) return;
+  if (activeId && activeId !== id) flushActiveNoteBeforeSwitch(id);
+  if (activeId !== id && typeof beforeOpenNoteSplit === 'function') beforeOpenNoteSplit(id);
   const preserveSidebarState = options?.preserveSidebarState === true;
   activeId = id;
   activeFolderId = note.folderId || null;
@@ -277,9 +311,11 @@ async function openNote(id, options = {}) {
     renderSidebar();
     updateActiveNoteAccessAvatars();
     setSaveState('error');
+    if (typeof afterOpenNoteSplit === 'function') afterOpenNoteSplit(id);
     return;
   }
   renderNoteBodyIntoEditor(note, body);
+  if (typeof afterOpenNoteSplit === 'function') afterOpenNoteSplit(id);
   refreshEmpty(ed);
   showEditorView(true);
   renderSidebar();

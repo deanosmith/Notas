@@ -80,7 +80,13 @@
     const lineHeight = typeof normalizeEditorLineHeight === 'function'
       ? normalizeEditorLineHeight(editorLineHeight)
       : Math.max(1.2, Math.min(2.2, Number(editorLineHeight) || 1.66));
-    return { mode, accent: accent.toLowerCase(), fontSize, lineHeight };
+    return {
+      mode,
+      accent: accent.toLowerCase(),
+      fontSize,
+      lineHeight,
+      textStylingVisible: textStylingVisible !== false
+    };
   }
 
   function scheduleDesktopThemeStateBroadcast() {
@@ -112,6 +118,7 @@
     const nextLineHeight = typeof normalizeEditorLineHeight === 'function'
       ? normalizeEditorLineHeight(state.lineHeight || editorLineHeight || 1.66)
       : Math.max(1.2, Math.min(2.2, Number(state.lineHeight) || editorLineHeight || 1.66));
+    const nextTextStylingVisible = state.textStylingVisible !== false;
     if (!nextMode || !nextAccent) return;
 
     applyingRemoteThemeState = true;
@@ -119,6 +126,7 @@
       let themeChanged = false;
       let fontChanged = false;
       let lineHeightChanged = false;
+      let textStylingChanged = false;
       if (themeMode !== nextMode) {
         themeMode = nextMode;
         localStorage.setItem('notas_theme', themeMode);
@@ -139,10 +147,16 @@
         localStorage.setItem('notas_line_height', typeof formatEditorLineHeight === 'function' ? formatEditorLineHeight(editorLineHeight) : String(editorLineHeight));
         lineHeightChanged = true;
       }
+      if (textStylingVisible !== nextTextStylingVisible) {
+        textStylingVisible = nextTextStylingVisible;
+        localStorage.setItem('notas_text_styling_visible', textStylingVisible ? 'true' : 'false');
+        textStylingChanged = true;
+      }
       if (themeChanged && typeof applyTheme === 'function') applyTheme();
       else if (themeChanged && typeof applyAccentColor === 'function') applyAccentColor(accentColor);
       if (fontChanged && typeof applyFontSize === 'function') applyFontSize();
       if (lineHeightChanged && typeof applyLineHeight === 'function') applyLineHeight();
+      if (textStylingChanged && typeof applyTextStylingVisibility === 'function') applyTextStylingVisibility();
       if (typeof updateColorPickerUI === 'function') updateColorPickerUI(accentColor);
       if (typeof updateThemeToggleUI === 'function') updateThemeToggleUI();
     } finally {

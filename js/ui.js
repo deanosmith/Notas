@@ -195,7 +195,7 @@ function updateActiveNoteAccessAvatars() {
 }
 
 /* ── Context Menu ────────────────────────────────── */
-function openCtxMenu(anchorEl, items) {
+function openCtxMenu(anchorEl, items, options = {}) {
   closeCtxMenu();
   const menu = document.getElementById('ctx-menu');
   menu.innerHTML = '';
@@ -239,10 +239,13 @@ function openCtxMenu(anchorEl, items) {
     const r  = anchorEl.getBoundingClientRect();
     const mw = menu.offsetWidth  || 180;
     const mh = menu.offsetHeight || 160;
-    let left = r.right - mw;
-    let top  = r.bottom + 4;
-    if (left < 8)                           left = r.left;
-    if (top + mh > window.innerHeight - 8)  top  = r.top - mh - 4;
+    const hasPosition = Number.isFinite(options?.x) && Number.isFinite(options?.y);
+    let left = hasPosition ? options.x : r.right - mw;
+    let top  = hasPosition ? options.y : r.bottom + 4;
+    if (!hasPosition && left < 8) left = r.left;
+    if (top + mh > window.innerHeight - 8) {
+      top = hasPosition ? options.y - mh - 4 : r.top - mh - 4;
+    }
     left = Math.max(8, Math.min(left, window.innerWidth - mw - 8));
     menu.style.left = left + 'px';
     menu.style.top  = top  + 'px';
@@ -303,7 +306,7 @@ function makeSidebarNoteEl(note, { inFolder = false } = {}) {
     linkBadge +
     '<button class="item-menu-btn" title="More Options"><i class="fa-solid fa-ellipsis"></i></button>';
   el.addEventListener('click', e => {
-    if (!e.target.closest('.item-menu-btn')) openNote(note.id);
+    if (!e.target.closest('.item-menu-btn')) openNote(note.id, { source: 'sidebar' });
   });
   el.querySelector('.item-menu-btn').addEventListener('click', e => {
     e.stopPropagation();
@@ -329,6 +332,7 @@ function makeSidebarNoteEl(note, { inFolder = false } = {}) {
     _draggingNoteId = note.id;
     e.dataTransfer.setData('text/plain', note.id);
     e.dataTransfer.effectAllowed = 'move';
+    if (typeof startNoteSplitSidebarDrag === 'function') startNoteSplitSidebarDrag(e, note.id);
     requestAnimationFrame(() => el.classList.add('dragging'));
   });
   el.addEventListener('dragend', () => {
@@ -1063,6 +1067,7 @@ function renderSidebarPage(view, filter = currentSidebarSearchFilter()) {
 }
 
 function renderSidebar(filter) {
+  if (typeof reconcileNoteSplit === 'function') reconcileNoteSplit();
   if (typeof filter === 'string') sidebarFilter = filter;
   else {
     const searchInput = document.getElementById('search-input');
@@ -1328,27 +1333,12 @@ function isNoteFocusMode() {
   return noteFocusMode;
 }
 
-function updateNoteFocusButton() {
-  const button = document.getElementById('note-focus-btn');
-  if (!button) return;
-  const editorView = document.getElementById('editorView');
-  const canFocus = !!activeId && editorView?.style.display !== 'none';
-  const active = noteFocusMode && canFocus;
-  button.disabled = !canFocus;
-  button.classList.toggle('active', active);
-  button.title = active ? 'Exit Focus Mode' : 'Focus Note';
-  button.setAttribute('aria-label', button.title);
-  button.setAttribute('aria-pressed', active ? 'true' : 'false');
-  const icon = button.querySelector('i');
-  if (icon) icon.className = active ? 'fa-solid fa-compress' : 'fa-solid fa-expand';
-}
-
 function setNoteFocusMode(enabled) {
+  if (enabled && typeof clearNoteSplitView === 'function') clearNoteSplitView();
   const editorView = document.getElementById('editorView');
   const canFocus = !!activeId && editorView?.style.display !== 'none';
   noteFocusMode = !!enabled && canFocus;
   document.body.classList.toggle('note-focus-mode', noteFocusMode);
-  updateNoteFocusButton();
 }
 
 function toggleNoteFocusMode() {
@@ -1458,6 +1448,8 @@ let editorLineHeight = normalizeEditorLineHeight(localStorage.getItem('notas_lin
 const SIDEBAR_NOTE_PREVIEW_STORAGE_KEY = 'notas_sidebar_note_preview_mode';
 const savedSidebarNotePreviewMode = localStorage.getItem(SIDEBAR_NOTE_PREVIEW_STORAGE_KEY);
 let sidebarNotePreviewMode = savedSidebarNotePreviewMode === 'title-only' ? 'title-only' : 'title-text';
+const TEXT_STYLING_STORAGE_KEY = 'notas_text_styling_visible';
+let textStylingVisible = localStorage.getItem(TEXT_STYLING_STORAGE_KEY) !== 'false';
 const savedThemeMode = localStorage.getItem('notas_theme');
 let themeMode = ['system', 'dark', 'light'].includes(savedThemeMode) ? savedThemeMode : 'dark';
 let isLightMode = false;
@@ -1879,11 +1871,18 @@ function applySidebarNotePreviewMode() {
   if (sidebarView === 'notes') renderSidebar();
 }
 
+function applyTextStylingVisibility() {
+  document.body.classList.toggle('text-styling-hidden', !textStylingVisible);
+  const toggle = document.getElementById('text-styling-toggle');
+  if (toggle) toggle.checked = textStylingVisible;
+}
+
 function initSettings() {
   applyTheme(); // also calls applyAccentColor
   applyFontSize();
   applyLineHeight();
   applySidebarNotePreviewMode();
+  applyTextStylingVisibility();
   const settingsModal = document.getElementById('settings-modal');
   const colorControl = document.getElementById('color-control');
   const pickerBtn = document.getElementById('accent-picker-btn');
@@ -1937,6 +1936,8 @@ function initSettings() {
     updateThemeToggleUI();
     const sidebarPreviewToggle = document.getElementById('sidebar-preview-toggle');
     if (sidebarPreviewToggle) sidebarPreviewToggle.checked = sidebarNotePreviewMode === 'title-text';
+    const textStylingToggle = document.getElementById('text-styling-toggle');
+    if (textStylingToggle) textStylingToggle.checked = textStylingVisible;
     updateColorPickerUI(accentColor);
     settingsModal.classList.add('open');
   });
@@ -1964,6 +1965,12 @@ function initSettings() {
     sidebarNotePreviewMode = e.target.checked ? 'title-text' : 'title-only';
     localStorage.setItem(SIDEBAR_NOTE_PREVIEW_STORAGE_KEY, sidebarNotePreviewMode);
     renderSidebar();
+  });
+  document.getElementById('text-styling-toggle')?.addEventListener('change', e => {
+    textStylingVisible = !!e.target.checked;
+    localStorage.setItem(TEXT_STYLING_STORAGE_KEY, textStylingVisible ? 'true' : 'false');
+    applyTextStylingVisibility();
+    if (typeof notifyDesktopThemeStateChanged === 'function') notifyDesktopThemeStateChanged();
   });
   const onSystemThemeChange = () => {
     if (themeMode === 'system') {

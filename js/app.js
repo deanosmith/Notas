@@ -11,6 +11,7 @@ const sectionScripts = [
   './notes.js',
   './folders.js',
   './editor.js',
+  './split-view.js',
   './ui.js',
   './sharing.js',
   './conversations.js',
@@ -162,7 +163,6 @@ document.getElementById('rail-create-btn')?.addEventListener('click', () => open
 document.getElementById('shortcuts-btn')?.addEventListener('click', openShortcutsModal);
 document.getElementById('shortcuts-close')?.addEventListener('click', closeShortcutsModal);
 document.getElementById('shortcuts-modal')?.addEventListener('click', e => { if (e.target === e.currentTarget) closeShortcutsModal(); });
-document.getElementById('note-focus-btn')?.addEventListener('click', toggleNoteFocusMode);
 document.getElementById('mob-new-btn').addEventListener('click',    openModal);
 document.getElementById('google-signin-btn').addEventListener('click', signInWithGoogle);
 document.getElementById('test-password-signin-form')?.addEventListener('submit', signInWithTestPassword);
@@ -258,6 +258,11 @@ document.getElementById('conversation-selection-start-btn')?.addEventListener('c
   openConversationComposerFromSelection();
   hideConversationSelectionPopover();
 });
+document.getElementById('conversation-selection-reminder-btn')?.addEventListener('click', e => {
+  e.preventDefault();
+  openNoteAlarmModal(activeId);
+  hideConversationSelectionPopover();
+});
 document.getElementById('connect-profile-btn')?.addEventListener('click', connectProfileByEmail);
 document.getElementById('connect-profile-email-input')?.addEventListener('keydown', e => {
   if (e.key === 'Enter') connectProfileByEmail();
@@ -309,6 +314,15 @@ window.editorEl = document.getElementById('editor');
 const editorEl = window.editorEl;
 
 editorEl.addEventListener('beforeinput', e => {
+  const activeNote = activeId ? notes[activeId] : null;
+  if (!activeNote || !canEditNote(activeNote)) {
+    e.preventDefault();
+    return;
+  }
+  if (e.inputType?.startsWith('insert') && typeof shouldBlockSelectedNoteImageReplacement === 'function' && shouldBlockSelectedNoteImageReplacement()) {
+    e.preventDefault();
+    return;
+  }
   if (typeof protectConversationAnchorDeletion === 'function' && protectConversationAnchorDeletion(e, editorEl)) {
     e.preventDefault();
     return;
@@ -331,6 +345,7 @@ editorEl.addEventListener('input', e => {
   cleanupLiveInlineCodeBoundaries(editorEl, e);
   decorateTables(editorEl);
   decorateNoteImages(editorEl);
+  if (typeof removeEmptyNoteImageAnnotations === 'function') removeEmptyNoteImageAnnotations(editorEl);
   recomputeCollapsedSections();
   refreshEmpty(editorEl);
   if (!syncActiveNoteFromEditor()) return;
@@ -395,6 +410,33 @@ editorEl.addEventListener('mousedown', e => {
   e.preventDefault();
   e.stopPropagation();
   handleTableControl(tableBtn);
+});
+
+function runNoteImageClipboardCommand(command) {
+  editorEl.focus();
+  if (!document.execCommand(command, false, null)) {
+    showToast('Clipboard Action Is Not Available', 'error');
+  }
+}
+
+editorEl.addEventListener('contextmenu', e => {
+  const imageBlock = e.target.closest?.('.note-image-block');
+  if (!imageBlock || !editorEl.contains(imageBlock) || typeof selectNoteImageBlock !== 'function') return;
+  if (!selectNoteImageBlock(imageBlock)) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const editable = !!activeId && canEditNote(notes[activeId]);
+  if (window.desktop?.isElectron && typeof window.desktop.showEditorImageContextMenu === 'function') {
+    window.desktop.showEditorImageContextMenu({ x: e.clientX, y: e.clientY, editable });
+    return;
+  }
+  if (typeof openCtxMenu !== 'function') return;
+  const items = [];
+  if (editable) {
+    items.push({ label: 'Cut', icon: 'fa-solid fa-scissors', action: () => runNoteImageClipboardCommand('cut') });
+  }
+  items.push({ label: 'Copy', icon: 'fa-regular fa-copy', action: () => runNoteImageClipboardCommand('copy') });
+  openCtxMenu(imageBlock, items, { x: e.clientX, y: e.clientY });
 });
 
 editorEl.addEventListener('click', e => {
@@ -758,6 +800,14 @@ editorEl.addEventListener('cut', e => {
 });
 
 editorEl.addEventListener('paste', e => {
+  if (!activeId || !canEditNote(notes[activeId])) {
+    e.preventDefault();
+    return;
+  }
+  if (typeof shouldBlockSelectedNoteImageReplacement === 'function' && shouldBlockSelectedNoteImageReplacement()) {
+    e.preventDefault();
+    return;
+  }
   const imageFile = clipboardImageFile(e.clipboardData);
   if (imageFile) {
     e.preventDefault();
@@ -839,6 +889,7 @@ document.getElementById('toolbar').addEventListener('mousedown', e => {
   const btn = e.target.closest('[data-action]');
   if (!btn) return;
   e.preventDefault();
+  if (typeof applyNoteSplitToolbarAction === 'function' && applyNoteSplitToolbarAction(btn.dataset.action)) return;
   if (shouldBlockTableAction(btn.dataset.action)) {
     showToast('Tables Support Simple Text Only', 'error');
     return;
@@ -851,6 +902,7 @@ document.getElementById('toolbar').addEventListener('touchend', e => {
   const btn = e.target.closest('[data-action]');
   if (!btn) return;
   e.preventDefault();
+  if (typeof applyNoteSplitToolbarAction === 'function' && applyNoteSplitToolbarAction(btn.dataset.action)) return;
   if (shouldBlockTableAction(btn.dataset.action)) {
     showToast('Tables Support Simple Text Only', 'error');
     return;
@@ -1023,6 +1075,7 @@ _sidebarList.addEventListener('drop', e => {
 });
 
 renderSidebar();
+initNoteSplitView?.();
 initSettings();
 initFolderColorPicker();
 renderNotificationButton();
