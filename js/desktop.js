@@ -83,6 +83,7 @@
     return {
       mode,
       accent: accent.toLowerCase(),
+      accentMode: typeof accentMode === 'string' ? accentMode : 'custom',
       fontSize,
       lineHeight,
       textStylingVisible: textStylingVisible !== false
@@ -114,6 +115,7 @@
     if (!state || typeof state !== 'object') return;
     const nextMode = ['light', 'dark', 'system'].includes(state.mode) ? state.mode : '';
     const nextAccent = typeof normalizeAccentColor === 'function' ? normalizeAccentColor(state.accent) : '';
+    const nextAccentMode = ['notas', 'custom'].includes(state.accentMode) ? state.accentMode : '';
     const nextFontSize = Math.max(12, Math.min(24, Math.trunc(Number(state.fontSize) || editorFontSize || 15)));
     const nextLineHeight = typeof normalizeEditorLineHeight === 'function'
       ? normalizeEditorLineHeight(state.lineHeight || editorLineHeight || 1.66)
@@ -132,11 +134,21 @@
         localStorage.setItem('notas_theme', themeMode);
         themeChanged = true;
       }
-      if (normalizeAccentColor(accentColor) !== nextAccent) {
-        accentColor = nextAccent;
-        localStorage.setItem('notas_accent', accentColor);
+      if (nextAccentMode && accentMode !== nextAccentMode) {
+        accentMode = nextAccentMode;
         themeChanged = true;
       }
+      if (nextAccentMode === 'custom' && customAccentColor !== nextAccent) {
+        customAccentColor = nextAccent;
+        localStorage.setItem('notas_custom_accent', customAccentColor);
+        themeChanged = true;
+      }
+      if (normalizeAccentColor(accentColor) !== nextAccent || nextAccentMode === 'notas') {
+        accentColor = nextAccent;
+        if (nextAccentMode !== 'notas') localStorage.setItem('notas_accent', accentColor);
+        themeChanged = true;
+      }
+      if (nextAccentMode) localStorage.setItem('notas_accent_mode', nextAccentMode);
       if (editorFontSize !== nextFontSize) {
         editorFontSize = nextFontSize;
         localStorage.setItem('notas_font_size', String(editorFontSize));

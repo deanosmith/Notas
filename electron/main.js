@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, Tray, ipcMain, nativeImage, screen, shell } = require('electron');
+const { app, BrowserWindow, Menu, Tray, clipboard, ipcMain, nativeImage, screen, shell } = require('electron');
 const { createReadStream, readFileSync, writeFileSync } = require('node:fs');
 const { stat } = require('node:fs/promises');
 const { createServer } = require('node:http');
@@ -285,12 +285,14 @@ function normalizeThemeState(state) {
   if (!state || typeof state !== 'object') return null;
   const mode = ['light', 'dark', 'system'].includes(state.mode) ? state.mode : '';
   const accent = String(state.accent || '').trim();
+  const accentMode = ['notas', 'custom'].includes(state.accentMode) ? state.accentMode : 'custom';
   const fontSize = Math.trunc(Number(state.fontSize) || 0);
   const lineHeight = Number(state.lineHeight);
   if (!mode || !/^#[0-9a-f]{6}$/i.test(accent) || fontSize < 10 || fontSize > 26) return null;
   return {
     mode,
     accent: accent.toLowerCase(),
+    accentMode,
     fontSize,
     lineHeight: Number.isFinite(lineHeight)
       ? Math.max(1.2, Math.min(2.2, Math.round(lineHeight * 100) / 100))
@@ -1086,6 +1088,19 @@ function registerIpcHandlers() {
     const senderWin = BrowserWindow.fromWebContents(event.sender);
     if (!senderWin || !windowContext(senderWin) || !isAppUrl(event.sender.getURL())) return;
     showEditorImageContextMenu(senderWin, payload);
+  });
+
+  ipcMain.handle('desktop:write-editor-image-to-clipboard', (event, payload) => {
+    const senderWin = BrowserWindow.fromWebContents(event.sender);
+    if (!senderWin || !windowContext(senderWin) || !isAppUrl(event.sender.getURL())) return false;
+    const dataUrl = String(payload?.dataUrl || '').trim();
+    if (dataUrl.length > 16 * 1024 * 1024 || !/^data:image\/png;base64,[a-z0-9+/=]+$/i.test(dataUrl)) return false;
+    const image = nativeImage.createFromDataURL(dataUrl);
+    if (image.isEmpty()) return false;
+    const text = String(payload?.text || 'Image').slice(0, 512);
+    const html = String(payload?.html || '').slice(0, 2 * 1024 * 1024);
+    clipboard.write({ image, text, html });
+    return true;
   });
 
   ipcMain.on('desktop:menubar-notes-changed', (event, snapshots) => {

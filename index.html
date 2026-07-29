@@ -156,6 +156,8 @@
             </div>
 
             <div class="editor-area">
+              <button class="note-focus-entry-btn" id="note-focus-btn" type="button" title="Toggle Full Screen Note" aria-label="Toggle Full Screen Note"><i class="fa-solid fa-expand"></i></button>
+              <button class="note-focus-exit-btn" id="note-focus-exit-btn" type="button" title="Exit Full Screen Note" aria-label="Exit Full Screen Note"><i class="fa-solid fa-compress"></i></button>
               <div id="editor"
                    class="editor is-empty"
                    contenteditable="true"
@@ -262,7 +264,7 @@
           <div class="shortcut-row"><span class="shortcut-label">Italic</span><span class="shortcut-keys"><kbd>Command + I</kbd></span></div>
           <div class="shortcut-row"><span class="shortcut-label">Inline Code</span><span class="shortcut-keys"><kbd>Command + E</kbd></span></div>
           <div class="shortcut-row"><span class="shortcut-label">Strikethrough</span><span class="shortcut-keys"><kbd>Command + Shift + S</kbd></span></div>
-          <div class="shortcut-row"><span class="shortcut-label">Paste Matching Formatting</span><span class="shortcut-keys"><kbd>Command + Shift + P</kbd></span></div>
+          <div class="shortcut-row"><span class="shortcut-label">Paste Matching Formatting</span><span class="shortcut-keys"><kbd>Command + Shift + V</kbd></span></div>
           <div class="shortcut-row"><span class="shortcut-label">Indent Or Next Table Cell</span><span class="shortcut-keys"><kbd>Tab</kbd></span></div>
           <div class="shortcut-row"><span class="shortcut-label">Outdent Or Previous Table Cell</span><span class="shortcut-keys"><kbd>Shift + Tab</kbd></span></div>
         </section>
@@ -288,10 +290,16 @@
         <div class="settings-row">
           <span class="settings-label"><i class="fa-solid fa-palette"></i>Colour</span>
           <div class="color-control" id="color-control">
+            <div class="color-mode-toggle" role="group" aria-label="Colour palette">
+              <button class="color-mode-option" type="button" data-accent-mode="notas" aria-pressed="false">Notas</button>
+              <button class="color-mode-option" type="button" data-accent-mode="custom" aria-pressed="false">Custom</button>
+            </div>
             <button class="accent-picker" id="accent-picker-btn" type="button" title="Choose colour" aria-label="Choose colour" aria-expanded="false"></button>
             <div class="color-popover" id="color-popover" hidden>
-              <div class="color-sv" id="color-sv"><span class="color-sv-cursor" id="color-sv-cursor"></span></div>
-              <input class="color-hue" id="color-hue" type="range" min="0" max="360" step="1" aria-label="Hue" />
+              <div class="custom-color-picker" id="custom-color-picker" hidden>
+                <div class="color-sv" id="color-sv"><span class="color-sv-cursor" id="color-sv-cursor"></span></div>
+                <input class="color-hue" id="color-hue" type="range" min="0" max="360" step="1" aria-label="Hue" />
+              </div>
             </div>
           </div>
         </div>
@@ -319,7 +327,7 @@
           </label>
         </div>
         <div class="settings-row">
-          <span class="settings-label"><i class="fa-solid fa-wand-magic-sparkles"></i>Text Styling</span>
+          <span class="settings-label"><i class="fa-solid fa-wand-magic-sparkles"></i>Show Controls</span>
           <label class="toggle" title="Show text styling controls">
             <input id="text-styling-toggle" type="checkbox" aria-label="Show text styling controls" />
             <span class="toggle-slider"></span>

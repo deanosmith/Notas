@@ -298,21 +298,29 @@ function closeMoveModal() {
   _moveNoteId = null;
 }
 
-async function moveNoteToFolder(noteId, folderId) {
+async function moveNoteToFolder(noteId, folderId, { unpin = false } = {}) {
   const note = notes[noteId];
   if (!note) return;
   folderId = folderId && folders[folderId] ? folderId : null;
   if (folderId && isOwnedNote(note) && !isOwnedFolder(folders[folderId])) folderId = null;
   const prev = note.folderId;
-  if ((folderId || null) === (prev || null)) return;
+  const folderChanged = (folderId || null) !== (prev || null);
+  const previousPinnedAt = normalizePinnedAt(note.pinnedAt);
+  const previousPinScope = note.pinScope || '';
+  const shouldUnpin = unpin && !!previousPinnedAt;
+  if (!folderChanged && !shouldUnpin) return;
   note.folderId = folderId || null;
+  if (shouldUnpin) {
+    note.pinnedAt = '';
+    note.pinScope = '';
+  }
   note.modified = new Date().toISOString();
   if (folderId) expandedFolders.add(folderId);
   renderSidebar();
   try {
     let cloudSynced = true;
     if (isOwnedNote(note)) {
-      if (prev && prev !== folderId) {
+      if (folderChanged && prev && prev !== folderId) {
         const previousFolder = folders[prev];
         await removeFolderScopeFromNote(noteId, prev);
         if (previousFolder) {
@@ -321,34 +329,50 @@ async function moveNoteToFolder(noteId, folderId) {
             .map(profile => removeFolderScopeFromNoteAccess(noteId, prev, profile.uid)));
         }
       }
-      if (folderId) {
+      if (folderChanged && folderId) {
         const publicFolderIds = new Set(normalizePublicFolderIds(note.publicFolderIds));
         if (folders[folderId]?.public) publicFolderIds.add(folderId);
         else publicFolderIds.delete(folderId);
         note.publicFolderIds = [...publicFolderIds];
         await inheritFolderSharingForNote(note, folderId);
       }
-      note.public = computeEffectiveNotePublic(note);
       const payload = { modified: serverTimestamp() };
-      payload.folderId = folderId || deleteField();
-      payload.public = note.public;
-      payload.publicFolderIds = normalizePublicFolderIds(note.publicFolderIds);
+      if (folderChanged) {
+        note.public = computeEffectiveNotePublic(note);
+        payload.folderId = folderId || deleteField();
+        payload.public = note.public;
+        payload.publicFolderIds = normalizePublicFolderIds(note.publicFolderIds);
+      }
+      if (shouldUnpin) {
+        payload.pinnedAt = deleteField();
+        payload.pinScope = deleteField();
+      }
       await setDoc(doc(fsDb, 'notes', noteId), payload, { merge: true });
     } else {
-      cloudSynced = await _setSharedNoteFolder(noteId, folderId);
+      cloudSynced = await _setSharedNoteFolder(noteId, folderId, { unpin: shouldUnpin });
     }
-    recordAppHistoryAction({
-      type: 'note-move',
-      noteId,
-      beforeFolderId: prev || null,
-      afterFolderId: note.folderId || null
-    });
-    showToast(cloudSynced ? 'Note Moved' : 'Note moved locally; cloud sync failed', cloudSynced ? 'success' : 'error');
+    if (folderChanged) {
+      recordAppHistoryAction({
+        type: 'note-move',
+        noteId,
+        beforeFolderId: prev || null,
+        afterFolderId: note.folderId || null
+      });
+    }
+    const successMessage = shouldUnpin
+      ? (folderChanged ? 'Note Moved And Unpinned' : 'Note Unpinned')
+      : 'Note Moved';
+    const failureMessage = shouldUnpin
+      ? (folderChanged ? 'Note moved and unpinned locally; cloud sync failed' : 'Note unpinned locally; cloud sync failed')
+      : 'Note moved locally; cloud sync failed';
+    showToast(cloudSynced ? successMessage : failureMessage, cloudSynced ? 'success' : 'error');
   } catch (err) {
     console.error('moveNoteToFolder:', err);
     note.folderId = prev;
+    note.pinnedAt = previousPinnedAt;
+    note.pinScope = previousPinScope;
     renderSidebar();
-    showToast('Failed To Move Note', 'error');
+    showToast(shouldUnpin ? 'Failed To Move Or Unpin Note' : 'Failed To Move Note', 'error');
   }
 }
 

@@ -460,6 +460,13 @@ function attachPinnedSectionDropHandlers(section) {
   });
 }
 
+function moveDroppedNoteToFolder(e, folderId) {
+  const noteId = e.dataTransfer?.getData('text/plain') || _draggingNoteId;
+  const note = noteId ? notes[noteId] : null;
+  if (!note) return;
+  moveNoteToFolder(noteId, folderId, { unpin: isMajorPinnedNote(note) });
+}
+
 function attachFolderReorderHandlers(row, folder) {
   if (!row || !folder) return;
   row.draggable = true;
@@ -1170,6 +1177,24 @@ function renderSidebar(filter) {
     notesWrap.appendChild(notesInner);
     folderEl.appendChild(notesWrap);
 
+    notesWrap.addEventListener('dragover', e => {
+      if (!notesWrap.classList.contains('expanded') || _draggingFolderId || !_draggingNoteId || !notes[_draggingNoteId]) return;
+      e.preventDefault();
+      e.stopPropagation();
+      e.dataTransfer.dropEffect = 'move';
+      notesWrap.classList.add('drag-over');
+    });
+    notesWrap.addEventListener('dragleave', e => {
+      if (!notesWrap.contains(e.relatedTarget)) notesWrap.classList.remove('drag-over');
+    });
+    notesWrap.addEventListener('drop', e => {
+      if (!notesWrap.classList.contains('expanded') || _draggingFolderId || !_draggingNoteId) return;
+      e.preventDefault();
+      e.stopPropagation();
+      notesWrap.classList.remove('drag-over');
+      moveDroppedNoteToFolder(e, folder.id);
+    });
+
     row.addEventListener('click', e => {
       if (e.target.closest('.item-menu-btn')) return;
       const nextExpanded = !expandedFolders.has(folder.id);
@@ -1218,8 +1243,7 @@ function renderSidebar(filter) {
       }
       e.preventDefault();
       row.classList.remove('drag-over');
-      const noteId = e.dataTransfer.getData('text/plain');
-      if (noteId && notes[noteId]) moveNoteToFolder(noteId, folder.id);
+      moveDroppedNoteToFolder(e, folder.id);
     });
     row.querySelector('.item-menu-btn').addEventListener('click', e => {
       e.stopPropagation();
@@ -1333,12 +1357,24 @@ function isNoteFocusMode() {
   return noteFocusMode;
 }
 
+function updateNoteFocusControl() {
+  const btn = document.getElementById('note-focus-btn');
+  if (!btn) return;
+  const label = noteFocusMode ? 'Exit Full Screen Note' : 'Toggle Full Screen Note';
+  btn.classList.toggle('active', noteFocusMode);
+  btn.title = label;
+  btn.setAttribute('aria-label', label);
+  const icon = btn.querySelector('i');
+  if (icon) icon.className = noteFocusMode ? 'fa-solid fa-compress' : 'fa-solid fa-expand';
+}
+
 function setNoteFocusMode(enabled) {
   if (enabled && typeof clearNoteSplitView === 'function') clearNoteSplitView();
   const editorView = document.getElementById('editorView');
   const canFocus = !!activeId && editorView?.style.display !== 'none';
   noteFocusMode = !!enabled && canFocus;
   document.body.classList.toggle('note-focus-mode', noteFocusMode);
+  updateNoteFocusControl();
 }
 
 function toggleNoteFocusMode() {
@@ -1457,6 +1493,9 @@ let _themeTransitionTimer = 0;
 const systemThemeQuery = window.matchMedia ? window.matchMedia('(prefers-color-scheme: light)') : null;
 
 const ACCENT_PALETTES = {
+  notas:  { r:205, g:155, b:80,  r2:154, g2:102, b2:48,  accent:'#cd9b50', accentH:'#f5ca7c',
+            muted:'#71717a', text2:'#d4d4d8', border:'#2b4d73',
+            lightMuted:'#6b7280', lightText2:'#1e3a5f', lightBorder:'#98b6d4' },
   blue:   { r:0,   g:180, b:255, r2:0,   g2:80,  b2:180, accent:'#00b4ff', accentH:'#40d0ff',
             muted:'#4a6a8a', text2:'#b8cce8', border:'#1a2e48',
             lightMuted:'#2a6090', lightText2:'#1a3050', lightBorder:'#78a8cc' },
@@ -1476,8 +1515,19 @@ const ACCENT_PALETTES = {
             muted:'#3a6868', text2:'#b8e4e0', border:'#183030',
             lightMuted:'#2a7070', lightText2:'#184040', lightBorder:'#60b4b0' },
 };
-const DEFAULT_ACCENT = ACCENT_PALETTES.blue.accent;
-let accentColor = localStorage.getItem('notas_accent') || DEFAULT_ACCENT;
+const DEFAULT_ACCENT = ACCENT_PALETTES.notas.accent;
+const DEFAULT_CUSTOM_ACCENT = ACCENT_PALETTES.blue.accent;
+const ACCENT_MODE_STORAGE_KEY = 'notas_accent_mode';
+const CUSTOM_ACCENT_STORAGE_KEY = 'notas_custom_accent';
+const savedAccentColor = localStorage.getItem('notas_accent');
+const savedAccentMode = localStorage.getItem(ACCENT_MODE_STORAGE_KEY);
+const savedCustomAccent = localStorage.getItem(CUSTOM_ACCENT_STORAGE_KEY);
+const hasSavedAccentMode = ['notas', 'custom'].includes(savedAccentMode);
+const storedCustomAccent = /^#[a-f\d]{6}$/i.test(savedCustomAccent || '') ? savedCustomAccent.toLowerCase() : '';
+const legacyCustomAccent = !hasSavedAccentMode && /^#[a-f\d]{6}$/i.test(savedAccentColor || '') ? savedAccentColor.toLowerCase() : '';
+let accentMode = hasSavedAccentMode ? savedAccentMode : (legacyCustomAccent ? 'custom' : 'notas');
+let customAccentColor = storedCustomAccent || legacyCustomAccent || DEFAULT_CUSTOM_ACCENT;
+let accentColor = accentMode === 'notas' ? DEFAULT_ACCENT : customAccentColor;
 let _accentApplyFrame = 0;
 let _accentScrubbing = false;
 let _accentDesktopSyncPending = false;
@@ -1699,7 +1749,8 @@ function saveFolderColorPicker() {
   if (folderId) setFolderIconColor(folderId, value);
 }
 
-function accentPalette(value) {
+function accentPalette(value, mode = '') {
+  if (mode === 'notas') return ACCENT_PALETTES.notas;
   if (ACCENT_PALETTES[value]) return ACCENT_PALETTES[value];
   const rgb = hexToRgb(normalizeAccentColor(value)) || hexToRgb(DEFAULT_ACCENT);
   const deep = mixColor(rgb, { r: 0, g: 0, b: 0 }, .48);
@@ -1725,22 +1776,39 @@ function brightenDarkUiColor(hex, weight) {
 
 function applyAccentColor(value, { refreshPicker = true } = {}) {
   const normalized = normalizeAccentColor(value);
-  const p = accentPalette(normalized);
+  const p = accentPalette(normalized, accentMode);
   const s = document.documentElement.style; // <html>
-  const b = document.body.style;            // <body>
+  const body = document.body;
+  const b = body.style;                     // <body>
   const lm = isLightMode;
   const accentInk = accentInkColor(p, lm);
   const accentText = accentTextColor(p);
 
   // Orb/ambient/glass on <html> — cascade correctly in both modes
+  body.classList.toggle('notas-branding', accentMode === 'notas');
+  body.classList.toggle('custom-accent-mode', accentMode === 'custom');
   s.setProperty('--orb-r',    p.r);
   s.setProperty('--orb-g',    p.g);
   s.setProperty('--orb-b',    p.b);
   s.setProperty('--orb2-r',   p.r2);
   s.setProperty('--orb2-g',   p.g2);
   s.setProperty('--orb2-b',   p.b2);
-  s.setProperty('--glass-border',    `rgba(${Math.min(p.r+80,255)},${Math.min(p.g+30,255)},${Math.min(p.b+10,255)},.16)`);
-  s.setProperty('--glass-highlight', `rgba(${Math.min(p.r+80,255)},${Math.min(p.g+30,255)},${Math.min(p.b+10,255)},.12)`);
+  b.setProperty('--orb-r',    p.r);
+  b.setProperty('--orb-g',    p.g);
+  b.setProperty('--orb-b',    p.b);
+  b.setProperty('--orb2-r',   p.r2);
+  b.setProperty('--orb2-g',   p.g2);
+  b.setProperty('--orb2-b',   p.b2);
+  const glassBorder = accentMode === 'notas'
+    ? 'rgba(205, 155, 80, .24)'
+    : `rgba(${Math.min(p.r+80,255)},${Math.min(p.g+30,255)},${Math.min(p.b+10,255)},.16)`;
+  const glassHighlight = accentMode === 'notas'
+    ? 'rgba(245, 202, 124, .16)'
+    : `rgba(${Math.min(p.r+80,255)},${Math.min(p.g+30,255)},${Math.min(p.b+10,255)},.12)`;
+  s.setProperty('--glass-border', glassBorder);
+  s.setProperty('--glass-highlight', glassHighlight);
+  b.setProperty('--glass-border', glassBorder);
+  b.setProperty('--glass-highlight', glassHighlight);
 
   // Accent on both <html> and <body> — body inline style beats body.light-mode CSS rule
   s.setProperty('--accent',   p.accent);
@@ -1767,9 +1835,7 @@ function applyAccentColor(value, { refreshPicker = true } = {}) {
   if (refreshPicker) updateColorPickerUI(normalized);
 }
 
-function setAccentColor(value) {
-  accentColor = normalizeAccentColor(value);
-  localStorage.setItem('notas_accent', accentColor);
+function scheduleAccentApplication() {
   if (_accentScrubbing) _accentDesktopSyncPending = true;
   if (_accentApplyFrame) cancelAnimationFrame(_accentApplyFrame);
   _accentApplyFrame = requestAnimationFrame(() => {
@@ -1783,24 +1849,63 @@ function setAccentColor(value) {
   });
 }
 
+function setAccentColor(value) {
+  accentMode = 'custom';
+  customAccentColor = normalizeAccentColor(value);
+  accentColor = customAccentColor;
+  localStorage.setItem(ACCENT_MODE_STORAGE_KEY, accentMode);
+  localStorage.setItem(CUSTOM_ACCENT_STORAGE_KEY, customAccentColor);
+  localStorage.setItem('notas_accent', accentColor);
+  scheduleAccentApplication();
+}
+
+function setAccentMode(mode) {
+  accentMode = mode === 'notas' ? 'notas' : 'custom';
+  accentColor = accentMode === 'notas' ? DEFAULT_ACCENT : customAccentColor;
+  localStorage.setItem(ACCENT_MODE_STORAGE_KEY, accentMode);
+  if (accentMode === 'custom') {
+    localStorage.setItem(CUSTOM_ACCENT_STORAGE_KEY, customAccentColor);
+    localStorage.setItem('notas_accent', accentColor);
+  }
+  const popover = document.getElementById('color-popover');
+  if (popover) popover.hidden = accentMode !== 'custom';
+  updateColorPickerUI(accentColor);
+  scheduleAccentApplication();
+}
+
 let pickerHsv = rgbToHsv(hexToRgb(normalizeAccentColor(accentColor)) || hexToRgb(DEFAULT_ACCENT));
 
 function updateColorPickerUI(value = accentColor) {
-  const rgb = hexToRgb(normalizeAccentColor(value)) || hexToRgb(DEFAULT_ACCENT);
+  const pickerValue = accentMode === 'custom' ? customAccentColor : value;
+  const rgb = hexToRgb(normalizeAccentColor(pickerValue)) || hexToRgb(DEFAULT_ACCENT);
   pickerHsv = rgbToHsv(rgb);
 
   const popover = document.getElementById('color-popover');
+  const pickerBtn = document.getElementById('accent-picker-btn');
   const sv = document.getElementById('color-sv');
   const cursor = document.getElementById('color-sv-cursor');
   const hue = document.getElementById('color-hue');
+  const customPicker = document.getElementById('custom-color-picker');
+  const isCustomMode = accentMode === 'custom';
 
   if (popover) popover.style.setProperty('--picker-hue', Math.round(pickerHsv.h));
+  if (!isCustomMode && popover) popover.hidden = true;
+  if (pickerBtn) {
+    pickerBtn.hidden = !isCustomMode;
+    pickerBtn.setAttribute('aria-expanded', isCustomMode && !!popover && !popover.hidden ? 'true' : 'false');
+  }
+  if (customPicker) customPicker.hidden = !isCustomMode;
   if (sv) sv.style.setProperty('--picker-hue', Math.round(pickerHsv.h));
   if (cursor) {
     cursor.style.left = `${pickerHsv.s * 100}%`;
     cursor.style.top = `${(1 - pickerHsv.v) * 100}%`;
   }
   if (hue) hue.value = Math.round(pickerHsv.h);
+  document.querySelectorAll('[data-accent-mode]').forEach(btn => {
+    const active = btn.dataset.accentMode === accentMode;
+    btn.classList.toggle('active', active);
+    btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+  });
 }
 
 function colorFromPickerHsv() {
@@ -1961,6 +2066,11 @@ function initSettings() {
       if (typeof notifyDesktopThemeStateChanged === 'function') notifyDesktopThemeStateChanged();
     });
   });
+  document.querySelectorAll('[data-accent-mode]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      setAccentMode(btn.dataset.accentMode);
+    });
+  });
   document.getElementById('sidebar-preview-toggle')?.addEventListener('change', e => {
     sidebarNotePreviewMode = e.target.checked ? 'title-text' : 'title-only';
     localStorage.setItem(SIDEBAR_NOTE_PREVIEW_STORAGE_KEY, sidebarNotePreviewMode);
@@ -1983,7 +2093,7 @@ function initSettings() {
 
   pickerBtn?.addEventListener('click', e => {
     e.stopPropagation();
-    if (!colorPopover) return;
+    if (!colorPopover || accentMode !== 'custom') return;
     colorPopover.hidden = !colorPopover.hidden;
     pickerBtn.setAttribute('aria-expanded', colorPopover.hidden ? 'false' : 'true');
     updateColorPickerUI(accentColor);

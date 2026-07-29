@@ -2642,10 +2642,20 @@ async function _removeSharedId(noteId, options = {}) {
   }
 }
 
-async function _setSharedNoteFolder(noteId, folderId) {
+async function _setSharedNoteFolder(noteId, folderId, { unpin = false } = {}) {
   if (!sharedLibraryMeta[noteId]) sharedLibraryMeta[noteId] = { folderId: null };
   sharedLibraryMeta[noteId].folderId = _normalizeSharedFolderId(folderId);
-  if (notes[noteId] && !isOwnedNote(notes[noteId])) notes[noteId].folderId = sharedLibraryMeta[noteId].folderId;
+  if (unpin) {
+    sharedLibraryMeta[noteId].pinnedAt = '';
+    sharedLibraryMeta[noteId].pinScope = '';
+  }
+  if (notes[noteId] && !isOwnedNote(notes[noteId])) {
+    notes[noteId].folderId = sharedLibraryMeta[noteId].folderId;
+    if (unpin) {
+      notes[noteId].pinnedAt = '';
+      notes[noteId].pinScope = '';
+    }
+  }
   _writeSharedLibraryToLocal();
   try {
     const payload = {
@@ -2655,6 +2665,10 @@ async function _setSharedNoteFolder(noteId, folderId) {
     const pinnedAt = _getSharedNotePinnedAt(noteId);
     if (pinnedAt) payload.sharedNotePins = { [noteId]: pinnedAt };
     if (pinnedAt) payload.sharedNotePinScopes = { [noteId]: _getSharedNotePinScope(noteId) };
+    if (unpin) {
+      payload.sharedNotePins = { [noteId]: null };
+      payload.sharedNotePinScopes = { [noteId]: null };
+    }
     await setDoc(_getUserDocRef(), payload, { merge: true });
     return true;
   } catch (err) {

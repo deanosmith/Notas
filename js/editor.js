@@ -711,14 +711,72 @@ function cleanNoteImageBlockHTML(block) {
   return wrapper.innerHTML;
 }
 
+function noteImageClipboardPngDataUrl(img) {
+  const source = String(img?.currentSrc || img?.src || '');
+  const width = img?.naturalWidth || img?.width || 0;
+  const height = img?.naturalHeight || img?.height || 0;
+  if (!width || !height) return /^data:image\/png;base64,/i.test(source) ? source : '';
+
+  try {
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return /^data:image\/png;base64,/i.test(source) ? source : '';
+    ctx.drawImage(img, 0, 0, width, height);
+    return canvas.toDataURL('image/png');
+  } catch (_) {
+    return /^data:image\/png;base64,/i.test(source) ? source : '';
+  }
+}
+
+function pngDataUrlToBlob(dataUrl) {
+  const match = /^data:image\/png;base64,([a-z0-9+/=\s]+)$/i.exec(String(dataUrl || ''));
+  if (!match) return null;
+  try {
+    const binary = atob(match[1].replace(/\s/g, ''));
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index++) bytes[index] = binary.charCodeAt(index);
+    return new Blob([bytes], { type: 'image/png' });
+  } catch (_) {
+    return null;
+  }
+}
+
+function writeNoteImageBinaryToClipboard(dataUrl, html, text) {
+  if (!dataUrl) return;
+  if (window.desktop?.isElectron && typeof window.desktop.writeEditorImageToClipboard === 'function') {
+    window.desktop.writeEditorImageToClipboard({ dataUrl, html, text }).catch(err => {
+      console.error('copy note image:', err);
+    });
+    return;
+  }
+
+  const imageBlob = pngDataUrlToBlob(dataUrl);
+  if (!imageBlob || !navigator.clipboard?.write || typeof window.ClipboardItem !== 'function') return;
+  try {
+    const item = new window.ClipboardItem({
+      'image/png': imageBlob,
+      'text/html': new Blob([html], { type: 'text/html' }),
+      'text/plain': new Blob([text], { type: 'text/plain' })
+    });
+    navigator.clipboard.write([item]).catch(err => console.error('copy note image:', err));
+  } catch (err) {
+    console.error('copy note image:', err);
+  }
+}
+
 function writeSelectedNoteImageToClipboard(clipboardData) {
   const block = selectedNoteImageBlock();
   if (!block || !clipboardData) return false;
   const html = cleanNoteImageBlockHTML(block);
   if (!html) return false;
   const img = block.querySelector('img.note-image, img');
+  if (!img) return false;
+  const text = img.alt || 'Image';
   clipboardData.setData('text/html', html);
-  clipboardData.setData('text/plain', img?.alt || 'Image');
+  clipboardData.setData('text/plain', text);
+  writeNoteImageBinaryToClipboard(noteImageClipboardPngDataUrl(img), html, text);
   return true;
 }
 
@@ -1726,7 +1784,30 @@ function headerDomainEndFromSelection(range) {
   const node = range?.startContainer;
   const owner = node?.nodeType === Node.ELEMENT_NODE ? node : node?.parentElement;
   const marker = owner?.closest?.('[' + HEADER_DOMAIN_END_ATTR + ']');
-  return marker && ed?.contains(marker) ? marker : null;
+  if (marker && ed?.contains(marker)) return marker;
+
+  const selectedImage = selectedNoteImageBlock(ed);
+  if (selectedImage?.hasAttribute(HEADER_DOMAIN_END_ATTR)) return selectedImage;
+
+  const precedingImage = node?.nodeType === Node.TEXT_NODE && node.parentNode === ed
+    ? node.previousElementSibling
+    : null;
+  return precedingImage?.matches?.('.note-image-block[' + HEADER_DOMAIN_END_ATTR + ']') ? precedingImage : null;
+}
+
+function isHeaderDomainEndImageSelection(marker, range) {
+  if (!marker?.matches?.('.note-image-block')) return false;
+  if (selectedNoteImageBlock() === marker) return true;
+  if (!range?.collapsed) return false;
+
+  const parent = marker.parentNode;
+  if (!parent) return false;
+  if (range.startContainer === parent) return parent.childNodes[range.startOffset - 1] === marker;
+
+  const textNode = range.startContainer;
+  if (textNode?.nodeType !== Node.TEXT_NODE || textNode.parentNode !== parent || textNode.previousSibling !== marker) return false;
+  const prefix = String(textNode.textContent || '').slice(0, range.startOffset);
+  return !prefix.replace(/\u200b/g, '').trim();
 }
 
 function rangeRect(range) {
@@ -1792,10 +1873,11 @@ function nextOutsideHeaderDomainTarget(el, level) {
 
 function moveCaretBeyondHeaderDomainEnd() {
   const sel = window.getSelection();
-  if (!sel || !sel.rangeCount || !sel.isCollapsed) return false;
+  if (!sel || !sel.rangeCount) return false;
   const range = sel.getRangeAt(0);
   const marker = headerDomainEndFromSelection(range);
-  if (!marker || !isCaretOnLastVisualLineOfElement(marker, range)) return false;
+  const imageSelection = isHeaderDomainEndImageSelection(marker, range);
+  if (!marker || (!imageSelection && (!sel.isCollapsed || !isCaretOnLastVisualLineOfElement(marker, range)))) return false;
 
   const levels = parseHeaderDomainEndLevels(marker);
   if (!levels.length) return false;

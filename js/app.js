@@ -270,6 +270,8 @@ document.getElementById('connect-profile-email-input')?.addEventListener('keydow
 document.getElementById('profile-link-approve').addEventListener('click', approvePendingProfileLink);
 document.getElementById('profile-link-deny').addEventListener('click', denyPendingProfileLink);
 document.getElementById('profile-link-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeProfileLinkApproval(); });
+document.getElementById('note-focus-btn')?.addEventListener('click', toggleNoteFocusMode);
+document.getElementById('note-focus-exit-btn')?.addEventListener('click', () => setNoteFocusMode(false));
 document.getElementById('share-btn').addEventListener('click',       () => openShareModal('note', activeId));
 document.getElementById('share-link-toggle').addEventListener('change', e => setShareLinkEnabled(e.target.checked));
 document.getElementById('copy-link-btn').addEventListener('click',   copyShareLink);
@@ -1029,7 +1031,7 @@ document.addEventListener('keydown', e => {
       return;
     }
   }
-  if (key === 'p' && e.shiftKey && document.activeElement === editorEl) {
+  if (key === 'v' && e.shiftKey && document.activeElement === editorEl) {
     e.preventDefault();
     pasteTextMatchingFormatting();
     return;
