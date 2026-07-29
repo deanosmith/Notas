@@ -712,6 +712,7 @@ function resetConversationPanelPlacement() {
   sidebar.classList.remove('conversation-panel-resizing');
   _conversationPanelDrag = null;
   _conversationPanelResize = null;
+  refreshConversationPanelPointerListeners();
 }
 
 function clampConversationPanelToViewport() {
@@ -724,6 +725,32 @@ function clampConversationPanelToViewport() {
   sidebar.style.left = left + 'px';
   sidebar.style.top = top + 'px';
   sidebar.style.right = 'auto';
+}
+
+function addConversationPanelPointerListeners() {
+  document.addEventListener('pointermove', moveConversationPanelDrag);
+  document.addEventListener('pointerup', endConversationPanelDrag);
+  document.addEventListener('pointercancel', endConversationPanelDrag);
+  document.addEventListener('pointermove', moveConversationPanelResize);
+  document.addEventListener('pointerup', endConversationPanelResize);
+  document.addEventListener('pointercancel', endConversationPanelResize);
+}
+
+function removeConversationPanelPointerListeners() {
+  document.removeEventListener('pointermove', moveConversationPanelDrag);
+  document.removeEventListener('pointerup', endConversationPanelDrag);
+  document.removeEventListener('pointercancel', endConversationPanelDrag);
+  document.removeEventListener('pointermove', moveConversationPanelResize);
+  document.removeEventListener('pointerup', endConversationPanelResize);
+  document.removeEventListener('pointercancel', endConversationPanelResize);
+}
+
+function refreshConversationPanelPointerListeners() {
+  if (_conversationPanelDrag || _conversationPanelResize) {
+    addConversationPanelPointerListeners();
+  } else {
+    removeConversationPanelPointerListeners();
+  }
 }
 
 function startConversationPanelDrag(e) {
@@ -742,6 +769,7 @@ function startConversationPanelDrag(e) {
     width: rect.width,
     height: rect.height
   };
+  refreshConversationPanelPointerListeners();
   sidebar.style.left = rect.left + 'px';
   sidebar.style.top = rect.top + 'px';
   sidebar.style.right = 'auto';
@@ -773,6 +801,7 @@ function endConversationPanelDrag(e = {}) {
   if (!_conversationPanelDrag || (e.pointerId && e.pointerId !== _conversationPanelDrag.pointerId)) return;
   document.getElementById('conversation-sidebar')?.classList.remove('conversation-panel-dragging');
   _conversationPanelDrag = null;
+  refreshConversationPanelPointerListeners();
   clampConversationPanelToViewport();
 }
 
@@ -793,6 +822,7 @@ function startConversationPanelResize(e) {
     width: rect.width,
     height: rect.height
   };
+  refreshConversationPanelPointerListeners();
   sidebar.style.left = rect.left + 'px';
   sidebar.style.top = rect.top + 'px';
   sidebar.style.right = 'auto';
@@ -831,6 +861,7 @@ function endConversationPanelResize(e = {}) {
   if (!_conversationPanelResize || (e.pointerId && e.pointerId !== _conversationPanelResize.pointerId)) return;
   document.getElementById('conversation-sidebar')?.classList.remove('conversation-panel-resizing');
   _conversationPanelResize = null;
+  refreshConversationPanelPointerListeners();
   clampConversationPanelToViewport();
 }
 
@@ -840,21 +871,9 @@ function setupConversationPanelChrome() {
   const header = document.querySelector('#conversation-sidebar .conversation-panel-header');
   const resizeHandles = document.querySelectorAll('#conversation-sidebar .conversation-resize-handle');
   header?.addEventListener('pointerdown', startConversationPanelDrag);
-  header?.addEventListener('pointermove', moveConversationPanelDrag);
-  header?.addEventListener('pointerup', endConversationPanelDrag);
-  header?.addEventListener('pointercancel', endConversationPanelDrag);
   resizeHandles.forEach(handle => {
     handle.addEventListener('pointerdown', startConversationPanelResize);
-    handle.addEventListener('pointermove', moveConversationPanelResize);
-    handle.addEventListener('pointerup', endConversationPanelResize);
-    handle.addEventListener('pointercancel', endConversationPanelResize);
   });
-  document.addEventListener('pointermove', moveConversationPanelDrag);
-  document.addEventListener('pointerup', endConversationPanelDrag);
-  document.addEventListener('pointercancel', endConversationPanelDrag);
-  document.addEventListener('pointermove', moveConversationPanelResize);
-  document.addEventListener('pointerup', endConversationPanelResize);
-  document.addEventListener('pointercancel', endConversationPanelResize);
   window.addEventListener('resize', () => {
     if (!conversationsOpen) return;
     if (isMobile()) resetConversationPanelPlacement();

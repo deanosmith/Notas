@@ -34,7 +34,7 @@ const menuBarNotes = new Map();
 const keepMainWindowWarm = process.platform === 'darwin';
 const NOTE_WINDOW_PREWARM_DELAY_MS = 160;
 const NOTE_WINDOW_PREWARM_IDLE_MS = 10 * 60 * 1000;
-const enableNoteWindowPrewarm = true;
+const enableNoteWindowPrewarm = false;
 const LOCAL_SERVER_PORT_MIN = 49152;
 const LOCAL_SERVER_PORT_MAX = 65535;
 const LOCAL_SERVER_PORT_ATTEMPTS = 16;
@@ -600,10 +600,7 @@ function createMainWindow(behavior = {}) {
     height: 880,
     minWidth: 900,
     minHeight: 620,
-    title: APP_NAME,
-    webPreferences: {
-      backgroundThrottling: false
-    }
+    title: APP_NAME
   }, behavior);
   windowContexts.set(mainWindow.id, { type: 'main', alwaysOnTop: false });
   mainRendererReadyWindowId = 0;

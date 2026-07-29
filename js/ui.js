@@ -1098,6 +1098,13 @@ function renderSidebar(filter) {
 
   const filteredNotes = sortedIds().map(id => notes[id])
     .filter(n => !filter || noteMatchesFilter(n, filter));
+  const folderNotesById = new Map();
+  filteredNotes.forEach(note => {
+    if (!note.folderId || isMajorPinnedNote(note)) return;
+    const folderNotes = folderNotesById.get(note.folderId) || [];
+    folderNotes.push(note);
+    folderNotesById.set(note.folderId, folderNotes);
+  });
   const pinnedLooseNotes = filteredNotes.filter(n => isMajorPinnedNote(n));
   const looseNotes = filteredNotes.filter(n => !hasVisibleFolder(n) && !isMajorPinnedNote(n));
   const uncategorized = looseNotes.filter(n => !isPinnedNote(n) && isOwnedNote(n));
@@ -1123,10 +1130,7 @@ function renderSidebar(filter) {
   }
 
   sortedFolderList.forEach(folder => {
-    const folderNotes = sortedIds().map(id => notes[id])
-      .filter(n => n.folderId === folder.id)
-      .filter(n => !isMajorPinnedNote(n))
-      .filter(n => !filter || noteMatchesFilter(n, filter));
+    const folderNotes = folderNotesById.get(folder.id) || [];
     if (filter && !folder.title.toLowerCase().includes(filter) && !folderNotes.length) return;
     hasContent = true;
 
