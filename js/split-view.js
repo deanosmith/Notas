@@ -670,6 +670,23 @@ function initNoteSplitView() {
     scheduleSplitPeerSave();
   });
   peerBody.addEventListener('pointerdown', event => {
+    const imageResizeHandle = event.target.closest?.('[data-note-image-resize]');
+    if (imageResizeHandle && peerBody.contains(imageResizeHandle)) {
+      runNoteSplitPeerTableOperation(() => startNoteImageResize?.(event, imageResizeHandle));
+      return;
+    }
+    const imageDragHandle = event.target.closest?.('[data-note-image-drag]');
+    if (imageDragHandle && peerBody.contains(imageDragHandle)) {
+      const imageBlock = imageDragHandle.closest?.('.note-image-block');
+      if (imageBlock) runNoteSplitPeerTableOperation(() => startEditorBlockDrag?.(event, imageBlock));
+      return;
+    }
+    const tableDragHandle = event.target.closest?.('[data-editor-block-drag="table"]');
+    if (tableDragHandle && peerBody.contains(tableDragHandle)) {
+      const tableWrap = tableDragHandle.closest?.('.note-table-wrap');
+      if (tableWrap) runNoteSplitPeerTableOperation(() => startEditorBlockDrag?.(event, tableWrap));
+      return;
+    }
     const reorderHandle = event.target.closest?.('[data-table-reorder]');
     if (reorderHandle && peerBody.contains(reorderHandle)) {
       runNoteSplitPeerTableOperation(() => startTableReorder?.(event, reorderHandle));
@@ -686,6 +703,19 @@ function initNoteSplitView() {
     event.preventDefault();
     event.stopPropagation();
     runNoteSplitPeerTableOperation(() => handleTableControl?.(tableButton));
+  });
+  peerBody.addEventListener('click', event => {
+    const imageDragHandle = event.target.closest?.('[data-note-image-drag]');
+    if (imageDragHandle && peerBody.contains(imageDragHandle)) {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+    const tableDragHandle = event.target.closest?.('[data-editor-block-drag="table"]');
+    if (tableDragHandle && peerBody.contains(tableDragHandle)) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
   });
   peerBody.addEventListener('keydown', event => {
     if (!event.target.closest?.('[data-table-title-input]')) return;

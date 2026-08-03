@@ -203,8 +203,12 @@ function setAuthError(message) {
 }
 
 function setAuthControlsDisabled(disabled) {
+  const earlyAccessBtn = document.getElementById('early-access-btn');
+  const earlyAccessInput = document.getElementById('early-access-code');
   const googleBtn = document.getElementById('google-signin-btn');
   const testBtn = document.getElementById('test-password-signin-btn');
+  if (earlyAccessBtn) earlyAccessBtn.disabled = disabled;
+  if (earlyAccessInput) earlyAccessInput.disabled = disabled;
   if (googleBtn) googleBtn.disabled = disabled;
   if (testBtn) testBtn.disabled = disabled;
 }
@@ -228,12 +232,75 @@ function testPasswordAuthErrorMessage(err) {
   return err?.message || err?.code || 'Could not sign in.';
 }
 
+const EARLY_ACCESS_STORAGE_KEY = 'notas_early_access_ok';
+
+function configuredEarlyAccessCode() {
+  return String(envValue('EA_CODE') || '').trim();
+}
+
+function isEarlyAccessUnlocked() {
+  const expected = configuredEarlyAccessCode();
+  if (!expected) return true;
+  try {
+    return sessionStorage.getItem(EARLY_ACCESS_STORAGE_KEY) === expected;
+  } catch {
+    return false;
+  }
+}
+
+function setEarlyAccessUnlocked(code) {
+  try {
+    sessionStorage.setItem(EARLY_ACCESS_STORAGE_KEY, code);
+  } catch {}
+}
+
+function configureEarlyAccessUI() {
+  const form = document.getElementById('early-access-form');
+  const googleBtn = document.getElementById('google-signin-btn');
+  if (!form || !googleBtn) return;
+
+  const unlocked = isEarlyAccessUnlocked();
+  form.hidden = unlocked;
+  googleBtn.hidden = !unlocked;
+}
+
+function submitEarlyAccessCode(event) {
+  event?.preventDefault();
+  setAuthError('');
+
+  const expected = configuredEarlyAccessCode();
+  const input = document.getElementById('early-access-code');
+  const entered = String(input?.value || '').trim();
+
+  if (!expected) {
+    configureEarlyAccessUI();
+    return;
+  }
+  if (!entered) {
+    setAuthError('Enter an early access code.');
+    input?.focus();
+    return;
+  }
+  if (entered !== expected) {
+    setAuthError('That early access code is incorrect.');
+    input?.focus();
+    input?.select?.();
+    return;
+  }
+
+  setEarlyAccessUnlocked(expected);
+  configureEarlyAccessUI();
+  if (input) input.value = '';
+  document.getElementById('google-signin-btn')?.focus();
+}
+
 function configureTestPasswordAuthUI() {
   const form = document.getElementById('test-password-signin-form');
   if (!form) return;
-  const enabled = isTestPasswordAuthEnabled();
-  form.hidden = !enabled;
-  if (!enabled) return;
+
+  // Keep testing login hidden until the auth logo is clicked.
+  form.hidden = true;
+  if (!isTestPasswordAuthEnabled()) return;
 
   const nameInput = document.getElementById('test-password-name');
   const hint = document.getElementById('test-password-email-hint');
@@ -248,6 +315,18 @@ function configureTestPasswordAuthUI() {
     form.dataset.configured = 'true';
   }
   updateHint();
+}
+
+function toggleTestPasswordAuthFromLogo() {
+  const form = document.getElementById('test-password-signin-form');
+  if (!form || !isTestPasswordAuthEnabled()) return;
+  form.hidden = !form.hidden;
+  if (!form.hidden) document.getElementById('test-password-name')?.focus();
+}
+
+function configureAuthLandingUI() {
+  configureEarlyAccessUI();
+  configureTestPasswordAuthUI();
 }
 
 async function authenticateTestPasswordUser(email, password) {
@@ -321,6 +400,7 @@ onAuthStateChanged(auth, async user => {
     closeTransientSurfaces();
     overlay.style.display = 'flex';
     setAuthControlsDisabled(false);
+    configureAuthLandingUI();
     const av = document.getElementById('user-avatar');
     av?.removeAttribute('src');
     if (av) av.style.display = 'none';
@@ -394,6 +474,12 @@ onAuthStateChanged(auth, async user => {
 });
 
 async function signInWithGoogle() {
+  if (!isEarlyAccessUnlocked()) {
+    setAuthError('Enter a valid early access code first.');
+    configureEarlyAccessUI();
+    document.getElementById('early-access-code')?.focus();
+    return;
+  }
   setAuthControlsDisabled(true);
   setAuthError('');
   try {

@@ -15,6 +15,7 @@ const requiredKeys = [
 ];
 
 const optionalKeys = [
+  'EA_CODE',
   'NOTAS_ENABLE_TEST_PASSWORD_AUTH',
   'NOTAS_TEST_PASSWORD_AUTH_DOMAIN'
 ];

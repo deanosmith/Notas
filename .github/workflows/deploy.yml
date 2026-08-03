@@ -34,6 +34,7 @@ jobs:
           FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.FIREBASE_MESSAGING_SENDER_ID }}
           FIREBASE_APP_ID: ${{ secrets.FIREBASE_APP_ID }}
           FIREBASE_MEASUREMENT_ID: ${{ secrets.FIREBASE_MEASUREMENT_ID }}
+          EA_CODE: ${{ secrets.EA_CODE }}
         run: |
           required=(
             FIREBASE_API_KEY
@@ -43,6 +44,7 @@ jobs:
             FIREBASE_MESSAGING_SENDER_ID
             FIREBASE_APP_ID
             FIREBASE_MEASUREMENT_ID
+            EA_CODE
           )
 
           for name in "${required[@]}"; do
@@ -74,7 +76,8 @@ jobs:
             echo "  FIREBASE_STORAGE_BUCKET:      '${FIREBASE_STORAGE_BUCKET}',"
             echo "  FIREBASE_MESSAGING_SENDER_ID: '${FIREBASE_MESSAGING_SENDER_ID}',"
             echo "  FIREBASE_APP_ID:              '${FIREBASE_APP_ID}',"
-            echo "  FIREBASE_MEASUREMENT_ID:      '${FIREBASE_MEASUREMENT_ID}'"
+            echo "  FIREBASE_MEASUREMENT_ID:      '${FIREBASE_MEASUREMENT_ID}',"
+            echo "  EA_CODE:                      '${EA_CODE}'"
             echo "};"
           } > dist/firebase-config.local.js
 

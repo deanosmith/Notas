@@ -603,6 +603,18 @@ function createNoteImageResizeHandle() {
   return handle;
 }
 
+function createNoteImageDragHandle() {
+  const handle = document.createElement('span');
+  handle.className = 'note-image-drag-handle';
+  handle.dataset.noteImageDrag = '1';
+  handle.setAttribute('contenteditable', 'false');
+  handle.setAttribute('draggable', 'false');
+  handle.setAttribute('title', 'Move Image');
+  handle.setAttribute('aria-label', 'Move Image');
+  handle.innerHTML = '<i class="fa-solid fa-up-down-left-right"></i>';
+  return handle;
+}
+
 function clearSelectedNoteImages(root = getEd()) {
   root?.querySelectorAll?.('.note-image-block.note-image-selected').forEach(block => {
     block.classList.remove('note-image-selected');
@@ -811,7 +823,7 @@ function decorateNoteImages(root = getEd()) {
   let changed = false;
   const editable = root.isContentEditable || root.getAttribute?.('contenteditable') === 'true';
   [...root.querySelectorAll('img')].forEach(img => {
-    if (img.closest('.note-image-resize-handle')) return;
+    if (img.closest('.note-image-resize-handle, .note-image-drag-handle')) return;
     const normalized = normalizeNoteImageElement(img);
     if (!normalized) {
       changed = true;
@@ -830,8 +842,18 @@ function decorateNoteImages(root = getEd()) {
         changed = true;
       }
     });
+    block.querySelectorAll(':scope > .note-image-drag-handle').forEach((handle, index) => {
+      if (index > 0 || !editable) {
+        handle.remove();
+        changed = true;
+      }
+    });
     if (editable && !block.querySelector(':scope > .note-image-resize-handle')) {
       block.appendChild(createNoteImageResizeHandle());
+      changed = true;
+    }
+    if (editable && !block.querySelector(':scope > .note-image-drag-handle')) {
+      block.appendChild(createNoteImageDragHandle());
       changed = true;
     }
   });
@@ -839,13 +861,14 @@ function decorateNoteImages(root = getEd()) {
 }
 
 function stripNoteImageEditorChrome(root) {
-  root.querySelectorAll('.note-image-resize-handle').forEach(el => el.remove());
+  root.querySelectorAll('.note-image-resize-handle, .note-image-drag-handle').forEach(el => el.remove());
+  root.querySelectorAll('.editor-block-drop-indicator').forEach(el => el.remove());
   root.querySelectorAll('img').forEach(img => {
     normalizeNoteImageElement(img);
     img.removeAttribute('draggable');
   });
   root.querySelectorAll('.note-image-block').forEach(block => {
-    block.classList.remove('has-image-controls', 'note-image-selected');
+    block.classList.remove('has-image-controls', 'note-image-selected', 'editor-block-dragging');
     block.removeAttribute('data-note-image-selected');
     block.removeAttribute('contenteditable');
     if (!block.querySelector('img')) {
@@ -2674,6 +2697,7 @@ function createTableControls(title = '') {
   controls.setAttribute('contenteditable', 'false');
   controls.innerHTML =
     (cleanTitle ? tableTitleInputHTML(cleanTitle) : tableTitleButtonHTML()) +
+    '<button class="table-drag-btn" data-editor-block-drag="table" type="button" title="Move Table" aria-label="Move Table"><i class="fa-solid fa-up-down-left-right"></i></button>' +
     '<button class="table-delete-btn" data-table-action="delete-table" type="button" title="Delete Table" aria-label="Delete Table"><i class="fa-solid fa-xmark"></i></button>' +
     '<div class="table-axis-controls table-row-controls" aria-label="Row controls">' +
       '<button class="table-btn" data-table-action="add-row" type="button" title="Add Row" aria-label="Add Row"><i class="fa-solid fa-plus"></i></button>' +
@@ -2706,6 +2730,19 @@ function syncTableControls(wrap, table) {
     controls.insertAdjacentHTML('afterbegin', tableTitleButtonHTML());
     changed = true;
   }
+  if (!controls.querySelector('[data-editor-block-drag="table"]')) {
+    const dragBtn = document.createElement('button');
+    dragBtn.className = 'table-drag-btn';
+    dragBtn.dataset.editorBlockDrag = 'table';
+    dragBtn.type = 'button';
+    dragBtn.title = 'Move Table';
+    dragBtn.setAttribute('aria-label', 'Move Table');
+    dragBtn.innerHTML = '<i class="fa-solid fa-up-down-left-right"></i>';
+    const deleteBtn = controls.querySelector('[data-table-action="delete-table"]');
+    if (deleteBtn) controls.insertBefore(dragBtn, deleteBtn);
+    else controls.appendChild(dragBtn);
+    changed = true;
+  }
   return changed;
 }
 
@@ -2736,6 +2773,246 @@ const TABLE_MIN_COLUMN_WIDTH = 72;
 const TABLE_DEFAULT_COLUMN_WIDTH = 150;
 const TABLE_EDGE_RESIZE_KEY = 'edge';
 let _tableReorderState = null;
+let _editorBlockDragState = null;
+
+function editorBlockDragMeaningfulNode(node) {
+  if (!node) return false;
+  if (node.nodeType === Node.TEXT_NODE) return !!String(node.textContent || '').replace(/[\u200b\u00a0\s]/g, '').length;
+  if (node.nodeType !== Node.ELEMENT_NODE) return false;
+  if (node.matches?.('.note-image-resize-handle, .note-image-drag-handle, .editor-block-drop-indicator, br')) return false;
+  return true;
+}
+
+function movableEditorBlockFromElement(el, root = editorRootForElement(el)) {
+  if (!el || !root?.contains?.(el)) return null;
+  const imageHandle = el.closest?.('[data-note-image-drag], .note-image-drag-handle');
+  const imageBlock = imageHandle?.closest?.('.note-image-block') || el.closest?.('.note-image-block');
+  if (imageBlock && root.contains(imageBlock)) {
+    const annotation = imageBlock.closest?.('.note-alarm.note-image-annotation, .note-conversation-anchor.note-image-annotation');
+    return annotation && root.contains(annotation) ? annotation : imageBlock;
+  }
+  const tableHandle = el.closest?.('[data-editor-block-drag="table"], .table-drag-btn');
+  const tableWrap = tableHandle?.closest?.('.note-table-wrap') || el.closest?.('.note-table-wrap');
+  if (tableWrap && root.contains(tableWrap) && !el.closest?.('th, td, .table-resize-handle, .table-reorder-handle, [data-table-action], [data-table-title-input]')) {
+    return tableWrap;
+  }
+  if (tableHandle && tableWrap && root.contains(tableWrap)) return tableWrap;
+  return null;
+}
+
+function editorBlockMoveUnit(block, root) {
+  if (!block || !root?.contains?.(block)) return null;
+  let unit = block;
+  while (unit.parentElement && unit.parentElement !== root) {
+    const parent = unit.parentElement;
+    if (!/^(P|DIV|SPAN)$/i.test(parent.tagName || '')) break;
+    const meaningful = [...parent.childNodes].filter(editorBlockDragMeaningfulNode);
+    if (meaningful.length === 1 && meaningful[0] === unit) unit = parent;
+    else break;
+  }
+  return unit;
+}
+
+function editorBlockDropTargets(root, movingUnit) {
+  if (!root) return [];
+  return [...root.children].filter(el => {
+    if (!el || el === movingUnit) return false;
+    if (el.classList?.contains('editor-block-drop-indicator')) return false;
+    return true;
+  });
+}
+
+function editorBlockInsertionPoint(root, movingUnit, clientY) {
+  const targets = editorBlockDropTargets(root, movingUnit);
+  for (const el of targets) {
+    const rect = el.getBoundingClientRect();
+    if (clientY < rect.top + rect.height / 2) return el;
+  }
+  return null;
+}
+
+function editorBlockDropIndicator(root) {
+  if (!root) return null;
+  let indicator = root.querySelector(':scope > .editor-block-drop-indicator');
+  if (!indicator) {
+    indicator = document.createElement('div');
+    indicator.className = 'editor-block-drop-indicator';
+    indicator.setAttribute('contenteditable', 'false');
+    indicator.setAttribute('aria-hidden', 'true');
+    root.appendChild(indicator);
+  }
+  return indicator;
+}
+
+function updateEditorBlockDropIndicator(root, beforeNode) {
+  const indicator = editorBlockDropIndicator(root);
+  if (!root || !indicator) return;
+  const rootRect = root.getBoundingClientRect();
+  let y = root.scrollTop;
+  if (beforeNode && root.contains(beforeNode)) {
+    const rect = beforeNode.getBoundingClientRect();
+    y = rect.top - rootRect.top + root.scrollTop;
+  } else {
+    const last = [...root.children].filter(el => !el.classList?.contains('editor-block-drop-indicator')).pop();
+    if (last) {
+      const rect = last.getBoundingClientRect();
+      y = rect.bottom - rootRect.top + root.scrollTop;
+    } else {
+      y = root.scrollTop + 8;
+    }
+  }
+  indicator.style.top = Math.max(0, y) + 'px';
+  indicator.classList.add('is-visible');
+}
+
+function clearEditorBlockDropIndicator(root) {
+  root?.querySelectorAll?.('.editor-block-drop-indicator').forEach(el => el.remove());
+}
+
+function cleanupEmptyEditorBlockParent(parent, root) {
+  let current = parent;
+  while (current && current !== root && current.parentElement) {
+    const next = current.parentElement;
+    if (!editorBlockDragMeaningfulNode(current) || (
+      /^(P|DIV|SPAN)$/i.test(current.tagName || '') &&
+      ![...current.childNodes].some(editorBlockDragMeaningfulNode)
+    )) {
+      current.remove();
+      current = next;
+      continue;
+    }
+    break;
+  }
+}
+
+function moveEditorContentBlock(block, root, beforeNode) {
+  const unit = editorBlockMoveUnit(block, root);
+  if (!unit || !root) return false;
+  if (beforeNode && !root.contains(beforeNode)) beforeNode = null;
+  if (beforeNode === unit) return false;
+  if (beforeNode && unit.nextSibling === beforeNode) return false;
+  if (!beforeNode) {
+    const last = [...root.children].filter(el => el !== unit && !el.classList?.contains('editor-block-drop-indicator')).pop();
+    if (!last || last === unit) {
+      if (unit.parentElement === root && !unit.nextElementSibling) return false;
+    }
+  }
+
+  const parent = unit.parentElement;
+  unit.remove();
+  cleanupEmptyEditorBlockParent(parent, root);
+  if (beforeNode && root.contains(beforeNode)) root.insertBefore(unit, beforeNode);
+  else root.appendChild(unit);
+
+  if (unit.classList?.contains('note-table-wrap') || unit.querySelector?.(':scope > .note-table-wrap, .note-table-wrap')) {
+    const wrap = unit.classList?.contains('note-table-wrap') ? unit : unit.querySelector('.note-table-wrap');
+    if (wrap) ensureTableTrailingParagraph(wrap);
+  }
+  return true;
+}
+
+function startEditorBlockDrag(e, block) {
+  const root = editorRootForElement(block);
+  if (!canEditEditorRoot(root) || !block || !root?.contains?.(block)) return false;
+  if (e.button != null && e.button !== 0) return false;
+
+  const resolved = movableEditorBlockFromElement(block, root) || block;
+  const unit = editorBlockMoveUnit(resolved, root);
+  if (!unit) return false;
+
+  e.preventDefault();
+  e.stopPropagation();
+  pushUndo();
+
+  if (unit.matches?.('.note-image-block') || unit.querySelector?.(':scope > .note-image-block, .note-image-block')) {
+    const imageBlock = unit.matches?.('.note-image-block') ? unit : unit.querySelector('.note-image-block');
+    if (imageBlock) selectNoteImageBlock(imageBlock);
+  }
+
+  _editorBlockDragState = {
+    root,
+    block: unit,
+    pointerId: e.pointerId,
+    beforeNode: editorBlockInsertionPoint(root, unit, e.clientY)
+  };
+  unit.classList.add('editor-block-dragging');
+  root.classList.add('is-block-dragging');
+  updateEditorBlockDropIndicator(root, _editorBlockDragState.beforeNode);
+  document.body.style.cursor = 'grabbing';
+  document.body.style.userSelect = 'none';
+  try { e.currentTarget?.setPointerCapture?.(e.pointerId); } catch (_) {}
+  try { block.setPointerCapture?.(e.pointerId); } catch (_) {}
+
+  let latestY = e.clientY;
+  let frame = 0;
+  const updatePreview = () => {
+    const state = _editorBlockDragState;
+    if (!state || state.block !== unit) return;
+    state.beforeNode = editorBlockInsertionPoint(state.root, unit, latestY);
+    updateEditorBlockDropIndicator(state.root, state.beforeNode);
+  };
+
+  const move = evt => {
+    if (!_editorBlockDragState || _editorBlockDragState.block !== unit) return;
+    evt.preventDefault();
+    latestY = evt.clientY;
+    if (frame) return;
+    frame = requestAnimationFrame(() => {
+      frame = 0;
+      updatePreview();
+    });
+  };
+
+  const finish = evt => {
+    document.removeEventListener('pointermove', move);
+    document.removeEventListener('pointerup', finish);
+    document.removeEventListener('pointercancel', finish);
+    if (frame) {
+      cancelAnimationFrame(frame);
+      frame = 0;
+      if (evt?.type !== 'pointercancel') updatePreview();
+    }
+    try { e.currentTarget?.releasePointerCapture?.(e.pointerId); } catch (_) {}
+    try { block.releasePointerCapture?.(e.pointerId); } catch (_) {}
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+
+    const state = _editorBlockDragState;
+    _editorBlockDragState = null;
+    unit.classList.remove('editor-block-dragging');
+    root.classList.remove('is-block-dragging');
+    clearEditorBlockDropIndicator(root);
+    if (!state || state.block !== unit || evt?.type === 'pointercancel') {
+      scheduleEditorRootUndoSnapshot(root);
+      return;
+    }
+
+    const moved = moveEditorContentBlock(unit, root, state.beforeNode);
+    if (moved) {
+      if (unit.matches?.('.note-image-block')) selectNoteImageBlock(unit);
+      else if (unit.querySelector?.('.note-image-block')) selectNoteImageBlock(unit.querySelector('.note-image-block'));
+      else if (unit.matches?.('.note-table-wrap') || unit.querySelector?.('.note-table-wrap')) {
+        const wrap = unit.matches?.('.note-table-wrap') ? unit : unit.querySelector('.note-table-wrap');
+        const table = wrap?.querySelector?.(':scope > .note-table-scroll > table, :scope > table');
+        if (table) {
+          updateTableResizeHandles(table);
+          updateTableReorderHandles(table);
+        }
+      }
+      if (root !== document.getElementById('editor')) {
+        decorateTables(root);
+        decorateNoteImages(root);
+      }
+      dispatchEditorRootInput(root);
+    }
+    scheduleEditorRootUndoSnapshot(root);
+  };
+
+  document.addEventListener('pointermove', move, { passive: false });
+  document.addEventListener('pointerup', finish);
+  document.addEventListener('pointercancel', finish);
+  return true;
+}
 
 function tableDirectColgroup(table) {
   return table?.querySelector?.(':scope > colgroup') || null;
@@ -3389,8 +3666,9 @@ function stripTableEditorChrome(root) {
   root.querySelectorAll('.table-controls').forEach(el => el.remove());
   root.querySelectorAll('.table-resize-controls').forEach(el => el.remove());
   root.querySelectorAll('.table-reorder-controls,.table-reorder-indicator').forEach(el => el.remove());
+  root.querySelectorAll('.editor-block-drop-indicator').forEach(el => el.remove());
   root.querySelectorAll('.note-table-wrap').forEach(wrap => {
-    wrap.classList.remove('has-table-controls');
+    wrap.classList.remove('has-table-controls', 'editor-block-dragging');
     const table = wrap.querySelector(':scope > .note-table-scroll > table, :scope > table');
     if (table) {
       wrap.replaceWith(table);

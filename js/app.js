@@ -54,7 +54,7 @@ if (window.desktop?.isElectron) {
 }
 
 showEditorView(false);
-configureTestPasswordAuthUI();
+configureAuthLandingUI();
 
 function openShortcutsModal() {
   document.getElementById('shortcuts-modal')?.classList.add('open');
@@ -164,6 +164,8 @@ document.getElementById('shortcuts-btn')?.addEventListener('click', openShortcut
 document.getElementById('shortcuts-close')?.addEventListener('click', closeShortcutsModal);
 document.getElementById('shortcuts-modal')?.addEventListener('click', e => { if (e.target === e.currentTarget) closeShortcutsModal(); });
 document.getElementById('mob-new-btn').addEventListener('click',    openModal);
+document.getElementById('auth-logo-btn')?.addEventListener('click', toggleTestPasswordAuthFromLogo);
+document.getElementById('early-access-form')?.addEventListener('submit', submitEarlyAccessCode);
 document.getElementById('google-signin-btn').addEventListener('click', signInWithGoogle);
 document.getElementById('test-password-signin-form')?.addEventListener('submit', signInWithTestPassword);
 document.getElementById('signout-btn').addEventListener('click', () => {
@@ -396,6 +398,18 @@ editorEl.addEventListener('pointerdown', e => {
     startNoteImageResize(e, imageResizeHandle);
     return;
   }
+  const imageDragHandle = e.target.closest?.('[data-note-image-drag]');
+  if (imageDragHandle && editorEl.contains(imageDragHandle)) {
+    const imageBlock = imageDragHandle.closest?.('.note-image-block');
+    if (imageBlock && typeof startEditorBlockDrag === 'function') startEditorBlockDrag(e, imageBlock);
+    return;
+  }
+  const tableDragHandle = e.target.closest?.('[data-editor-block-drag="table"]');
+  if (tableDragHandle && editorEl.contains(tableDragHandle)) {
+    const tableWrap = tableDragHandle.closest?.('.note-table-wrap');
+    if (tableWrap && typeof startEditorBlockDrag === 'function') startEditorBlockDrag(e, tableWrap);
+    return;
+  }
   const reorderHandle = e.target.closest?.('[data-table-reorder]');
   if (reorderHandle && editorEl.contains(reorderHandle)) {
     startTableReorder(e, reorderHandle);
@@ -444,6 +458,18 @@ editorEl.addEventListener('contextmenu', e => {
 editorEl.addEventListener('click', e => {
   const imageResizeHandle = e.target.closest?.('[data-note-image-resize]');
   if (imageResizeHandle && editorEl.contains(imageResizeHandle)) {
+    e.preventDefault();
+    e.stopPropagation();
+    return;
+  }
+  const imageDragHandle = e.target.closest?.('[data-note-image-drag]');
+  if (imageDragHandle && editorEl.contains(imageDragHandle)) {
+    e.preventDefault();
+    e.stopPropagation();
+    return;
+  }
+  const tableDragHandle = e.target.closest?.('[data-editor-block-drag="table"]');
+  if (tableDragHandle && editorEl.contains(tableDragHandle)) {
     e.preventDefault();
     e.stopPropagation();
     return;
