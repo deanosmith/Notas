@@ -667,6 +667,15 @@ editorEl.addEventListener('keydown', e => {
   }
 
   if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+    if (closestInlineCodeFromSelection()) {
+      e.preventDefault();
+      pushUndo();
+      if (splitInlineCodeAtCaret()) {
+        _capitalizeNext = true;
+        editorEl.dispatchEvent(new Event('input'));
+      }
+      return;
+    }
     if (inTable) {
       e.preventDefault();
       document.execCommand('insertLineBreak');

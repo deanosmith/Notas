@@ -2571,6 +2571,112 @@ function unwrapNestedInlineCode(root) {
   });
 }
 
+function ensureInlineCodeFocusable(code) {
+  if (!code) return;
+  stripInlineCodePlaceholder(code);
+  if (!code.textContent && !code.querySelector('br, img')) {
+    const marker = document.createTextNode('\u200b');
+    code.dataset.inlineCodeEmpty = '1';
+    code.dataset.inlineCodeTyping = '1';
+    code.appendChild(marker);
+  }
+}
+
+function placeCaretInInlineCode(code, atStart = false) {
+  if (!code) return;
+  ensureInlineCodeFocusable(code);
+  const sel = window.getSelection();
+  const range = document.createRange();
+  if (atStart) {
+    const first = code.firstChild;
+    if (first?.nodeType === Node.TEXT_NODE) range.setStart(first, 0);
+    else range.selectNodeContents(code);
+    range.collapse(true);
+  } else {
+    const last = code.lastChild;
+    if (last?.nodeType === Node.TEXT_NODE) range.setStart(last, last.textContent.length);
+    else {
+      range.selectNodeContents(code);
+      range.collapse(false);
+    }
+  }
+  sel.removeAllRanges();
+  sel.addRange(range);
+  getEd()?.focus?.();
+}
+
+/* Split inline code on Enter so each line is its own code chip, not one wrapped code run. */
+function splitInlineCodeAtCaret() {
+  const code = closestInlineCodeFromSelection();
+  if (!code || code.closest('pre')) return false;
+
+  const sel = window.getSelection();
+  if (!sel?.rangeCount || !sel.isCollapsed) return false;
+
+  const range = sel.getRangeAt(0);
+  if (!code.contains(range.startContainer)) return false;
+
+  const parent = code.parentNode;
+  if (!parent) return false;
+
+  const block = code.closest('p, li, h1, h2, h3, h4, blockquote, td, th') || parent;
+
+  const afterRange = document.createRange();
+  afterRange.setStart(range.startContainer, range.startOffset);
+  afterRange.setEnd(code, code.childNodes.length);
+  const afterFragment = afterRange.extractContents();
+
+  stripInlineCodePlaceholder(code);
+  const keepOriginal = !!(code.textContent.replace(/\u200b/g, '') || code.querySelector('br, img'));
+  if (!keepOriginal) code.remove();
+
+  const nextCode = document.createElement('code');
+  nextCode.appendChild(afterFragment);
+  ensureInlineCodeFocusable(nextCode);
+
+  // List/table cells keep a soft line break inside the same block.
+  if (block && (block.tagName === 'LI' || block.tagName === 'TD' || block.tagName === 'TH')) {
+    const br = document.createElement('br');
+    if (keepOriginal && code.isConnected) code.after(br, nextCode);
+    else {
+      parent.insertBefore(br, parent.firstChild);
+      br.after(nextCode);
+    }
+    placeCaretInInlineCode(nextCode, true);
+    return true;
+  }
+
+  // Paragraphs and similar blocks become a true new line with its own code chip.
+  if (block && block !== getEd() && /^(P|H1|H2|H3|H4|BLOCKQUOTE)$/.test(block.tagName)) {
+    const marker = document.createElement('span');
+    marker.dataset.inlineCodeSplit = '1';
+    if (keepOriginal && code.isConnected) code.after(marker);
+    else parent.insertBefore(marker, parent.firstChild);
+
+    const tailRange = document.createRange();
+    tailRange.setStartAfter(marker);
+    tailRange.setEnd(block, block.childNodes.length);
+    const tailFragment = tailRange.extractContents();
+    marker.remove();
+
+    const nextBlock = document.createElement(block.tagName.toLowerCase());
+    nextBlock.appendChild(nextCode);
+    while (tailFragment.firstChild) nextBlock.appendChild(tailFragment.firstChild);
+    block.after(nextBlock);
+    if (!(block.textContent || '').replace(/\u200b/g, '') && !block.querySelector('br, img, code, a')) {
+      block.appendChild(document.createElement('br'));
+    }
+    placeCaretInInlineCode(nextCode, true);
+    return true;
+  }
+
+  const br = document.createElement('br');
+  if (keepOriginal && code.isConnected) code.after(br, nextCode);
+  else parent.append(br, nextCode);
+  placeCaretInInlineCode(nextCode, true);
+  return true;
+}
+
 function insertInlineCode() {
   const sel = window.getSelection();
   const existingCode = closestInlineCodeFromSelection();
