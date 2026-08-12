@@ -485,6 +485,8 @@ async function selectConversationRecipientOption(uid) {
 }
 
 function editorRangeForConversation() {
+  const ctx = typeof selectionEditorContext === 'function' ? selectionEditorContext() : null;
+  if (ctx?.range) return ctx.range;
   const ed = getEd();
   const sel = window.getSelection();
   if (ed && sel && sel.rangeCount) {
@@ -503,7 +505,8 @@ function editorRangeForConversation() {
 function blockTextForRange(range) {
   let node = range?.startContainer || null;
   if (node && node.nodeType === Node.TEXT_NODE) node = node.parentElement;
-  const ed = getEd();
+  const ctx = typeof selectionEditorContext === 'function' ? selectionEditorContext() : null;
+  const ed = ctx?.root || getEd();
   while (node && node !== ed) {
     if (node.nodeType === Node.ELEMENT_NODE && /^(P|DIV|LI|H1|H2|H3|H4|BLOCKQUOTE|PRE|TD|TH)$/.test(node.tagName)) {
       return conversationText(node.innerText || node.textContent || '', 220);
@@ -537,17 +540,19 @@ function captureRangeBookmark(root, range) {
 }
 
 function conversationAnchorFromSelection() {
-  const ed = getEd();
-  const range = editorRangeForConversation();
+  const ctx = typeof selectionEditorContext === 'function' ? selectionEditorContext() : null;
+  const ed = ctx?.root || getEd();
+  const noteId = ctx?.noteId || activeId || '';
+  const range = ctx?.range || editorRangeForConversation();
   const bookmark = captureRangeBookmark(ed, range);
   const selectedText = conversationText(range.toString(), 260);
   const selectedImage = typeof noteImageBlockForRange === 'function' ? noteImageBlockForRange(range, ed) : null;
   const imageLabel = selectedImage && typeof selectedNoteImageLabel === 'function'
     ? selectedNoteImageLabel(selectedImage)
     : '';
-  const context = conversationText(selectedText || imageLabel || blockTextForRange(range) || notes[activeId]?.title || 'Cursor location', 260);
+  const context = conversationText(selectedText || imageLabel || blockTextForRange(range) || notes[noteId]?.title || 'Cursor location', 260);
   return {
-    noteId: activeId || '',
+    noteId,
     mode: range.collapsed ? 'cursor' : 'selection',
     text: selectedText || imageLabel,
     context,
@@ -1074,8 +1079,12 @@ function openConversationFromMarker(mark) {
 
 async function applyConversationAnchorMark(conversationId, anchor) {
   const note = anchor?.noteId ? notes[anchor.noteId] : notes[activeId];
-  if (!conversationId || !note || activeId !== note.id || !canEditNote(note)) return false;
-  const ed = getEd();
+  if (!conversationId || !note || !canEditNote(note)) return false;
+  const peerId = typeof getNoteSplitPeerId === 'function' ? getNoteSplitPeerId() : '';
+  const peerBody = document.getElementById('note-split-peer-body');
+  const usePeer = !!(peerId && peerId === note.id && peerBody);
+  if (!usePeer && activeId !== note.id) return false;
+  const ed = usePeer ? peerBody : getEd();
   if (!ed) return false;
   const bookmark = anchor.bookmark || {
     start: anchor.start || 0,
@@ -1084,42 +1093,56 @@ async function applyConversationAnchorMark(conversationId, anchor) {
   };
 
   try {
-    pushUndo();
-    restoreEditorSelection(ed, bookmark);
-    const sel = window.getSelection();
-    if (!sel?.rangeCount) {
-      commitUndoSnapshot();
-      return false;
-    }
-    const range = sel.getRangeAt(0);
-    const owner = range.commonAncestorContainer.nodeType === Node.ELEMENT_NODE
-      ? range.commonAncestorContainer
-      : range.commonAncestorContainer.parentElement;
-    if (!owner || !ed.contains(owner)) {
-      commitUndoSnapshot();
+    if (!usePeer) pushUndo();
+    const applyMark = () => {
+      restoreEditorSelection(ed, bookmark);
+      const sel = window.getSelection();
+      if (!sel?.rangeCount) return false;
+      const range = sel.getRangeAt(0);
+      const owner = range.commonAncestorContainer.nodeType === Node.ELEMENT_NODE
+        ? range.commonAncestorContainer
+        : range.commonAncestorContainer.parentElement;
+      if (!owner || !ed.contains(owner)) return false;
+
+      const mark = createConversationAnchorMark(conversationId, anchor);
+      if (range.collapsed) {
+        mark.textContent = 'Conversation';
+        range.insertNode(mark);
+      } else {
+        mark.appendChild(range.extractContents());
+        mark.querySelectorAll('.note-conversation-anchor').forEach(nested => unwrapConversationAnchorMark(nested));
+        if (typeof syncNoteImageAnnotationMark === 'function') syncNoteImageAnnotationMark(mark);
+        range.insertNode(mark);
+      }
+      restoreConversationAnchorMarks(ed);
+      placeCursorAfterNode(mark);
+      refreshEmpty(ed);
+      return true;
+    };
+
+    const applied = usePeer && typeof runEditorOperationOnRoot === 'function'
+      ? !!runEditorOperationOnRoot(ed, applyMark)
+      : applyMark();
+    if (!applied) {
+      if (!usePeer) try { commitUndoSnapshot(); } catch (_) {}
       return false;
     }
 
-    const mark = createConversationAnchorMark(conversationId, anchor);
-    if (range.collapsed) {
-      mark.textContent = 'Conversation';
-      range.insertNode(mark);
-    } else {
-      mark.appendChild(range.extractContents());
-      mark.querySelectorAll('.note-conversation-anchor').forEach(nested => unwrapConversationAnchorMark(nested));
-      if (typeof syncNoteImageAnnotationMark === 'function') syncNoteImageAnnotationMark(mark);
-      range.insertNode(mark);
+    if (usePeer) {
+      const synced = typeof syncSplitPeerNote === 'function' && syncSplitPeerNote();
+      if (synced && typeof scheduleSplitPeerSave === 'function') scheduleSplitPeerSave();
+      if (typeof flushSplitPeerSave === 'function') flushSplitPeerSave();
+      renderSidebar();
+      return synced;
     }
-    restoreConversationAnchorMarks(ed);
-    placeCursorAfterNode(mark);
-    refreshEmpty(ed);
+
     const synced = syncActiveNoteFromEditor();
     scheduleUndoSnapshot();
     renderSidebar();
     return synced ? await saveDoc(note) : false;
   } catch (err) {
     console.warn('conversation anchor mark:', err);
-    try { commitUndoSnapshot(); } catch (_) {}
+    try { if (!usePeer) commitUndoSnapshot(); } catch (_) {}
     return false;
   }
 }
@@ -1128,8 +1151,11 @@ async function ensureConversationAnchorPresent(conversation, options = {}) {
   const latest = conversationById(conversation?.id) || conversation;
   const note = latest?.noteId ? notes[latest.noteId] : null;
   if (!latest?.id || latest.resolved || !note || !canEditNote(note)) return false;
-  if (activeId !== note.id) return false;
-  const ed = getEd();
+  const peerId = typeof getNoteSplitPeerId === 'function' ? getNoteSplitPeerId() : '';
+  const peerBody = document.getElementById('note-split-peer-body');
+  const usePeer = !!(peerId && peerId === note.id && peerBody);
+  if (!usePeer && activeId !== note.id) return false;
+  const ed = usePeer ? peerBody : getEd();
   if (!ed) return false;
   const existing = conversationAnchorMarkForConversation(ed, latest.id);
   if (existing) return true;
@@ -1142,48 +1168,53 @@ async function ensureConversationAnchorPresent(conversation, options = {}) {
   };
 
   try {
-    pushUndo();
-    restoreEditorSelection(ed, bookmark);
-    const sel = window.getSelection();
-    let range = sel?.rangeCount ? sel.getRangeAt(0) : null;
-    if (!range) {
-      range = document.createRange();
-      range.selectNodeContents(ed);
-      range.collapse(false);
+    const apply = () => {
+      if (!usePeer) pushUndo();
+      restoreEditorSelection(ed, bookmark);
+      const sel = window.getSelection();
+      let range = sel?.rangeCount ? sel.getRangeAt(0) : null;
+      if (!range) {
+        range = document.createRange();
+        range.selectNodeContents(ed);
+        range.collapse(false);
+      }
+
+      const mark = createConversationAnchorMark(latest.id, anchor);
+      const anchorText = anchor.text || '';
+      const selectedText = range.collapsed ? '' : range.toString();
+      const selectedImage = typeof selectionContainsNoteImage === 'function' && selectionContainsNoteImage(range, ed);
+      const selectedMatchesAnchor = !!anchorText &&
+        (normalizedConversationAnchorText(selectedText) === normalizedConversationAnchorText(anchorText) || !!selectedImage);
+
+      if (selectedMatchesAnchor && !range.collapsed) {
+        mark.appendChild(range.extractContents());
+        mark.querySelectorAll('.note-conversation-anchor').forEach(nested => unwrapConversationAnchorMark(nested));
+        if (typeof syncNoteImageAnnotationMark === 'function') syncNoteImageAnnotationMark(mark);
+        range.insertNode(mark);
+      } else {
+        mark.textContent = anchorText || 'Conversation';
+        range.collapse(true);
+        range.insertNode(mark);
+      }
+      restoreConversationAnchorMarks(ed);
+      refreshEmpty(ed);
+      return true;
+    };
+    const applied = usePeer && typeof runEditorOperationOnRoot === 'function'
+      ? !!runEditorOperationOnRoot(ed, apply)
+      : apply();
+    if (!applied) return false;
+    if (usePeer) {
+      if (typeof syncSplitPeerNote === 'function' && syncSplitPeerNote()) {
+        if (typeof scheduleSplitPeerSave === 'function') scheduleSplitPeerSave();
+      }
+    } else if (syncActiveNoteFromEditor()) {
+      scheduleUndoSnapshot();
+      scheduleSave();
     }
-
-    const mark = createConversationAnchorMark(latest.id, anchor);
-    const anchorText = anchor.text || '';
-    const selectedText = range.collapsed ? '' : range.toString();
-    const selectedImage = typeof selectionContainsNoteImage === 'function' && selectionContainsNoteImage(range, ed);
-    const selectedMatchesAnchor = !!anchorText &&
-      (normalizedConversationAnchorText(selectedText) === normalizedConversationAnchorText(anchorText) || !!selectedImage);
-
-    if (anchor.mode !== 'cursor' && selectedMatchesAnchor) {
-      mark.appendChild(range.extractContents());
-      mark.querySelectorAll('.note-conversation-anchor').forEach(nested => unwrapConversationAnchorMark(nested));
-      if (typeof syncNoteImageAnnotationMark === 'function') syncNoteImageAnnotationMark(mark);
-      range.insertNode(mark);
-    } else {
-      if (!range.collapsed) range.collapse(true);
-      mark.textContent = anchor.mode === 'cursor'
-        ? 'Conversation'
-        : (anchorText || conversationAnchorCopy(latest) || 'Conversation');
-      range.insertNode(mark);
-    }
-
-    restoreConversationAnchorMarks(ed);
-    placeCursorAfterNode(mark);
-    refreshEmpty(ed);
-    const synced = syncActiveNoteFromEditor();
-    scheduleUndoSnapshot();
-    renderSidebar();
-    const saved = synced ? await saveDoc(note) : false;
-    if (saved && options.notify) showToast('Conversation Location Restored', 'success');
-    return saved;
+    return true;
   } catch (err) {
-    console.warn('restore conversation anchor marker:', err);
-    try { commitUndoSnapshot(); } catch (_) {}
+    console.warn('ensure conversation anchor:', err);
     return false;
   }
 }
@@ -1242,15 +1273,17 @@ function toggleConversationsSidebar() {
 }
 
 function openConversationComposerFromSelection(anchor = null) {
-  if (!activeId || !notes[activeId]) {
+  const draft = anchor || conversationAnchorFromSelection();
+  const noteId = draft?.noteId || activeId || '';
+  if (!noteId || !notes[noteId]) {
     showToast('Select A Note First', 'error');
     return;
   }
-  if (!canStartConversationOnNote(notes[activeId])) {
+  if (!canStartConversationOnNote(notes[noteId])) {
     showToast('Conversation Requires Edit Access', 'error');
     return;
   }
-  conversationComposeAnchor = anchor || conversationAnchorFromSelection();
+  conversationComposeAnchor = { ...draft, noteId };
   activeConversationId = null;
   setConversationBrowseScope('note', {
     noteId: conversationComposeAnchor.noteId
@@ -1845,9 +1878,16 @@ function renderConversationsSidebar() {
 }
 
 function focusConversationAnchor(conversation) {
-  if (!conversation || activeId !== conversation.noteId) return;
-  const ed = getEd();
+  if (!conversation) return;
+  const peerId = typeof getNoteSplitPeerId === 'function' ? getNoteSplitPeerId() : '';
+  const peerBody = document.getElementById('note-split-peer-body');
+  const usePeer = !!(peerId && peerId === conversation.noteId && peerBody);
+  if (!usePeer && activeId !== conversation.noteId) return;
+  const ed = usePeer ? peerBody : getEd();
   if (!ed) return;
+  const withRoot = fn => (usePeer && typeof runEditorOperationOnRoot === 'function'
+    ? runEditorOperationOnRoot(ed, fn)
+    : fn());
   const mark = conversationAnchorMarkForConversation(ed, conversation.id);
   if (mark) {
     placeConversationFocusOnMark(mark);
@@ -1856,7 +1896,7 @@ function focusConversationAnchor(conversation) {
   if (!conversation.resolved && canEditNote(notes[conversation.noteId])) {
     ensureConversationAnchorPresent(conversation, { notify: true }).then(restored => {
       if (!restored) return;
-      const restoredMark = conversationAnchorMarkForConversation(getEd(), conversation.id);
+      const restoredMark = conversationAnchorMarkForConversation(ed, conversation.id);
       if (restoredMark) placeConversationFocusOnMark(restoredMark);
     });
     return;
@@ -1867,13 +1907,15 @@ function focusConversationAnchor(conversation) {
     collapsed: conversation.anchorStart === conversation.anchorEnd
   };
   try {
-    restoreEditorSelection(ed, bookmark);
-    const sel = window.getSelection();
-    if (sel?.rangeCount) {
-      const range = sel.getRangeAt(0);
-      const el = range.startContainer.nodeType === Node.ELEMENT_NODE ? range.startContainer : range.startContainer.parentElement;
-      el?.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
-    }
+    withRoot(() => {
+      restoreEditorSelection(ed, bookmark);
+      const sel = window.getSelection();
+      if (sel?.rangeCount) {
+        const range = sel.getRangeAt(0);
+        const el = range.startContainer.nodeType === Node.ELEMENT_NODE ? range.startContainer : range.startContainer.parentElement;
+        el?.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
+      }
+    });
   } catch (err) {
     console.warn('focus conversation anchor:', err);
   }
@@ -1942,8 +1984,8 @@ function conversationMessagePayload(conversation, body) {
 
 async function createConversationFromComposer() {
   if (_conversationStarting) return;
-  const note = activeId ? notes[activeId] : null;
   const anchor = conversationComposeAnchor;
+  const note = notes[anchor?.noteId || activeId] || null;
   const recipientUid = document.getElementById('conversation-recipient-select')?.value || '';
   const body = String(document.getElementById('conversation-new-message')?.value || '').trim();
   if (!note || !anchor) return;
@@ -2342,18 +2384,37 @@ async function notifyConversationParticipants(conversation, message) {
   return results.every(Boolean);
 }
 
-function selectionRangeIsInEditor() {
-  const ed = getEd();
+function selectionEditorContext() {
+  const live = document.getElementById('editor');
+  const peer = document.getElementById('note-split-peer-body');
   const sel = window.getSelection();
-  if (!ed || !sel || !sel.rangeCount || sel.isCollapsed) return null;
+  if (!sel || !sel.rangeCount || sel.isCollapsed) return null;
   const range = sel.getRangeAt(0);
   const owner = range.commonAncestorContainer.nodeType === Node.ELEMENT_NODE
     ? range.commonAncestorContainer
     : range.commonAncestorContainer.parentElement;
+  if (!owner) return null;
+
+  let root = null;
+  let noteId = '';
+  if (live && live.contains(owner)) {
+    root = live;
+    noteId = String(activeId || '').trim();
+  } else if (peer && peer.contains(owner)) {
+    root = peer;
+    noteId = typeof getNoteSplitPeerId === 'function' ? String(getNoteSplitPeerId() || '').trim() : '';
+  } else {
+    return null;
+  }
+
   const hasText = !!range.toString().trim();
-  const hasImage = typeof selectionContainsNoteImage === 'function' && selectionContainsNoteImage(range, ed);
-  if (!owner || !ed.contains(owner) || (!hasText && !hasImage)) return null;
-  return range;
+  const hasImage = typeof selectionContainsNoteImage === 'function' && selectionContainsNoteImage(range, root);
+  if (!noteId || (!hasText && !hasImage)) return null;
+  return { root, noteId, range: range.cloneRange() };
+}
+
+function selectionRangeIsInEditor() {
+  return selectionEditorContext()?.range || null;
 }
 
 function hideConversationSelectionPopover() {
@@ -2370,22 +2431,21 @@ function scheduleConversationSelectionPopover() {
 
 function renderConversationSelectionPopover() {
   const pop = document.getElementById('conversation-selection-popover');
-  if (!pop || !activeId || !canStartConversationOnNote(notes[activeId])) {
+  const ctx = selectionEditorContext();
+  const note = ctx?.noteId ? notes[ctx.noteId] : null;
+  if (!pop || !note || !canStartConversationOnNote(note)) {
     hideConversationSelectionPopover();
     return;
   }
-  const range = selectionRangeIsInEditor();
-  if (!range) {
-    hideConversationSelectionPopover();
-    return;
-  }
-  const imageBlock = typeof noteImageBlockForRange === 'function' ? noteImageBlockForRange(range) : null;
+  const range = ctx.range;
+  const imageBlock = typeof noteImageBlockForRange === 'function' ? noteImageBlockForRange(range, ctx.root) : null;
   const rect = imageBlock?.getBoundingClientRect?.() || range.getBoundingClientRect();
   if (!rect || (!rect.width && !rect.height)) {
     hideConversationSelectionPopover();
     return;
   }
   pop.hidden = false;
+  pop.dataset.noteId = ctx.noteId;
   requestAnimationFrame(() => {
     const width = pop.offsetWidth || 38;
     const left = Math.max(10, Math.min(rect.left + rect.width / 2 - width / 2, window.innerWidth - width - 10));

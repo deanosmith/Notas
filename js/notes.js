@@ -8,6 +8,7 @@ function reconcileNoteSplit() {
   if (splitPeerId && !noteCanAppearInSplit(notes[splitPeerId]) && typeof clearNoteSplitView === 'function') {
     clearNoteSplitView();
   }
+  if (typeof tryRestorePersistedNoteSplit === 'function') tryRestorePersistedNoteSplit();
 }
 
 window.addEventListener('notas:notes-updated', reconcileNoteSplit);
@@ -16,11 +17,15 @@ function flushActiveNoteBeforeSwitch(nextNoteId = '') {
   const outgoingId = activeId;
   const outgoing = outgoingId ? notes[outgoingId] : null;
   if (!outgoing || outgoingId === nextNoteId || !canEditNote(outgoing)) return;
+  const hadPendingSave = !!saveTimer;
   clearTimeout(saveTimer);
   saveTimer = null;
   const ed = getEd();
-  if (outgoing._bodyLoaded && !ed?.classList.contains('is-loading')) syncActiveNoteFromEditor();
-  void saveDoc(outgoing);
+  const contentChanged = outgoing._bodyLoaded && !ed?.classList.contains('is-loading')
+    ? syncActiveNoteFromEditor()
+    : false;
+  // Persist when body content changed, or when a pending save (e.g. title edit) was waiting.
+  if (contentChanged || hadPendingSave) void saveDoc(outgoing);
 }
 
 function readLastOpenNoteId() {
@@ -66,13 +71,17 @@ function openRememberedNoteWhenAvailable() {
 }
 
 function openInitialNoteOrFirst() {
-  if (openRememberedNoteWhenAvailable()) return;
+  if (openRememberedNoteWhenAvailable()) {
+    if (typeof tryRestorePersistedNoteSplit === 'function') tryRestorePersistedNoteSplit();
+    return;
+  }
   initialNoteRestorePending = false;
   initialNoteRestoreId = '';
 
   if (!activeId || !notes[activeId] || (isTrashedNote(notes[activeId]) && sidebarView !== 'trash')) {
     openFirstAvailableNote();
   }
+  if (typeof tryRestorePersistedNoteSplit === 'function') tryRestorePersistedNoteSplit();
 }
 
 async function createNote(title, folderId) {

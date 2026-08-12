@@ -113,9 +113,6 @@
             <div class="main-header">
               <div class="main-title-row">
                 <input class="doc-title-input" id="doc-title" type="text" placeholder="Untitled Note" autocomplete="off" />
-                <button class="note-split-toggle-btn" id="note-split-toggle-btn" type="button" title="Open Split View" aria-label="Open Split View" aria-pressed="false" disabled>
-                  <i class="fa-solid fa-table-columns"></i>
-                </button>
                 <div id="doc-access-avatars" aria-hidden="true"></div>
               </div>
               <div class="main-toolbar-row">
@@ -156,7 +153,12 @@
             </div>
 
             <div class="editor-area">
-              <button class="note-focus-entry-btn" id="note-focus-btn" type="button" title="Toggle Full Screen Note" aria-label="Toggle Full Screen Note"><i class="fa-solid fa-expand"></i></button>
+              <div class="editor-corner-actions">
+                <button class="note-split-toggle-btn" id="note-split-toggle-btn" type="button" title="Open Split View" aria-label="Open Split View" aria-pressed="false" disabled>
+                  <i class="fa-solid fa-table-columns"></i>
+                </button>
+                <button class="note-focus-entry-btn" id="note-focus-btn" type="button" title="Toggle Full Screen Note" aria-label="Toggle Full Screen Note"><i class="fa-solid fa-expand"></i></button>
+              </div>
               <button class="note-focus-exit-btn" id="note-focus-exit-btn" type="button" title="Exit Full Screen Note" aria-label="Exit Full Screen Note"><i class="fa-solid fa-compress"></i></button>
               <div id="editor"
                    class="editor is-empty"
@@ -182,13 +184,18 @@
           <section class="note-split-peer-pane" id="note-split-peer-pane" aria-label="Split Note" aria-hidden="true">
             <div class="note-split-peer-header">
               <input class="note-split-peer-title" id="note-split-peer-title" type="text" placeholder="Untitled Note" autocomplete="off" />
-              <div class="note-split-peer-actions">
-                <button class="note-split-peer-action" id="note-split-close-btn" type="button" title="Close Split" aria-label="Close Split">
+            </div>
+            <div class="note-split-peer-area" id="note-split-peer-area">
+              <div class="editor-corner-actions">
+                <button class="note-split-toggle-btn" id="note-split-close-btn" type="button" title="Close Note" aria-label="Close Note">
                   <i class="fa-solid fa-xmark"></i>
                 </button>
+                <button class="note-focus-entry-btn" id="note-split-peer-focus-btn" type="button" title="Toggle Full Screen Note" aria-label="Toggle Full Screen Note">
+                  <i class="fa-solid fa-expand"></i>
+                </button>
               </div>
+              <div class="note-split-peer-body editor" id="note-split-peer-body" contenteditable="false" spellcheck="true" data-placeholder="Start Writing..."></div>
             </div>
-            <div class="note-split-peer-body editor" id="note-split-peer-body" contenteditable="false" spellcheck="true" data-placeholder="Start Writing..."></div>
           </section>
         </div>
 

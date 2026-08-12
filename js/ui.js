@@ -2234,6 +2234,9 @@ function setSidebarMinimized(val) {
     updateSidebarWidthState(w);
   }
   updateRailActiveState();
+  if (typeof noteSplitHasPane === 'function' && noteSplitHasPane() && typeof applyNoteSplitRatio === 'function') {
+    requestAnimationFrame(() => applyNoteSplitRatio());
+  }
 }
 
 /* Share ─────────────────────────────────────────────────── */

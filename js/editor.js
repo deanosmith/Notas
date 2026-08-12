@@ -5,6 +5,51 @@ function isSecondaryEditorActionRoot() {
   return !!_editorActionRoot && _editorActionRoot !== document.getElementById('editor');
 }
 
+function isPeerEditorRoot(root = getEd()) {
+  return root?.id === 'note-split-peer-body';
+}
+
+function isLiveEditorRoot(root = getEd()) {
+  return root?.id === 'editor';
+}
+
+let peerUndoStack = [];
+let peerRedoStack = [];
+let _peerLastUndoSnapshot = null;
+let _peerUndoTransactionOpen = false;
+let _peerUndoDebounceTimer = null;
+
+function syncEditorRootContent(root = getEd()) {
+  if (isPeerEditorRoot(root)) {
+    return typeof syncSplitPeerNote === 'function' && !!syncSplitPeerNote();
+  }
+  return !!syncActiveNoteFromEditor();
+}
+
+function scheduleEditorRootSave(root = getEd()) {
+  if (isPeerEditorRoot(root)) {
+    if (typeof scheduleSplitPeerSave === 'function') scheduleSplitPeerSave();
+    return;
+  }
+  if (typeof scheduleSave === 'function') scheduleSave();
+}
+
+function afterEditorRootContentChange(root = getEd()) {
+  if (isLiveEditorRoot(root)) {
+    markEditorHistoryTouched();
+    renderAlarmButton?.();
+    if (document.getElementById('alarms-modal')?.classList.contains('open')) renderAlarmsList?.();
+    refreshOpenSidebarPage?.('alarms');
+    renderMentionPopover?.();
+    scheduleMentionSync?.();
+  } else if (isPeerEditorRoot(root)) {
+    renderMentionPopover?.();
+    scheduleMentionSync?.(editorRootNoteId(root));
+  }
+  scheduleEditorRootUndoSnapshot(root);
+  if (syncEditorRootContent(root)) scheduleEditorRootSave(root);
+}
+
 function makeUndoSnapshot(ed = getEd()) {
   if (!ed) return null;
   return {
@@ -50,15 +95,36 @@ function refreshUndoSnapshotSelection() {
   const ed = getEd();
   if (!ed) return;
   const current = makeUndoSnapshot(ed);
+  if (isPeerEditorRoot(ed)) {
+    if (!_peerLastUndoSnapshot || current.html === _peerLastUndoSnapshot.html) {
+      _peerLastUndoSnapshot = current;
+    }
+    return;
+  }
   if (!_lastUndoSnapshot || current.html === _lastUndoSnapshot.html) {
     _lastUndoSnapshot = current;
   }
 }
 
 function pushUndo() {
-  if (isSecondaryEditorActionRoot()) return;
   const ed = getEd();
   if (!ed) return;
+  if (isPeerEditorRoot(ed)) {
+    clearTimeout(_peerUndoDebounceTimer);
+    const current = makeUndoSnapshot(ed);
+    if (!_peerLastUndoSnapshot) {
+      _peerLastUndoSnapshot = current;
+    } else if (current.html !== _peerLastUndoSnapshot.html) {
+      pushUndoState(peerUndoStack, _peerLastUndoSnapshot);
+      _peerLastUndoSnapshot = current;
+      peerRedoStack.length = 0;
+    } else {
+      _peerLastUndoSnapshot = current;
+    }
+    pushUndoState(peerUndoStack, _peerLastUndoSnapshot);
+    _peerUndoTransactionOpen = true;
+    return;
+  }
   clearTimeout(_undoDebounceTimer);
   const current = makeUndoSnapshot(ed);
   markEditorHistoryTouched();
@@ -76,7 +142,7 @@ function pushUndo() {
 }
 
 function initUndoSnapshot() {
-  const ed = getEd();
+  const ed = document.getElementById('editor') || getEd();
   _lastUndoSnapshot = ed ? makeUndoSnapshot(ed) : null;
   undoStack.length = 0;
   redoStack.length = 0;
@@ -84,9 +150,43 @@ function initUndoSnapshot() {
   _undoTransactionOpen = false;
 }
 
+function initPeerUndoSnapshot(root = document.getElementById('note-split-peer-body')) {
+  _peerLastUndoSnapshot = root ? makeUndoSnapshot(root) : null;
+  peerUndoStack.length = 0;
+  peerRedoStack.length = 0;
+  clearTimeout(_peerUndoDebounceTimer);
+  _peerUndoTransactionOpen = false;
+}
+
 function commitUndoSnapshot() {
   const ed = getEd();
   if (!ed) return;
+  if (isPeerEditorRoot(ed)) {
+    const current = makeUndoSnapshot(ed);
+    if (!_peerLastUndoSnapshot) {
+      _peerLastUndoSnapshot = current;
+      _peerUndoTransactionOpen = false;
+      return;
+    }
+    if (current.html === _peerLastUndoSnapshot.html) {
+      _peerLastUndoSnapshot = current;
+      if (_peerUndoTransactionOpen && sameUndoSnapshot(peerUndoStack[peerUndoStack.length - 1], current)) {
+        peerUndoStack.pop();
+      }
+      _peerUndoTransactionOpen = false;
+      return;
+    }
+    if (_peerUndoTransactionOpen) {
+      _peerLastUndoSnapshot = current;
+      peerRedoStack.length = 0;
+      _peerUndoTransactionOpen = false;
+      return;
+    }
+    pushUndoState(peerUndoStack, _peerLastUndoSnapshot);
+    _peerLastUndoSnapshot = current;
+    peerRedoStack.length = 0;
+    return;
+  }
   const current = makeUndoSnapshot(ed);
   if (!_lastUndoSnapshot) {
     _lastUndoSnapshot = current;
@@ -114,6 +214,12 @@ function commitUndoSnapshot() {
 }
 
 function flushUndoSnapshot() {
+  const ed = getEd();
+  if (isPeerEditorRoot(ed)) {
+    clearTimeout(_peerUndoDebounceTimer);
+    commitUndoSnapshot();
+    return;
+  }
   clearTimeout(_undoDebounceTimer);
   commitUndoSnapshot();
 }
@@ -128,7 +234,7 @@ function restoreUndoSnapshot(snapshot) {
   if (typeof restoreConversationAnchorMarks === 'function') restoreConversationAnchorMarks(ed);
   decorateTables(ed);
   decorateNoteImages(ed);
-  recomputeCollapsedSections();
+  recomputeCollapsedSections(ed);
   refreshEmpty(ed);
   restoreEditorSelection(ed, snapshot.selection);
   ed.scrollTop = Math.min(snapshot.scrollTop || 0, ed.scrollHeight);
@@ -136,8 +242,17 @@ function restoreUndoSnapshot(snapshot) {
 
 function performUndo() {
   flushUndoSnapshot();
-  if (!undoStack.length) return;
   const ed = getEd();
+  if (isPeerEditorRoot(ed)) {
+    if (!peerUndoStack.length) return;
+    pushUndoState(peerRedoStack, makeUndoSnapshot(ed));
+    restoreUndoSnapshot(peerUndoStack.pop());
+    _peerLastUndoSnapshot = makeUndoSnapshot(ed);
+    _peerUndoTransactionOpen = false;
+    if (syncEditorRootContent(ed)) scheduleEditorRootSave(ed);
+    return;
+  }
+  if (!undoStack.length) return;
   pushUndoState(redoStack, makeUndoSnapshot(ed));
   restoreUndoSnapshot(undoStack.pop());
   _lastUndoSnapshot = makeUndoSnapshot(ed);
@@ -149,8 +264,17 @@ function performUndo() {
 
 function performRedo() {
   flushUndoSnapshot();
-  if (!redoStack.length) return;
   const ed = getEd();
+  if (isPeerEditorRoot(ed)) {
+    if (!peerRedoStack.length) return;
+    pushUndoState(peerUndoStack, makeUndoSnapshot(ed));
+    restoreUndoSnapshot(peerRedoStack.pop());
+    _peerLastUndoSnapshot = makeUndoSnapshot(ed);
+    _peerUndoTransactionOpen = false;
+    if (syncEditorRootContent(ed)) scheduleEditorRootSave(ed);
+    return;
+  }
+  if (!redoStack.length) return;
   pushUndoState(undoStack, makeUndoSnapshot(ed));
   restoreUndoSnapshot(redoStack.pop());
   _lastUndoSnapshot = makeUndoSnapshot(ed);
@@ -340,7 +464,14 @@ async function performAppRedo() {
 
 // Debounced snapshot for regular typing — captures state periodically
 function scheduleUndoSnapshot() {
-  if (isSecondaryEditorActionRoot()) return;
+  const ed = getEd();
+  if (isPeerEditorRoot(ed)) {
+    clearTimeout(_peerUndoDebounceTimer);
+    _peerUndoDebounceTimer = setTimeout(() => {
+      runEditorOperationOnRoot(ed, () => commitUndoSnapshot());
+    }, 600);
+    return;
+  }
   clearTimeout(_undoDebounceTimer);
   _undoDebounceTimer = setTimeout(() => {
     commitUndoSnapshot();
@@ -539,11 +670,164 @@ function editorContainsRange(ed, range) {
   return common === ed || ed.contains(common.nodeType === Node.ELEMENT_NODE ? common : common.parentNode);
 }
 
+function isNoteImageCaretAnchorNode(node) {
+  if (!node || node.nodeType !== Node.TEXT_NODE) return false;
+  if (!node.textContent || !/^[\u200b]+$/.test(node.textContent)) return false;
+  return !!(node.previousSibling?.classList?.contains('note-image-block')
+    || node.nextSibling?.classList?.contains('note-image-block'));
+}
+
+function ensureNoteImageCaretAnchor(block) {
+  if (!block) return null;
+  const next = block.nextSibling;
+  if (next?.nodeType === Node.TEXT_NODE) {
+    if (!next.textContent) next.textContent = '\u200b';
+    return next;
+  }
+  const marker = document.createTextNode('\u200b');
+  block.after(marker);
+  return marker;
+}
+
+function ensureNoteImageCaretAnchors(root = getEd()) {
+  if (!root) return false;
+  let changed = false;
+  root.querySelectorAll('.note-image-block').forEach(block => {
+    const next = block.nextSibling;
+    if (next?.nodeType === Node.TEXT_NODE) {
+      if (!next.textContent) {
+        next.textContent = '\u200b';
+        changed = true;
+      }
+      return;
+    }
+    block.after(document.createTextNode('\u200b'));
+    changed = true;
+  });
+  return changed;
+}
+
+function placeCaretAfterNoteImage(block) {
+  const ed = getEd();
+  if (!block || !ed?.contains(block)) return false;
+  clearSelectedNoteImages(ed);
+  const marker = ensureNoteImageCaretAnchor(block);
+  const range = document.createRange();
+  if (marker?.nodeType === Node.TEXT_NODE) {
+    range.setStart(marker, marker.textContent.charAt(0) === '\u200b' ? Math.min(1, marker.textContent.length) : 0);
+  } else {
+    range.setStartAfter(block);
+  }
+  range.collapse(true);
+  const sel = window.getSelection();
+  if (!sel) return false;
+  sel.removeAllRanges();
+  sel.addRange(range);
+  ed.focus();
+  refreshUndoSnapshotSelection();
+  return true;
+}
+
+function placeCaretBeforeNoteImage(block) {
+  const ed = getEd();
+  if (!block || !ed?.contains(block)) return false;
+  clearSelectedNoteImages(ed);
+  let marker = block.previousSibling;
+  if (!marker || marker.nodeType !== Node.TEXT_NODE) {
+    marker = document.createTextNode('\u200b');
+    block.before(marker);
+  } else if (!marker.textContent) {
+    marker.textContent = '\u200b';
+  }
+  const range = document.createRange();
+  range.setStart(marker, marker.textContent.length);
+  range.collapse(true);
+  const sel = window.getSelection();
+  if (!sel) return false;
+  sel.removeAllRanges();
+  sel.addRange(range);
+  ed.focus();
+  refreshUndoSnapshotSelection();
+  return true;
+}
+
+function collapseSelectionAfterSelectedNoteImage() {
+  const block = selectedNoteImageBlock();
+  if (!block) return false;
+  return placeCaretAfterNoteImage(block);
+}
+
+function noteImageBlockAdjacentToCaret(direction = 'after') {
+  const ed = getEd();
+  const sel = window.getSelection();
+  if (!ed || !sel?.rangeCount || !sel.isCollapsed) return null;
+  const range = sel.getRangeAt(0);
+  const container = range.startContainer;
+  const offset = range.startOffset;
+
+  const asImageBlock = node => {
+    if (!node) return null;
+    if (node.nodeType === Node.ELEMENT_NODE && node.classList?.contains('note-image-block')) return node;
+    return null;
+  };
+
+  if (direction === 'after') {
+    if (container.nodeType === Node.TEXT_NODE) {
+      const atEnd = offset >= container.textContent.length;
+      if (atEnd) return asImageBlock(container.nextSibling);
+      return null;
+    }
+    if (container.nodeType === Node.ELEMENT_NODE) {
+      return asImageBlock(container.childNodes[offset] || null);
+    }
+  }
+
+  if (direction === 'before') {
+    if (container.nodeType === Node.TEXT_NODE) {
+      if (offset <= 0) return asImageBlock(container.previousSibling);
+      if (offset === 1 && container.textContent.charAt(0) === '\u200b' && asImageBlock(container.previousSibling)) {
+        return asImageBlock(container.previousSibling);
+      }
+      return null;
+    }
+    if (container.nodeType === Node.ELEMENT_NODE) {
+      return asImageBlock(container.childNodes[offset - 1] || null);
+    }
+  }
+  return null;
+}
+
+function moveCaretPastAdjacentNoteImage(key) {
+  if (key === 'ArrowRight') {
+    const block = noteImageBlockAdjacentToCaret('after');
+    if (!block) return false;
+    return placeCaretAfterNoteImage(block);
+  }
+  if (key === 'ArrowLeft') {
+    const block = noteImageBlockAdjacentToCaret('before');
+    if (!block) return false;
+    return placeCaretBeforeNoteImage(block);
+  }
+  return false;
+}
+
 function insertNoteImageElement(img, range) {
   const ed = getEd();
   if (!ed || !img) return false;
-  const targetRange = editorContainsRange(ed, range) ? range : getEditorSelectionRange();
+  let targetRange = editorContainsRange(ed, range) ? range.cloneRange() : getEditorSelectionRange()?.cloneRange();
   if (!targetRange) return false;
+  const selectedBlock = selectedNoteImageBlock(ed);
+  if (selectedBlock) {
+    const marker = ensureNoteImageCaretAnchor(selectedBlock);
+    clearSelectedNoteImages(ed);
+    targetRange = document.createRange();
+    if (marker?.nodeType === Node.TEXT_NODE) {
+      targetRange.setStart(marker, marker.textContent.charAt(0) === '\u200b' ? Math.min(1, marker.textContent.length) : 0);
+    } else {
+      targetRange.setStartAfter(selectedBlock);
+    }
+    targetRange.collapse(true);
+  }
   const block = createNoteImageBlock(img);
   const marker = document.createTextNode('\u200b');
   const frag = document.createDocumentFragment();
@@ -569,10 +853,18 @@ async function insertPastedImageFile(file, range = null, noteId = activeId) {
   }
   try {
     const prepared = await preparePastedImage(file);
-    if (noteId && activeId !== noteId) return false;
+    const peerId = typeof getNoteSplitPeerId === 'function' ? getNoteSplitPeerId() : '';
+    const noteMatches = !noteId || activeId === noteId || (peerId && peerId === noteId);
+    if (!noteMatches) return false;
+    const targetRoot = (peerId && peerId === noteId)
+      ? document.getElementById('note-split-peer-body')
+      : document.getElementById('editor');
     const img = createNoteImageElement(prepared.src, file.name || '', prepared.width);
-    if (!insertNoteImageElement(img, range)) return false;
-    getEd().dispatchEvent(new Event('input'));
+    const inserted = targetRoot && typeof runEditorOperationOnRoot === 'function'
+      ? !!runEditorOperationOnRoot(targetRoot, () => insertNoteImageElement(img, range))
+      : insertNoteImageElement(img, range);
+    if (!inserted) return false;
+    (targetRoot || getEd()).dispatchEvent(new Event('input'));
     return true;
   } catch (err) {
     console.error('paste image:', err);
@@ -797,24 +1089,26 @@ function copySelectedNoteImage(clipboardData) {
 }
 
 function cutSelectedNoteImage(clipboardData) {
-  const block = selectedNoteImageBlock();
-  if (!block || !activeId || !canEditNote(notes[activeId])) return false;
+  const ed = getEd();
+  const noteId = editorRootNoteId(ed);
+  const block = selectedNoteImageBlock(ed);
+  if (!block || !noteId || !canEditNote(notes[noteId])) return false;
   if (shouldBlockSelectedNoteImageReplacement()) return true;
   if (!writeSelectedNoteImageToClipboard(clipboardData)) return false;
   pushUndo();
   const marker = document.createTextNode('\u200b');
   block.after(marker);
   block.remove();
-  removeEmptyNoteImageAnnotations(getEd());
-  clearSelectedNoteImages(getEd());
+  removeEmptyNoteImageAnnotations(ed);
+  clearSelectedNoteImages(ed);
   const range = document.createRange();
   range.setStart(marker, 1);
   range.collapse(true);
   const sel = window.getSelection();
   sel?.removeAllRanges();
   sel?.addRange(range);
-  getEd().focus();
-  getEd().dispatchEvent(new Event('input'));
+  ed.focus();
+  ed.dispatchEvent(new Event('input'));
   return true;
 }
 
@@ -857,6 +1151,7 @@ function decorateNoteImages(root = getEd()) {
       changed = true;
     }
   });
+  if (ensureNoteImageCaretAnchors(root)) changed = true;
   return changed;
 }
 
@@ -1732,6 +2027,134 @@ function outsideCollapseLevel(el) {
   return Number.isFinite(level) ? level : null;
 }
 
+function headerDomainNodes(heading) {
+  const level = headingLevel(heading);
+  if (!heading || !level) return heading ? [heading] : [];
+  const nodes = [heading];
+  let sibling = heading.nextElementSibling;
+  while (sibling) {
+    const siblingLevel = headingLevel(sibling);
+    if (siblingLevel && siblingLevel <= level) break;
+    const outside = outsideCollapseLevel(sibling);
+    if (outside && outside <= level) break;
+    nodes.push(sibling);
+    sibling = sibling.nextElementSibling;
+  }
+  return nodes;
+}
+
+function selectionOwnerElement(node) {
+  if (!node) return null;
+  return node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
+}
+
+function collapsedHeaderClipboardNodes(range = getEditorSelectionRange(), root = getEd()) {
+  if (!range || !root || range.collapsed) return null;
+
+  const startOwner = selectionOwnerElement(range.startContainer);
+  const endOwner = selectionOwnerElement(range.endContainer);
+  const startHeading = startOwner?.closest?.('h1, h2, h3, h4');
+  const endHeading = endOwner?.closest?.('h1, h2, h3, h4');
+
+  // Selection fully inside one collapsed heading → copy/cut the whole section.
+  if (
+    startHeading
+    && startHeading === endHeading
+    && root.contains(startHeading)
+    && startHeading.hasAttribute('data-collapsed')
+    && startHeading.contains(startOwner)
+    && startHeading.contains(endOwner)
+  ) {
+    return headerDomainNodes(startHeading);
+  }
+
+  const intersecting = [...root.children].filter(child => {
+    try { return range.intersectsNode(child); }
+    catch (_) { return false; }
+  });
+  if (!intersecting.length) return null;
+
+  const collapsedInSelection = intersecting.filter(el => headingLevel(el) && el.hasAttribute('data-collapsed'));
+  const hasHiddenIntersection = intersecting.some(el => el.style.display === 'none');
+  if (!collapsedInSelection.length && !hasHiddenIntersection) return null;
+
+  const seen = new Set();
+  intersecting.forEach(block => {
+    if (headingLevel(block) && block.hasAttribute('data-collapsed')) {
+      headerDomainNodes(block).forEach(node => seen.add(node));
+    } else {
+      seen.add(block);
+    }
+  });
+  collapsedInSelection.forEach(heading => {
+    headerDomainNodes(heading).forEach(node => seen.add(node));
+  });
+
+  const nodes = [...root.children].filter(child => seen.has(child));
+  const expandedBeyondNative = nodes.some(node => !intersecting.includes(node) || node.style.display === 'none');
+  return expandedBeyondNative ? nodes : null;
+}
+
+function serializeEditorNodesForClipboard(nodes) {
+  const wrap = document.createElement('div');
+  (nodes || []).forEach(node => {
+    const clone = node.cloneNode(true);
+    clone.removeAttribute?.('data-collapsed');
+    clone.removeAttribute?.(HEADER_DOMAIN_END_ATTR);
+    clone.removeAttribute?.('data-outside-collapse');
+    clone.querySelectorAll?.('[data-collapsed]').forEach(el => el.removeAttribute('data-collapsed'));
+    clone.querySelectorAll?.('[' + HEADER_DOMAIN_END_ATTR + ']').forEach(el => el.removeAttribute(HEADER_DOMAIN_END_ATTR));
+    clone.querySelectorAll?.('[data-outside-collapse]').forEach(el => el.removeAttribute('data-outside-collapse'));
+    wrap.appendChild(clone);
+  });
+  wrap.querySelectorAll('[style]').forEach(el => {
+    el.style.display = '';
+    if (!el.getAttribute('style')) el.removeAttribute('style');
+  });
+  if (typeof stripNoteImageEditorChrome === 'function') stripNoteImageEditorChrome(wrap);
+  if (typeof stripTableEditorChrome === 'function') stripTableEditorChrome(wrap);
+  return {
+    html: wrap.innerHTML,
+    text: wrap.innerText || wrap.textContent || ''
+  };
+}
+
+function writeCollapsedHeaderSelectionToClipboard(clipboardData) {
+  if (!clipboardData) return false;
+  const nodes = collapsedHeaderClipboardNodes();
+  if (!nodes?.length) return false;
+  const { html, text } = serializeEditorNodesForClipboard(nodes);
+  if (!html && !text) return false;
+  clipboardData.setData('text/html', html);
+  clipboardData.setData('text/plain', text);
+  return true;
+}
+
+function copyCollapsedHeaderSelection(clipboardData) {
+  return writeCollapsedHeaderSelectionToClipboard(clipboardData);
+}
+
+function cutCollapsedHeaderSelection(clipboardData) {
+  const ed = getEd();
+  const noteId = editorRootNoteId(ed);
+  if (!noteId || !canEditNote(notes[noteId])) return false;
+  const nodes = collapsedHeaderClipboardNodes();
+  if (!nodes?.length) return false;
+  if (!writeCollapsedHeaderSelectionToClipboard(clipboardData)) return false;
+  pushUndo();
+  const last = nodes[nodes.length - 1];
+  const placeholder = document.createElement('p');
+  placeholder.appendChild(document.createElement('br'));
+  last.after(placeholder);
+  nodes.forEach(node => node.remove());
+  recomputeCollapsedSections(ed);
+  if (typeof saveCollapsedState === 'function') saveCollapsedState(noteId, ed);
+  placeCursorAtStart(placeholder);
+  ed.focus();
+  ed.dispatchEvent(new Event('input'));
+  return true;
+}
+
 function clearHeaderDomainEnds(root = getEd()) {
   root?.querySelectorAll?.('[' + HEADER_DOMAIN_END_ATTR + ']').forEach(el => {
     el.removeAttribute(HEADER_DOMAIN_END_ATTR);
@@ -1766,8 +2189,8 @@ function addHeaderDomainEnds(root = getEd()) {
   });
 }
 
-function recomputeCollapsedSections() {
-  const ed = getEd();
+function recomputeCollapsedSections(root = getEd()) {
+  const ed = root || getEd();
   if (!ed) return;
   clearHeaderDomainEnds(ed);
   let collapsedLevel = Infinity;
@@ -1965,16 +2388,9 @@ function cleanLineInsertionInfo(block, direction = 'below') {
   const container = block.closest?.('blockquote, pre') || block;
   const heading = container.matches?.('h1,h2,h3,h4') ? container : null;
   if (direction === 'below' && heading?.hasAttribute('data-collapsed')) {
-    const level = parseInt(heading.tagName[1], 10);
-    let boundary = heading;
-    let sibling = heading.nextElementSibling;
-    while (sibling) {
-      const siblingLevel = headingLevel(sibling);
-      if (siblingLevel && siblingLevel <= level) break;
-      boundary = sibling;
-      sibling = sibling.nextElementSibling;
-    }
-    return { boundary, visual: heading, outsideLevel: level };
+    const domain = headerDomainNodes(heading);
+    const boundary = domain[domain.length - 1] || heading;
+    return { boundary, visual: heading, outsideLevel: headingLevel(heading) || 0 };
   }
 
   return {
@@ -2057,16 +2473,20 @@ function insertCleanLineAboveCaret() {
   return true;
 }
 
-function saveCollapsedState(noteId) {
+function saveCollapsedState(noteId, root = getEd()) {
   if (!noteId) return;
-  const headings = [...getEd().querySelectorAll('h1,h2,h3,h4')];
+  const ed = root || getEd();
+  if (!ed) return;
+  const headings = [...ed.querySelectorAll('h1,h2,h3,h4')];
   const indices = headings.reduce((acc, h, i) => { if (h.hasAttribute('data-collapsed')) acc.push(i); return acc; }, []);
   localStorage.setItem('notas_col_' + noteId, JSON.stringify(indices));
 }
 
-function restoreCollapsedState(noteId) {
+function restoreCollapsedState(noteId, root = getEd()) {
+  const ed = root || getEd();
+  if (!ed) return;
   const raw = noteId ? localStorage.getItem('notas_col_' + noteId) : null;
-  const headings = [...getEd().querySelectorAll('h1,h2,h3,h4')];
+  const headings = [...ed.querySelectorAll('h1,h2,h3,h4')];
   let restored = false;
   headings.forEach(heading => heading.removeAttribute('data-collapsed'));
   if (raw) {
@@ -2081,7 +2501,7 @@ function restoreCollapsedState(noteId) {
   if (!restored) {
     headings.forEach(heading => heading.setAttribute('data-collapsed', ''));
   }
-  recomputeCollapsedSections();
+  recomputeCollapsedSections(ed);
 }
 
 function getCleanHTML() {
@@ -2111,12 +2531,15 @@ function syncActiveNoteFromEditor() {
   if (!activeId || !notes[activeId]) return false;
   const ed = getEd();
   if (!canEditNote(notes[activeId]) || !notes[activeId]._bodyLoaded || ed?.classList.contains('is-loading')) return false;
-  applyNoteBodyContent(activeId, getCleanHTML(), { text: editorEl.innerText || editorEl.textContent || '' });
-  notes[activeId].modified = new Date().toISOString();
+  const previousContent = String(notes[activeId].content || '');
+  const nextContent = getCleanHTML();
+  applyNoteBodyContent(activeId, nextContent, { text: editorEl.innerText || editorEl.textContent || '' });
+  const changed = previousContent !== nextContent;
+  if (changed) notes[activeId].modified = new Date().toISOString();
   updateCounts();
   const preview = document.querySelector('.sidebar-item.active .item-preview');
   if (preview) preview.textContent = notePreviewText(notes[activeId]);
-  return true;
+  return changed;
 }
 
 let _toastTimer;
@@ -2159,7 +2582,12 @@ function canEditEditorRoot(root = getEd()) {
 }
 
 function scheduleEditorRootUndoSnapshot(root) {
-  if (root === document.getElementById('editor')) scheduleUndoSnapshot();
+  if (!root) return;
+  if (typeof runEditorOperationOnRoot === 'function') {
+    runEditorOperationOnRoot(root, () => scheduleUndoSnapshot());
+  } else {
+    scheduleUndoSnapshot();
+  }
 }
 
 function dispatchEditorRootInput(root) {
@@ -2355,15 +2783,16 @@ function autoLinkTokenBeforeCaret() {
 
 function getEditorSelectionRange() {
   const sel = window.getSelection();
-  const ed = getEd();
   if (sel && sel.rangeCount) {
     const range = sel.getRangeAt(0);
     const owner = range.commonAncestorContainer.nodeType === Node.ELEMENT_NODE
       ? range.commonAncestorContainer
       : range.commonAncestorContainer.parentElement;
-    if (owner && ed.contains(owner)) return range;
+    const ed = (typeof editorRootForElement === 'function' ? editorRootForElement(owner) : null) || getEd();
+    if (owner && ed?.contains(owner)) return range;
   }
-  ed.focus();
+  const ed = getEd();
+  ed?.focus();
   return null;
 }
 
@@ -2470,10 +2899,11 @@ function cleanupLiveInlineCodeBoundaries(root = getEd(), inputEvent = null) {
 
   while (walker.nextNode()) {
     const node = walker.currentNode;
-    if (node.textContent.includes('\u200b') && !textNodeIsInInlineCode(node)) nodes.push(node);
+    if (node.textContent.includes('\u200b') && !textNodeIsInInlineCode(node) && !isNoteImageCaretAnchorNode(node)) nodes.push(node);
   }
 
   nodes.forEach(node => {
+    if (isNoteImageCaretAnchorNode(node)) return;
     const oldText = node.textContent;
     if (node === anchor) {
       const offset = sel.anchorOffset;
@@ -5296,6 +5726,8 @@ function updateAlarmRecipientState() {
 }
 
 function getEditorRangeOrEnd() {
+  const ctx = typeof selectionEditorContext === 'function' ? selectionEditorContext() : null;
+  if (ctx?.range) return ctx.range.cloneRange();
   const ed = getEd();
   const sel = window.getSelection();
   if (sel && sel.rangeCount) {
@@ -5312,11 +5744,22 @@ function getEditorRangeOrEnd() {
 }
 
 function openNoteAlarmModal(noteId = activeId) {
-  if (!noteId || !notes[noteId]) {
+  const ctx = typeof selectionEditorContext === 'function' ? selectionEditorContext() : null;
+  const targetNoteId = noteId || ctx?.noteId || activeId;
+  if (!targetNoteId || !notes[targetNoteId]) {
     showToast('Select A Note First', 'error');
     return;
   }
-  const range = getEditorRangeOrEnd();
+  const peerId = typeof getNoteSplitPeerId === 'function' ? getNoteSplitPeerId() : '';
+  const peerBody = document.getElementById('note-split-peer-body');
+  const editorRoot = (ctx?.noteId === targetNoteId && ctx.root)
+    || (peerId && peerId === targetNoteId && peerBody)
+    || document.getElementById('editor');
+  const range = (ctx?.noteId === targetNoteId && ctx.range)
+    ? ctx.range.cloneRange()
+    : (typeof runEditorOperationOnRoot === 'function'
+      ? runEditorOperationOnRoot(editorRoot, () => getEditorRangeOrEnd())
+      : getEditorRangeOrEnd());
   const existingMark = alarmMarkForRange(range);
   if (existingMark && !existingMark.dataset.alarmId) existingMark.dataset.alarmId = makeAlarmId();
   const existingAt = normalizeAlarmAt(existingMark?.dataset.alarmAt);
@@ -5327,17 +5770,18 @@ function openNoteAlarmModal(noteId = activeId) {
   const timeInput = document.getElementById('alarm-time-input');
   const targetText = document.getElementById('alarm-target-text');
   const clearBtn = document.getElementById('alarm-clear');
-  const selectedImage = typeof noteImageBlockForRange === 'function' ? noteImageBlockForRange(range) : null;
+  const selectedImage = typeof noteImageBlockForRange === 'function' ? noteImageBlockForRange(range, editorRoot) : null;
   const selectedText = existingMark
     ? alarmTextFromMark(existingMark)
     : (range.collapsed
       ? 'New reminder text'
       : (range.toString().replace(/\s+/g, ' ').trim() || (selectedImage ? selectedNoteImageLabel(selectedImage) : 'Selected text')));
 
-  _alarmNoteId = noteId;
+  _alarmNoteId = targetNoteId;
   _alarmContext = {
-    noteId,
+    noteId: targetNoteId,
     range,
+    editorRootId: editorRoot?.id || 'editor',
     alarmId: existingMark?.dataset.alarmId || '',
     direction: existingDirection,
     targetUid: existingTargetUid,
@@ -5348,7 +5792,7 @@ function openNoteAlarmModal(noteId = activeId) {
   dateInput.value = parts.date;
   timeInput.value = parts.time;
   targetText.textContent = selectedText;
-  populateAlarmRecipientOptions(notes[noteId], existingDirection === 'sent' ? existingTargetUid : '');
+  populateAlarmRecipientOptions(notes[targetNoteId], existingDirection === 'sent' ? existingTargetUid : '');
   clearBtn.style.display = existingMark ? '' : 'none';
   updateAlarmRecipientState();
   updateAlarmSummary();
@@ -5382,6 +5826,49 @@ function applyAlarmToRange(range, alarmAt, options = {}) {
     selectAlarmMarkText(mark);
     return mark;
   }
+
+  // If the selection lives inside one inline code chip, wrap that chip so
+  // reminder only adds the clock and code typography stays unchanged.
+  const startEl = range.startContainer.nodeType === Node.ELEMENT_NODE
+    ? range.startContainer
+    : range.startContainer.parentElement;
+  const endEl = range.endContainer.nodeType === Node.ELEMENT_NODE
+    ? range.endContainer
+    : range.endContainer.parentElement;
+  const startCode = startEl?.closest?.('code');
+  const endCode = endEl?.closest?.('code');
+  const inlineCode = startCode
+    && startCode === endCode
+    && !startCode.closest('pre')
+    && getEd()?.contains(startCode)
+    ? startCode
+    : null;
+
+  if (inlineCode) {
+    const existingAlarm = inlineCode.closest?.('.note-alarm');
+    if (existingAlarm && existingAlarm !== mark) {
+      existingAlarm.dataset.alarmAt = mark.dataset.alarmAt;
+      existingAlarm.dataset.alarmId = mark.dataset.alarmId;
+      if (options.direction) existingAlarm.dataset.alarmDirection = options.direction;
+      else delete existingAlarm.dataset.alarmDirection;
+      if (options.targetUid) existingAlarm.dataset.alarmTargetUid = options.targetUid;
+      else delete existingAlarm.dataset.alarmTargetUid;
+      if (options.targetName) existingAlarm.dataset.alarmTargetName = options.targetName;
+      else delete existingAlarm.dataset.alarmTargetName;
+      updateAlarmMarkDisplay(existingAlarm);
+      placeCursorAfterNode(existingAlarm);
+      return existingAlarm;
+    }
+    inlineCode.parentNode.insertBefore(mark, inlineCode);
+    mark.appendChild(inlineCode);
+    mark.querySelectorAll('.note-alarm').forEach(nested => {
+      if (nested !== mark) unwrapAlarmMark(nested);
+    });
+    if (typeof syncNoteImageAnnotationMark === 'function') syncNoteImageAnnotationMark(mark);
+    placeCursorAfterNode(mark);
+    return mark;
+  }
+
   mark.appendChild(range.extractContents());
   mark.querySelectorAll('.note-alarm').forEach(nested => unwrapAlarmMark(nested));
   if (typeof syncNoteImageAnnotationMark === 'function') syncNoteImageAnnotationMark(mark);
@@ -5392,32 +5879,54 @@ function applyAlarmToRange(range, alarmAt, options = {}) {
 
 function applySentReminderTextMark(reminderId, alarmAt, targetUid) {
   if (!reminderId || !_alarmContext?.noteId || !notes[_alarmContext.noteId]) return false;
-  if (activeId !== _alarmContext.noteId) openNote(_alarmContext.noteId);
-  const ed = getEd();
+  if (activeId !== _alarmContext.noteId && !(_alarmContext.editorRootId === 'note-split-peer-body' && typeof getNoteSplitPeerId === 'function' && getNoteSplitPeerId() === _alarmContext.noteId)) {
+    openNote(_alarmContext.noteId);
+  }
+  const peerBody = document.getElementById('note-split-peer-body');
+  const usePeer = _alarmContext.editorRootId === 'note-split-peer-body'
+    && peerBody
+    && typeof getNoteSplitPeerId === 'function'
+    && getNoteSplitPeerId() === _alarmContext.noteId;
+  const ed = usePeer ? peerBody : getEd();
   if (!ed) return false;
   const targetName = alarmRecipientName(targetUid);
-  pushUndo();
-  let mark = findAlarmMark(ed, reminderId);
-  if (mark) {
-    mark.dataset.alarmAt = alarmAt;
-    mark.dataset.alarmDirection = 'sent';
-    mark.dataset.alarmTargetUid = targetUid || '';
-    mark.dataset.alarmTargetName = targetName;
-    updateAlarmMarkDisplay(mark);
-    placeCursorAfterNode(mark);
-  } else {
-    const range = restoreAlarmContextRange();
-    if (!range) return false;
-    mark = applyAlarmToRange(range, alarmAt, {
-      alarmId: reminderId,
-      direction: 'sent',
-      targetUid,
-      targetName
-    });
-  }
-  restoreAlarmMarks(ed);
-  refreshEmpty(ed);
-  if (syncActiveNoteFromEditor()) {
+  const applyLocalMark = () => {
+    if (!usePeer) pushUndo();
+    let mark = findAlarmMark(ed, reminderId);
+    if (mark) {
+      mark.dataset.alarmAt = alarmAt;
+      mark.dataset.alarmDirection = 'sent';
+      mark.dataset.alarmTargetUid = targetUid || '';
+      mark.dataset.alarmTargetName = targetName;
+      updateAlarmMarkDisplay(mark);
+      placeCursorAfterNode(mark);
+    } else {
+      const range = restoreAlarmContextRange();
+      if (!range) return false;
+      mark = applyAlarmToRange(range, alarmAt, {
+        alarmId: reminderId,
+        direction: 'sent',
+        targetUid,
+        targetName
+      });
+    }
+    restoreAlarmMarks(ed);
+    refreshEmpty(ed);
+    return true;
+  };
+  const applied = usePeer && typeof runEditorOperationOnRoot === 'function'
+    ? !!runEditorOperationOnRoot(ed, applyLocalMark)
+    : applyLocalMark();
+  if (!applied) return false;
+  if (usePeer) {
+    if (typeof syncSplitPeerNote === 'function' && syncSplitPeerNote()) {
+      if (typeof scheduleSplitPeerSave === 'function') scheduleSplitPeerSave();
+      if (typeof flushSplitPeerSave === 'function') flushSplitPeerSave();
+      renderAlarmButton();
+      if (document.getElementById('alarms-modal')?.classList.contains('open')) renderAlarmsList();
+      refreshOpenSidebarPage('alarms');
+    }
+  } else if (syncActiveNoteFromEditor()) {
     renderAlarmButton();
     if (document.getElementById('alarms-modal')?.classList.contains('open')) renderAlarmsList();
     refreshOpenSidebarPage('alarms');
@@ -5481,23 +5990,45 @@ async function saveNoteAlarm() {
     );
     return;
   }
-  if (activeId !== _alarmContext.noteId) openNote(_alarmContext.noteId);
-  const ed = getEd();
-  getEd().focus();
-  pushUndo();
-  const mark = _alarmContext.alarmId ? findAlarmMark(ed, _alarmContext.alarmId) : null;
-  if (mark) {
-    mark.dataset.alarmAt = alarmAt;
-    updateAlarmMarkDisplay(mark);
-    placeCursorAfterNode(mark);
-  } else {
-    const range = restoreAlarmContextRange();
-    if (!range) return;
-    applyAlarmToRange(range, alarmAt);
+  if (activeId !== _alarmContext.noteId && !(_alarmContext.editorRootId === 'note-split-peer-body' && typeof getNoteSplitPeerId === 'function' && getNoteSplitPeerId() === _alarmContext.noteId)) {
+    openNote(_alarmContext.noteId);
   }
-  restoreAlarmMarks(ed);
-  refreshEmpty(ed);
-  if (syncActiveNoteFromEditor()) {
+  const peerBody = document.getElementById('note-split-peer-body');
+  const usePeer = _alarmContext.editorRootId === 'note-split-peer-body'
+    && peerBody
+    && typeof getNoteSplitPeerId === 'function'
+    && getNoteSplitPeerId() === _alarmContext.noteId;
+  const ed = usePeer ? peerBody : getEd();
+  const applyLocalAlarm = () => {
+    ed.focus();
+    if (!usePeer) pushUndo();
+    const mark = _alarmContext.alarmId ? findAlarmMark(ed, _alarmContext.alarmId) : null;
+    if (mark) {
+      mark.dataset.alarmAt = alarmAt;
+      updateAlarmMarkDisplay(mark);
+      placeCursorAfterNode(mark);
+    } else {
+      const range = restoreAlarmContextRange();
+      if (!range) return false;
+      applyAlarmToRange(range, alarmAt);
+    }
+    restoreAlarmMarks(ed);
+    refreshEmpty(ed);
+    return true;
+  };
+  const applied = usePeer && typeof runEditorOperationOnRoot === 'function'
+    ? !!runEditorOperationOnRoot(ed, applyLocalAlarm)
+    : applyLocalAlarm();
+  if (!applied) return;
+  if (usePeer) {
+    if (typeof syncSplitPeerNote === 'function' && syncSplitPeerNote()) {
+      if (typeof scheduleSplitPeerSave === 'function') scheduleSplitPeerSave();
+      if (typeof flushSplitPeerSave === 'function') flushSplitPeerSave();
+      renderAlarmButton();
+      if (document.getElementById('alarms-modal')?.classList.contains('open')) renderAlarmsList();
+      refreshOpenSidebarPage('alarms');
+    }
+  } else if (syncActiveNoteFromEditor()) {
     renderAlarmButton();
     if (document.getElementById('alarms-modal')?.classList.contains('open')) renderAlarmsList();
     refreshOpenSidebarPage('alarms');
@@ -5714,7 +6245,10 @@ function findMentionContext() {
   const sel = window.getSelection();
   if (!sel || !sel.rangeCount || !sel.isCollapsed) return null;
   const range = sel.getRangeAt(0);
-  const ed = getEd();
+  const owner = range.startContainer.nodeType === Node.ELEMENT_NODE
+    ? range.startContainer
+    : range.startContainer.parentElement;
+  const ed = (typeof editorRootForElement === 'function' ? editorRootForElement(owner) : null) || getEd();
   if (!ed || !ed.contains(range.startContainer)) return null;
   const node = range.startContainer;
   if (node.nodeType !== Node.TEXT_NODE || node.parentElement?.closest('.mention')) return null;
@@ -5725,7 +6259,7 @@ function findMentionContext() {
   const replaceRange = document.createRange();
   replaceRange.setStart(node, start);
   replaceRange.setEnd(node, range.startOffset);
-  return { range: replaceRange, query: match[2] };
+  return { range: replaceRange, query: match[2], root: ed, noteId: editorRootNoteId(ed) };
 }
 
 function positionMentionPopover(range) {
@@ -5760,7 +6294,7 @@ function renderMentionPopover() {
   _mentionState = { ...ctx, profiles };
   _mentionActiveIndex = Math.min(_mentionActiveIndex, profiles.length - 1);
 
-  const note = activeId ? notes[activeId] : null;
+  const note = ctx.noteId ? notes[ctx.noteId] : null;
   pop.innerHTML = profiles.map((p, i) => {
     const needsAccess = typeof profileNeedsNoteAccess === 'function' && profileNeedsNoteAccess(note, p);
     return '<div class="mention-option' + (i === _mentionActiveIndex ? ' active' : '') + (needsAccess ? ' needs-note-access' : '') + '" data-mention-uid="' + esc(p.uid) + '">' +
@@ -5815,8 +6349,8 @@ async function selectMentionProfile(profile) {
   if (pop) pop.hidden = true;
   _mentionSelectionPending = true;
   try {
-    const note = activeId ? notes[activeId] : null;
-    const noteId = note?.id || '';
+    const noteId = mentionState.noteId || editorRootNoteId(mentionState.root) || activeId || '';
+    const note = noteId ? notes[noteId] : null;
     if (typeof ensureProfileNoteAccessForFeature === 'function') {
       const accessOk = await ensureProfileNoteAccessForFeature(note, profile, 'mentions');
       if (!accessOk) {
@@ -5824,8 +6358,16 @@ async function selectMentionProfile(profile) {
         return;
       }
     }
-    if (noteId && activeId !== noteId) return;
-    insertMention(profile, mentionState);
+    const stillPeer = mentionState.root?.id === 'note-split-peer-body'
+      && typeof getNoteSplitPeerId === 'function'
+      && getNoteSplitPeerId() === noteId;
+    const stillLive = mentionState.root?.id === 'editor' && activeId === noteId;
+    if (noteId && !stillPeer && !stillLive) return;
+    if (mentionState.root && typeof runEditorOperationOnRoot === 'function') {
+      runEditorOperationOnRoot(mentionState.root, () => insertMention(profile, mentionState));
+    } else {
+      insertMention(profile, mentionState);
+    }
   } finally {
     _mentionSelectionPending = false;
   }
@@ -5855,32 +6397,37 @@ function insertMention(profile, mentionState = _mentionState) {
   sel.removeAllRanges();
   sel.addRange(next);
   hideMentionPopover();
-  refreshEmpty(getEd());
-  if (syncActiveNoteFromEditor()) {
-    scheduleUndoSnapshot();
-    scheduleSave();
-    scheduleMentionSync();
+  const ed = mentionState.root || getEd();
+  refreshEmpty(ed);
+  if (syncEditorRootContent(ed)) {
+    scheduleEditorRootUndoSnapshot(ed);
+    scheduleEditorRootSave(ed);
+    scheduleMentionSync(editorRootNoteId(ed));
   }
 }
 
-function mentionedUidsInEditor() {
-  const ed = getEd();
+function mentionedUidsInEditor(root = getEd()) {
+  const ed = root || getEd();
   if (!ed) return [];
   return [...new Set([...ed.querySelectorAll('[data-mention-uid]')]
     .map(el => el.getAttribute('data-mention-uid'))
     .filter(uid => uid && uid !== userId && linkedProfiles[uid]))];
 }
 
-function scheduleMentionSync() {
+function scheduleMentionSync(noteId = activeId) {
   clearTimeout(_mentionSaveTimer);
-  _mentionSaveTimer = setTimeout(syncMentionNotifications, 1000);
+  _mentionSaveTimer = setTimeout(() => syncMentionNotifications(noteId), 1000);
 }
 
-async function syncMentionNotifications() {
+async function syncMentionNotifications(noteId = activeId) {
   if (_mentionShareResolver) return;
-  if (!activeId || !notes[activeId] || !userId) return;
-  const note = notes[activeId];
-  const current = mentionedUidsInEditor();
+  const targetNoteId = noteId || activeId;
+  if (!targetNoteId || !notes[targetNoteId] || !userId) return;
+  const note = notes[targetNoteId];
+  const root = (typeof getNoteSplitPeerId === 'function' && getNoteSplitPeerId() === targetNoteId)
+    ? document.getElementById('note-split-peer-body')
+    : (activeId === targetNoteId ? document.getElementById('editor') : null);
+  const current = mentionedUidsInEditor(root || getEd());
   if (!current.length) return;
   const already = new Set(Array.isArray(note.mentionedUids) ? note.mentionedUids : []);
   const fresh = current.filter(uid => !already.has(uid));

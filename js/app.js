@@ -11,6 +11,7 @@ const sectionScripts = [
   './notes.js',
   './folders.js',
   './editor.js',
+  './editor-bindings.js',
   './split-view.js',
   './ui.js',
   './sharing.js',
@@ -262,7 +263,14 @@ document.getElementById('conversation-selection-start-btn')?.addEventListener('c
 });
 document.getElementById('conversation-selection-reminder-btn')?.addEventListener('click', e => {
   e.preventDefault();
-  openNoteAlarmModal(activeId);
+  const pop = document.getElementById('conversation-selection-popover');
+  const ctx = typeof selectionEditorContext === 'function' ? selectionEditorContext() : null;
+  const noteId = ctx?.noteId || pop?.dataset?.noteId || activeId;
+  if (ctx?.root && typeof runEditorOperationOnRoot === 'function') {
+    runEditorOperationOnRoot(ctx.root, () => openNoteAlarmModal(noteId));
+  } else {
+    openNoteAlarmModal(noteId);
+  }
   hideConversationSelectionPopover();
 });
 document.getElementById('connect-profile-btn')?.addEventListener('click', connectProfileByEmail);
@@ -316,598 +324,15 @@ document.getElementById('modal-input').addEventListener('keydown', e => {
 
 window.editorEl = document.getElementById('editor');
 const editorEl = window.editorEl;
-
-editorEl.addEventListener('beforeinput', e => {
-  const activeNote = activeId ? notes[activeId] : null;
-  if (!activeNote || !canEditNote(activeNote)) {
-    e.preventDefault();
-    return;
-  }
-  if (e.inputType?.startsWith('insert') && typeof shouldBlockSelectedNoteImageReplacement === 'function' && shouldBlockSelectedNoteImageReplacement()) {
-    e.preventDefault();
-    return;
-  }
-  if (typeof protectConversationAnchorDeletion === 'function' && protectConversationAnchorDeletion(e, editorEl)) {
-    e.preventDefault();
-    return;
-  }
-  refreshUndoSnapshotSelection();
-  if (e.inputType === 'insertParagraph' || e.inputType === 'insertLineBreak') {
-    _capitalizeNext = true;
-  }
-});
-
-editorEl.addEventListener('input', e => {
-  const tableTitleInput = e.target.closest?.('[data-table-title-input]');
-  if (tableTitleInput) tableTitleInput.setAttribute('value', tableTitleInput.value || '');
-  if (_capitalizeNext && e.inputType === 'insertText' && e.data) {
-    if (/[a-z]/.test(e.data[0])) capitalizeCurrentChar(e.data.length);
-    _capitalizeNext = false;
-  } else if (_capitalizeNext && e.inputType && e.inputType !== 'insertParagraph' && e.inputType !== 'insertLineBreak') {
-    _capitalizeNext = false;
-  }
-  cleanupLiveInlineCodeBoundaries(editorEl, e);
-  decorateTables(editorEl);
-  decorateNoteImages(editorEl);
-  if (typeof removeEmptyNoteImageAnnotations === 'function') removeEmptyNoteImageAnnotations(editorEl);
-  recomputeCollapsedSections();
-  refreshEmpty(editorEl);
-  if (!syncActiveNoteFromEditor()) return;
-  markEditorHistoryTouched();
-  renderAlarmButton();
-  if (document.getElementById('alarms-modal')?.classList.contains('open')) renderAlarmsList();
-  refreshOpenSidebarPage('alarms');
-  renderMentionPopover();
-  scheduleUndoSnapshot();
-  scheduleMentionSync();
-  scheduleSave();
-});
-
-editorEl.addEventListener('blur', () => {
-  setTimeout(hideMentionPopover, 120);
-  if (hasLinkifiableTextNodes(editorEl)) pushUndo();
-  const changed = linkifyTextNodes(editorEl);
-  ensureLinkAttrs(editorEl);
-  refreshEmpty(editorEl);
-  if (changed && syncActiveNoteFromEditor()) {
-    scheduleUndoSnapshot();
-    scheduleSave();
-  } else if (_undoTransactionOpen) {
-    scheduleUndoSnapshot();
-  }
-});
-
-editorEl.addEventListener('keyup', () => {
-  renderMentionPopover();
-  refreshUndoSnapshotSelection();
-  scheduleConversationSelectionPopover();
-});
-editorEl.addEventListener('mouseup', () => {
-  refreshUndoSnapshotSelection();
-  scheduleConversationSelectionPopover();
-});
-editorEl.addEventListener('scroll', hideConversationSelectionPopover);
-document.addEventListener('selectionchange', () => {
-  if (typeof syncSelectedNoteImageState === 'function') syncSelectedNoteImageState(editorEl);
-  scheduleConversationSelectionPopover();
-});
-
-editorEl.addEventListener('pointerdown', e => {
-  const imageResizeHandle = e.target.closest?.('[data-note-image-resize]');
-  if (imageResizeHandle && editorEl.contains(imageResizeHandle)) {
-    startNoteImageResize(e, imageResizeHandle);
-    return;
-  }
-  const imageDragHandle = e.target.closest?.('[data-note-image-drag]');
-  if (imageDragHandle && editorEl.contains(imageDragHandle)) {
-    const imageBlock = imageDragHandle.closest?.('.note-image-block');
-    if (imageBlock && typeof startEditorBlockDrag === 'function') startEditorBlockDrag(e, imageBlock);
-    return;
-  }
-  const tableDragHandle = e.target.closest?.('[data-editor-block-drag="table"]');
-  if (tableDragHandle && editorEl.contains(tableDragHandle)) {
-    const tableWrap = tableDragHandle.closest?.('.note-table-wrap');
-    if (tableWrap && typeof startEditorBlockDrag === 'function') startEditorBlockDrag(e, tableWrap);
-    return;
-  }
-  const reorderHandle = e.target.closest?.('[data-table-reorder]');
-  if (reorderHandle && editorEl.contains(reorderHandle)) {
-    startTableReorder(e, reorderHandle);
-    return;
-  }
-  const resizeHandle = e.target.closest?.('[data-table-resize]');
-  if (!resizeHandle || !editorEl.contains(resizeHandle)) return;
-  startTableColumnResize(e, resizeHandle);
-});
-
-editorEl.addEventListener('mousedown', e => {
-  const tableBtn = e.target.closest('[data-table-action]');
-  if (!tableBtn || !editorEl.contains(tableBtn)) return;
-  e.preventDefault();
-  e.stopPropagation();
-  handleTableControl(tableBtn);
-});
-
-function runNoteImageClipboardCommand(command) {
-  editorEl.focus();
-  if (!document.execCommand(command, false, null)) {
-    showToast('Clipboard Action Is Not Available', 'error');
-  }
-}
-
-editorEl.addEventListener('contextmenu', e => {
-  const imageBlock = e.target.closest?.('.note-image-block');
-  if (!imageBlock || !editorEl.contains(imageBlock) || typeof selectNoteImageBlock !== 'function') return;
-  if (!selectNoteImageBlock(imageBlock)) return;
-  e.preventDefault();
-  e.stopPropagation();
-  const editable = !!activeId && canEditNote(notes[activeId]);
-  if (window.desktop?.isElectron && typeof window.desktop.showEditorImageContextMenu === 'function') {
-    window.desktop.showEditorImageContextMenu({ x: e.clientX, y: e.clientY, editable });
-    return;
-  }
-  if (typeof openCtxMenu !== 'function') return;
-  const items = [];
-  if (editable) {
-    items.push({ label: 'Cut', icon: 'fa-solid fa-scissors', action: () => runNoteImageClipboardCommand('cut') });
-  }
-  items.push({ label: 'Copy', icon: 'fa-regular fa-copy', action: () => runNoteImageClipboardCommand('copy') });
-  openCtxMenu(imageBlock, items, { x: e.clientX, y: e.clientY });
-});
-
-editorEl.addEventListener('click', e => {
-  const imageResizeHandle = e.target.closest?.('[data-note-image-resize]');
-  if (imageResizeHandle && editorEl.contains(imageResizeHandle)) {
-    e.preventDefault();
-    e.stopPropagation();
-    return;
-  }
-  const imageDragHandle = e.target.closest?.('[data-note-image-drag]');
-  if (imageDragHandle && editorEl.contains(imageDragHandle)) {
-    e.preventDefault();
-    e.stopPropagation();
-    return;
-  }
-  const tableDragHandle = e.target.closest?.('[data-editor-block-drag="table"]');
-  if (tableDragHandle && editorEl.contains(tableDragHandle)) {
-    e.preventDefault();
-    e.stopPropagation();
-    return;
-  }
-  const reorderHandle = e.target.closest?.('[data-table-reorder]');
-  if (reorderHandle && editorEl.contains(reorderHandle)) {
-    e.preventDefault();
-    e.stopPropagation();
-    return;
-  }
-  const tableBtn = e.target.closest('[data-table-action]');
-  if (tableBtn && editorEl.contains(tableBtn)) {
-    e.preventDefault();
-    e.stopPropagation();
-    return;
-  }
-  const imageBlock = e.target.closest?.('.note-image-block');
-  if (imageBlock && editorEl.contains(imageBlock) && typeof selectNoteImageBlock === 'function') {
-    e.preventDefault();
-    e.stopPropagation();
-    selectNoteImageBlock(imageBlock);
-    return;
-  }
-  if (typeof clearSelectedNoteImages === 'function') clearSelectedNoteImages(editorEl);
-  const li = e.target.closest('ul.checklist > li');
-  if (li && editorEl.contains(li)) {
-    const relX = e.clientX - li.getBoundingClientRect().left;
-    if (relX >= 0 && relX <= 20) {
-      e.preventDefault();
-      pushUndo();
-      const ul = li.closest('ul.checklist');
-      li.classList.toggle('checked');
-      if (li.classList.contains('checked')) {
-        ul.appendChild(li);
-      } else {
-        const firstChecked = ul.querySelector('li.checked');
-        firstChecked ? ul.insertBefore(li, firstChecked) : ul.prepend(li);
-      }
-      scheduleUndoSnapshot();
-      if (syncActiveNoteFromEditor()) scheduleSave();
-      return;
-    }
-  }
-  const heading = e.target.closest('h1, h2, h3, h4');
-  if (heading && editorEl.contains(heading)) {
-    const rect = heading.getBoundingClientRect();
-    if (e.clientX - rect.left < 20) {
-      e.preventDefault();
-      heading.toggleAttribute('data-collapsed');
-      recomputeCollapsedSections();
-      saveCollapsedState(activeId);
-      return;
-    }
-  }
-  const alarmMark = e.target.closest('.note-alarm');
-  if (alarmMark && editorEl.contains(alarmMark)) {
-    const rect = alarmMark.getBoundingClientRect();
-    if (e.clientX - rect.left <= 24 && canEditNote(notes[activeId])) {
-      e.preventDefault();
-      e.stopPropagation();
-      selectAlarmMarkText(alarmMark);
-      openNoteAlarmModal(activeId);
-      return;
-    }
-  }
-  const conversationMark = e.target.closest('.note-conversation-anchor');
-  if (conversationMark && editorEl.contains(conversationMark) && typeof openConversationFromMarker === 'function') {
-    e.preventDefault();
-    e.stopPropagation();
-    openConversationFromMarker(conversationMark);
-    return;
-  }
-  const link = e.target.closest('a[href]');
-  if (!link) return;
-  e.preventDefault();
-  window.open(link.href, '_blank', 'noopener,noreferrer');
-});
-
-editorEl.addEventListener('keydown', e => {
-  if (e.target.closest?.('[data-table-title-input]')) {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      e.target.blur();
-    }
-    e.stopPropagation();
-    return;
-  }
-  if (handleMentionKeydown(e)) return;
-  const inTable = isSelectionInTable();
-  const plainArrowKey = !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey && !e.isComposing;
-
-  if (plainArrowKey && e.key === 'ArrowDown') {
-    if (!inTable && moveCaretBeyondHeaderDomainEnd()) {
-      e.preventDefault();
-      return;
-    }
-    if (insertCleanLineBelowCaret()) {
-      e.preventDefault();
-      return;
-    }
-  }
-
-  if (plainArrowKey && e.key === 'ArrowUp') {
-    if (insertCleanLineAboveCaret()) {
-      e.preventDefault();
-      return;
-    }
-  }
-
-  if (!e.metaKey && !e.ctrlKey && !e.altKey && e.key === ' ' && !e.isComposing) {
-    if (inTable) return;
-    if (applyMarkdownShortcut()) {
-      e.preventDefault();
-      refreshEmpty(editorEl);
-      scheduleUndoSnapshot();
-      if (syncActiveNoteFromEditor()) scheduleSave();
-      return;
-    }
-    if (autoLinkTokenBeforeCaret()) {
-      e.preventDefault();
-      const _sel = window.getSelection();
-      if (_sel && _sel.rangeCount) {
-        const _r = _sel.getRangeAt(0);
-        const _sp = document.createTextNode(' ');
-        _r.insertNode(_sp);
-        _r.setStartAfter(_sp);
-        _r.collapse(true);
-        _sel.removeAllRanges();
-        _sel.addRange(_r);
-      }
-      refreshEmpty(editorEl);
-      scheduleUndoSnapshot();
-      if (syncActiveNoteFromEditor()) scheduleSave();
-      return;
-    }
-  }
-
-  if (e.key === 'Backspace' && !e.metaKey && !e.ctrlKey && !e.altKey && !e.isComposing) {
-    const backspaceSel = window.getSelection();
-    if (backspaceSel && backspaceSel.rangeCount && backspaceSel.isCollapsed) {
-      const li = ancestorOfType(['li']);
-      if (li && isEmptyListItem(li)) {
-        e.preventDefault();
-        pushUndo();
-        if (removeEmptyListItem(li)) editorEl.dispatchEvent(new Event('input'));
-        return;
-      }
-
-      const list = li?.parentElement;
-      const firstRegularListItem = li &&
-        /^(UL|OL)$/.test(list?.tagName || '') &&
-        !list.classList.contains('checklist') &&
-        list.parentElement === editorEl &&
-        !li.previousElementSibling;
-      if (firstRegularListItem && isCaretAtStartOfListItem(li)) {
-        e.preventDefault();
-        pushUndo();
-        if (unlistLeadingListItem(li)) editorEl.dispatchEvent(new Event('input'));
-        return;
-      }
-
-      if (deletePreviousTabAtCaret()) {
-        e.preventDefault();
-        editorEl.dispatchEvent(new Event('input'));
-        return;
-      }
-    }
-
-    const h = ancestorOfType(['h1','h2','h3','h4']);
-    if (h) {
-      const sel = window.getSelection();
-      if (sel && sel.rangeCount && sel.isCollapsed) {
-        const range = sel.getRangeAt(0);
-        // Check if cursor is at the very start of the heading (no text before it)
-        const checkRange = document.createRange();
-        checkRange.selectNodeContents(h);
-        checkRange.setEnd(range.startContainer, range.startOffset);
-        const textBeforeCursor = checkRange.toString();
-        if (textBeforeCursor.length === 0) {
-          e.preventDefault();
-          pushUndo();
-          const p = document.createElement('p');
-          while (h.firstChild) p.appendChild(h.firstChild);
-          if (!p.textContent && !p.querySelector('br')) p.appendChild(document.createElement('br'));
-          h.replaceWith(p);
-          placeCursorAtStart(p);
-          if (syncActiveNoteFromEditor()) {
-            scheduleUndoSnapshot();
-            scheduleSave();
-          }
-          return;
-        }
-      }
-    }
-  }
-
-  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
-    if (closestInlineCodeFromSelection()) {
-      e.preventDefault();
-      pushUndo();
-      if (splitInlineCodeAtCaret()) {
-        _capitalizeNext = true;
-        editorEl.dispatchEvent(new Event('input'));
-      }
-      return;
-    }
-    if (inTable) {
-      e.preventDefault();
-      document.execCommand('insertLineBreak');
-      editorEl.dispatchEvent(new Event('input'));
-      return;
-    }
-    const li = ancestorOfType(['li']);
-    if (li && li.closest('ul.checklist')) {
-      e.preventDefault();
-      const sel = window.getSelection();
-      if (!sel || !sel.rangeCount) return;
-      const range = sel.getRangeAt(0);
-
-      // If this li is empty, exit the checklist (like bullet lists do)
-      const liText = li.textContent.replace(/\u00a0/g, '').trim();
-      if (!liText) {
-        pushUndo();
-        const parentList = li.closest('ul.checklist');
-        li.remove();
-        // If the list is now empty, remove it too
-        if (parentList && !parentList.hasChildNodes()) parentList.remove();
-        // Create a new paragraph after the list (or in its place)
-        const p = document.createElement('p');
-        p.appendChild(document.createElement('br'));
-        if (parentList && parentList.parentNode) {
-          parentList.after(p);
-        } else {
-          getEd().appendChild(p);
-        }
-        const r = document.createRange();
-        r.setStart(p, 0);
-        r.collapse(true);
-        sel.removeAllRanges();
-        sel.addRange(r);
-        editorEl.dispatchEvent(new Event('input'));
-        return;
-      }
-
-      pushUndo();
-      // Delete any selected text first
-      if (!range.collapsed) range.deleteContents();
-
-      // Extract content from cursor position to end of the li (split point)
-      const tailRange = document.createRange();
-      tailRange.setStart(range.startContainer, range.startOffset);
-      const directNestedListAfterCaret = [...li.children].find(child => {
-        if (child.tagName !== 'UL' && child.tagName !== 'OL') return false;
-        if (!child.classList.contains('checklist')) return false;
-        if (child.contains(range.startContainer)) return false;
-        try { return range.comparePoint(child, 0) > 0; }
-        catch (_) { return true; }
-      });
-      if (directNestedListAfterCaret) tailRange.setEndBefore(directNestedListAfterCaret);
-      else tailRange.setEnd(li, li.childNodes.length);
-      const tailContent = tailRange.extractContents();
-
-      // Build new li with the extracted trailing content
-      const newLi = document.createElement('li');
-      newLi.appendChild(tailContent);
-      // Ensure new li is focusable when tail was empty
-      if (!newLi.textContent && !newLi.querySelector('br, img')) {
-        newLi.appendChild(document.createElement('br'));
-      }
-      // Ensure original li is also focusable when it became empty
-      if (!li.hasChildNodes()) {
-        li.appendChild(document.createElement('br'));
-      }
-
-      li.after(newLi);
-      normalizeChecklistStructure(editorEl);
-
-      const r = document.createRange();
-      r.selectNodeContents(newLi);
-      r.collapse(true);
-      sel.removeAllRanges();
-      sel.addRange(r);
-      _capitalizeNext = true;
-      editorEl.dispatchEvent(new Event('input'));
-      return;
-    }
-    const h = ancestorOfType(['h1','h2','h3','h4']);
-    if (h) {
-      e.preventDefault();
-      pushUndo();
-      const sel = window.getSelection();
-      const range = sel.getRangeAt(0);
-      if (!range.collapsed) range.deleteContents();
-      // Extract content after cursor into a new paragraph
-      const tailRange = document.createRange();
-      tailRange.setStart(range.startContainer, range.startOffset);
-      tailRange.setEndAfter(h.lastChild || h);
-      const tailContent = tailRange.extractContents();
-      const p = document.createElement('p');
-      p.appendChild(tailContent);
-      if (!p.textContent && !p.querySelector('br, img')) {
-        p.appendChild(document.createElement('br'));
-      }
-      // Ensure heading still has content
-      if (!h.textContent && !h.querySelector('br, img')) {
-        h.appendChild(document.createElement('br'));
-      }
-      // If the heading is collapsed, insert after the whole collapsed section
-      // so new content lands outside the header's domain
-      const isCollapsed = h.hasAttribute('data-collapsed');
-      let insertAfter = h;
-      if (isCollapsed) {
-        const level = parseInt(h.tagName[1]);
-        let sibling = h.nextElementSibling;
-        while (sibling) {
-          const t = sibling.tagName;
-          if (/^H[1-4]$/.test(t) && parseInt(t[1]) <= level) break;
-          insertAfter = sibling;
-          sibling = sibling.nextElementSibling;
-        }
-        p.setAttribute('data-outside-collapse', level.toString());
-      }
-      insertAfter.after(p);
-      const r = document.createRange(); r.setStart(p, 0); r.collapse(true);
-      sel.removeAllRanges(); sel.addRange(r);
-      _capitalizeNext = true;
-      editorEl.dispatchEvent(new Event('input'));
-      return;
-    }
-  }
-  if (e.key === 'Tab') {
-    e.preventDefault();
-    if (inTable) {
-      if (moveTableSelection(e.shiftKey ? -1 : 1)) editorEl.dispatchEvent(new Event('input'));
-      return;
-    }
-    pushUndo();
-    const checklistLi = currentChecklistItemFromSelection();
-    if (checklistLi) {
-      // Use custom DOM-based indent/outdent so the checklist class is preserved
-      if (e.shiftKey ? checklistOutdent(checklistLi) : checklistIndent(checklistLi)) {
-        getEd().dispatchEvent(new Event('input'));
-      }
-    } else {
-      const li = ancestorOfType(['li']);
-      if (li) e.shiftKey ? document.execCommand('outdent') : document.execCommand('indent');
-      else document.execCommand('insertText', false, '\t');
-      getEd().dispatchEvent(new Event('input'));
-    }
-    scheduleUndoSnapshot();
-    return;
-  }
-});
-
-editorEl.addEventListener('copy', e => {
-  if (typeof copySelectedNoteImage === 'function' && copySelectedNoteImage(e.clipboardData)) {
-    e.preventDefault();
-  }
-});
-
-editorEl.addEventListener('cut', e => {
-  if (typeof cutSelectedNoteImage === 'function' && cutSelectedNoteImage(e.clipboardData)) {
-    e.preventDefault();
-  }
-});
-
-editorEl.addEventListener('paste', e => {
-  if (!activeId || !canEditNote(notes[activeId])) {
-    e.preventDefault();
-    return;
-  }
-  if (typeof shouldBlockSelectedNoteImageReplacement === 'function' && shouldBlockSelectedNoteImageReplacement()) {
-    e.preventDefault();
-    return;
-  }
-  const imageFile = clipboardImageFile(e.clipboardData);
-  if (imageFile) {
-    e.preventDefault();
-    const range = getEditorSelectionRange()?.cloneRange();
-    const pastedNoteId = activeId;
-    pushUndo();
-    insertPastedImageFile(imageFile, range, pastedNoteId).then(ok => {
-      if (!ok) scheduleUndoSnapshot();
-    });
-    return;
-  }
-  e.preventDefault();
-  pushUndo();
-  const html = e.clipboardData.getData('text/html');
-  const text = e.clipboardData.getData('text/plain');
-  const pastedHref = normalizeHttpUrlValue(text);
-  if (pastedHref && applyLinkToSelection(pastedHref)) {
-    editorEl.dispatchEvent(new Event('input'));
-    return;
-  }
-  if (isSelectionInTable()) {
-    let plain = text;
-    if (!plain && html) {
-      const temp = document.createElement('div');
-      temp.innerHTML = html;
-      plain = temp.innerText || temp.textContent || '';
-    }
-    document.execCommand('insertText', false, plain);
-    editorEl.dispatchEvent(new Event('input'));
-    return;
-  }
-  if (html) {
-    // Sanitize: strip scripts, event handlers, dangerous elements and protocols
-    const temp = document.createElement('div');
-    temp.innerHTML = html;
-    temp.querySelectorAll('script, style, iframe, object, embed, meta, link, form').forEach(el => el.remove());
-    temp.querySelectorAll('*').forEach(el => {
-      for (const attr of [...el.attributes]) {
-        if (attr.name.startsWith('on') || attr.name === 'srcdoc') {
-          el.removeAttribute(attr.name);
-        }
-      }
-      // Strip dangerous URI protocols from href, src, action, formaction, xlink:href
-      ['href', 'src', 'action', 'formaction', 'xlink:href'].forEach(attrName => {
-        const val = el.getAttribute(attrName);
-        if (val && /^\s*(javascript|vbscript|data):/i.test(val)) {
-          if (attrName === 'src' && safeNoteImageSrc(val)) return;
-          el.removeAttribute(attrName);
-        }
-      });
-    });
-    normalizeThemeTextStyles(temp);
-    stripNoteImageEditorChrome(temp);
-    document.execCommand('insertHTML', false, temp.innerHTML);
-  } else if (text) {
-    document.execCommand('insertText', false, text);
-  }
-  editorEl.dispatchEvent(new Event('input'));
-});
+bindEditorRootListeners(editorEl);
 
 async function pasteTextMatchingFormatting() {
-  if (!editorEl || !navigator.clipboard?.readText) return;
-  const selection = captureEditorSelection(editorEl);
+  const peerBody = document.getElementById('note-split-peer-body');
+  const root = (document.activeElement === peerBody && peerBody)
+    || (typeof getNoteSplitActivePane === 'function' && getNoteSplitActivePane() === 'peer' && peerBody)
+    || editorEl;
+  if (!root || !navigator.clipboard?.readText) return;
+  const selection = captureEditorSelection(root);
   let text = '';
   try {
     text = await navigator.clipboard.readText();
@@ -915,11 +340,13 @@ async function pasteTextMatchingFormatting() {
     return;
   }
   if (!text) return;
-  restoreEditorSelection(editorEl, selection);
-  pushUndo();
-  document.execCommand('insertText', false, text);
-  editorEl.dispatchEvent(new Event('input'));
-  scheduleUndoSnapshot();
+  runEditorOperationOnRoot(root, () => {
+    restoreEditorSelection(root, selection);
+    pushUndo();
+    document.execCommand('insertText', false, text);
+    root.dispatchEvent(new Event('input'));
+    scheduleEditorRootUndoSnapshot(root);
+  });
 }
 
 document.getElementById('toolbar').addEventListener('mousedown', e => {
@@ -957,7 +384,9 @@ document.getElementById('doc-title').addEventListener('focus', () => {
 document.getElementById('doc-title').addEventListener('input', () => {
   if (!activeId || !notes[activeId]) return;
   if (!canEditNote(notes[activeId])) return;
-  notes[activeId].title    = document.getElementById('doc-title').value;
+  const nextTitle = document.getElementById('doc-title').value;
+  if (notes[activeId].title === nextTitle) return;
+  notes[activeId].title = nextTitle;
   notes[activeId].modified = new Date().toISOString();
   const el = document.querySelector('.sidebar-item.active .item-name');
   if (el) el.textContent = notes[activeId].title;
@@ -972,6 +401,7 @@ document.getElementById('doc-title').addEventListener('blur', () => {
     _docTitleUndoState = null;
     return;
   }
+  const previousTitle = notes[activeId].title;
   const titled = document.getElementById('doc-title').value.trim() || 'Untitled Note';
   document.getElementById('doc-title').value = titled;
   notes[activeId].title = titled;
@@ -986,7 +416,10 @@ document.getElementById('doc-title').addEventListener('blur', () => {
     });
   }
   _docTitleUndoState = null;
-  scheduleSave();
+  if (titled !== previousTitle) {
+    notes[activeId].modified = new Date().toISOString();
+    scheduleSave();
+  }
 });
 
 let _searchTimer;
@@ -1013,39 +446,70 @@ document.addEventListener('keydown', e => {
   const mod = /Mac/.test(navigator.platform) ? e.metaKey : e.ctrlKey;
   if (!mod) return;
   const key = e.key.toLowerCase();
+  // Browser/Electron may still close the tab/window; Electron menu also disables this.
+  if (key === 'w' && !e.shiftKey && !e.altKey) {
+    e.preventDefault();
+    e.stopPropagation();
+    return;
+  }
+  const peerBody = document.getElementById('note-split-peer-body');
   const activeEl = document.activeElement;
-  const isNativeTextUndoTarget = activeEl && activeEl !== editorEl && (
+  const peerEditorFocused = !!peerBody && activeEl === peerBody;
+  const liveEditorFocused = activeEl === editorEl;
+  const isNativeTextUndoTarget = activeEl && activeEl !== editorEl && activeEl !== peerBody && (
     activeEl.isContentEditable ||
     ['INPUT', 'TEXTAREA', 'SELECT'].includes(activeEl.tagName)
   );
   if (key === 'f' && e.shiftKey) {
     e.preventDefault();
+    if (peerEditorFocused && typeof focusNoteSplitPeerFullscreen === 'function') {
+      void focusNoteSplitPeerFullscreen();
+      return;
+    }
     toggleNoteFocusMode();
     return;
   }
-  if (document.activeElement === editorEl) {
+  const runEditorShortcut = action => {
+    if (typeof applyNoteSplitToolbarAction === 'function' && applyNoteSplitToolbarAction(action)) return;
+    pushUndo();
+    ACTIONS[action]?.();
+    scheduleUndoSnapshot();
+  };
+  if (liveEditorFocused || peerEditorFocused) {
     if (key === 'z' && !e.shiftKey) {
       e.preventDefault();
+      if (peerEditorFocused) {
+        runEditorOperationOnRoot(peerBody, () => performUndo());
+        return;
+      }
       if (_lastUndoDomain === 'app' && appUndoStack.length) performAppUndo();
       else performUndo();
       return;
     }
     if (key === 'z' && e.shiftKey) {
       e.preventDefault();
+      if (peerEditorFocused) {
+        runEditorOperationOnRoot(peerBody, () => performRedo());
+        return;
+      }
       if (_lastRedoDomain === 'app' && appRedoStack.length) performAppRedo();
       else performRedo();
       return;
     }
     if (key === 'y') {
       e.preventDefault();
+      if (peerEditorFocused) {
+        runEditorOperationOnRoot(peerBody, () => performRedo());
+        return;
+      }
       if (_lastRedoDomain === 'app' && appRedoStack.length) performAppRedo();
       else performRedo();
       return;
     }
-    if (key === 'b') { e.preventDefault(); pushUndo(); cmd('bold'); scheduleUndoSnapshot(); }
-    if (key === 'i') { e.preventDefault(); pushUndo(); cmd('italic'); scheduleUndoSnapshot(); }
-    if (key === 'e') { e.preventDefault(); pushUndo(); ACTIONS.code(); scheduleUndoSnapshot(); return; }
-    if (key === 's' && e.shiftKey) { e.preventDefault(); pushUndo(); cmd('strikeThrough'); scheduleUndoSnapshot(); }
+    if (key === 'b') { e.preventDefault(); runEditorShortcut('bold'); }
+    if (key === 'i') { e.preventDefault(); runEditorShortcut('italic'); }
+    if (key === 'e') { e.preventDefault(); runEditorShortcut('code'); return; }
+    if (key === 's' && e.shiftKey) { e.preventDefault(); runEditorShortcut('strikethrough'); }
   } else if (!isNativeTextUndoTarget) {
     if (key === 'z' && !e.shiftKey) {
       e.preventDefault();
@@ -1066,7 +530,7 @@ document.addEventListener('keydown', e => {
       return;
     }
   }
-  if (key === 'v' && e.shiftKey && document.activeElement === editorEl) {
+  if (key === 'v' && e.shiftKey && liveEditorFocused) {
     e.preventDefault();
     pasteTextMatchingFormatting();
     return;

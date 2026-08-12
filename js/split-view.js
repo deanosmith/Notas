@@ -4,6 +4,7 @@ const NOTE_SPLIT_MIN_WIDTH = 960;
 const NOTE_SPLIT_SAVE_DELAY = 500;
 const NOTE_SPLIT_DIVIDER_WIDTH = 12;
 const NOTE_SPLIT_MIN_PANE_WIDTH = 260;
+const NOTE_SPLIT_STORAGE_KEY = 'notas_split_view';
 
 let _noteSplitInitialised = false;
 let _noteSplitRenderToken = 0;
@@ -11,6 +12,8 @@ let _noteSplitDrag = null;
 let _noteSplitSaveTimer = null;
 let _noteSplitResize = null;
 let _noteSplitPeerSelection = null;
+let _noteSplitRestorePending = false;
+let _noteSplitRestoreState = null;
 let _noteSplitFallbackState = { peerId: '', side: 'right', awaiting: false, activePane: 'live', dividerRatio: .5 };
 
 function noteSplitState() {
@@ -48,6 +51,7 @@ function setNoteSplitActivePane(pane = 'live') {
   const { editorView } = noteSplitElements();
   editorView?.classList.toggle('split-peer-active', nextPane === 'peer');
   editorView?.classList.toggle('split-live-active', nextPane === 'live');
+  persistNoteSplitState();
   return nextPane;
 }
 
@@ -76,7 +80,96 @@ function setNoteSplitState(peerId = '', side = 'right', awaiting = false) {
   state.awaiting = !!awaiting && !state.peerId;
   state.activePane = state.activePane === 'peer' ? 'peer' : 'live';
   state.dividerRatio = Number.isFinite(Number(state.dividerRatio)) ? Number(state.dividerRatio) : .5;
+  persistNoteSplitState();
   return state;
+}
+
+function readPersistedNoteSplitState() {
+  try {
+    const raw = localStorage.getItem(NOTE_SPLIT_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return null;
+    return {
+      peerId: String(parsed.peerId || '').trim(),
+      side: normaliseNoteSplitSide(parsed.side),
+      awaiting: parsed.awaiting === true,
+      activePane: parsed.activePane === 'peer' ? 'peer' : 'live',
+      dividerRatio: Number.isFinite(Number(parsed.dividerRatio)) ? Number(parsed.dividerRatio) : .5,
+      liveId: String(parsed.liveId || '').trim()
+    };
+  } catch {
+    return null;
+  }
+}
+
+function persistNoteSplitState() {
+  if (_noteSplitRestorePending) return;
+  try {
+    if (!noteSplitHasPane()) {
+      localStorage.removeItem(NOTE_SPLIT_STORAGE_KEY);
+      return;
+    }
+    const state = noteSplitState();
+    localStorage.setItem(NOTE_SPLIT_STORAGE_KEY, JSON.stringify({
+      peerId: state.peerId || '',
+      side: normaliseNoteSplitSide(state.side),
+      awaiting: !!state.awaiting,
+      activePane: state.activePane === 'peer' ? 'peer' : 'live',
+      dividerRatio: Number.isFinite(Number(state.dividerRatio)) ? Number(state.dividerRatio) : .5,
+      liveId: String(activeId || '').trim()
+    }));
+  } catch (_) {}
+}
+
+function beginInitialNoteSplitRestore() {
+  if (_noteSplitRestorePending || _noteSplitRestoreState) return;
+  if (document.body?.classList.contains('desktop-note-window')) return;
+  if (new URLSearchParams(location.search).get('desktopWindow') === 'note') return;
+  _noteSplitRestoreState = readPersistedNoteSplitState();
+  _noteSplitRestorePending = !!_noteSplitRestoreState && (!!_noteSplitRestoreState.peerId || _noteSplitRestoreState.awaiting);
+}
+
+function tryRestorePersistedNoteSplit() {
+  if (!_noteSplitRestorePending || !_noteSplitRestoreState) return false;
+  if (!activeId || !canUseNoteSplit(false)) return false;
+  const saved = _noteSplitRestoreState;
+  const peerId = String(saved.peerId || '').trim();
+  if (peerId) {
+    if (!notes?.[peerId]) return false;
+    if (!canRenderSplitPeer(peerId)) {
+      _noteSplitRestorePending = false;
+      _noteSplitRestoreState = null;
+      localStorage.removeItem(NOTE_SPLIT_STORAGE_KEY);
+      return false;
+    }
+    _noteSplitRestorePending = false;
+    _noteSplitRestoreState = null;
+    const state = setNoteSplitState(peerId, saved.side, false);
+    state.dividerRatio = normaliseNoteSplitRatio(saved.dividerRatio);
+    refreshNoteSplitView();
+    if (saved.activePane === 'peer') setNoteSplitActivePane('peer');
+    return true;
+  }
+  if (saved.awaiting) {
+    _noteSplitRestorePending = false;
+    _noteSplitRestoreState = null;
+    openEmptyNoteSplit(saved.side);
+    applyNoteSplitRatio(saved.dividerRatio);
+    return true;
+  }
+  _noteSplitRestorePending = false;
+  _noteSplitRestoreState = null;
+  return false;
+}
+
+function selectionBelongsToRoot(root) {
+  if (!root) return false;
+  const selection = window.getSelection();
+  if (!selection?.rangeCount) return false;
+  const node = selection.getRangeAt(0).commonAncestorContainer;
+  const owner = node?.nodeType === Node.ELEMENT_NODE ? node : node?.parentElement;
+  return !!(owner && root.contains(owner));
 }
 
 function noteSplitElements() {
@@ -85,12 +178,26 @@ function noteSplitElements() {
     workspace: document.getElementById('note-workspace'),
     peerPane: document.getElementById('note-split-peer-pane'),
     peerTitle: document.getElementById('note-split-peer-title'),
+    peerArea: document.getElementById('note-split-peer-area'),
     peerBody: document.getElementById('note-split-peer-body'),
     closeButton: document.getElementById('note-split-close-btn'),
+    peerFocusButton: document.getElementById('note-split-peer-focus-btn'),
     toggleButton: document.getElementById('note-split-toggle-btn'),
     divider: document.getElementById('note-split-divider'),
     dropOverlay: document.getElementById('note-split-drop-overlay')
   };
+}
+
+async function focusNoteSplitPeerFullscreen() {
+  const peerId = getNoteSplitPeerId();
+  if (!peerId || !notes?.[peerId]) {
+    if (typeof showToast === 'function') showToast('Open A Note In Split View First', 'error');
+    return false;
+  }
+  flushSplitPeerSave();
+  if (typeof openNote === 'function') await openNote(peerId);
+  if (typeof setNoteFocusMode === 'function') setNoteFocusMode(true);
+  return true;
 }
 
 function noteSplitRatioBounds() {
@@ -112,14 +219,14 @@ function normaliseNoteSplitRatio(value) {
 function applyNoteSplitRatio(value = noteSplitState().dividerRatio) {
   const ratio = normaliseNoteSplitRatio(value);
   const state = noteSplitState();
-  const { editorView, workspace, divider } = noteSplitElements();
-  const available = Math.max(0, (workspace?.getBoundingClientRect().width || 0) - NOTE_SPLIT_DIVIDER_WIDTH);
-  const leftSize = Math.round(available * ratio);
-  const rightSize = Math.max(0, Math.round(available) - leftSize);
+  const { editorView, divider } = noteSplitElements();
   state.dividerRatio = ratio;
-  editorView?.style.setProperty('--note-split-left-size', leftSize + 'px');
-  editorView?.style.setProperty('--note-split-right-size', rightSize + 'px');
+  // Fractional units keep both panes filling the workspace when the sidebar
+  // folds/expands or the window size changes.
+  editorView?.style.setProperty('--note-split-left-size', ratio + 'fr');
+  editorView?.style.setProperty('--note-split-right-size', (1 - ratio) + 'fr');
   divider?.setAttribute('aria-valuenow', String(Math.round(ratio * 100)));
+  persistNoteSplitState();
   return ratio;
 }
 
@@ -153,7 +260,7 @@ function updateNoteSplitToggleButton() {
   const open = noteSplitHasPane();
   toggleButton.disabled = !canOpen;
   toggleButton.classList.toggle('active', open);
-  toggleButton.title = open ? 'Close Split View' : 'Open Split View';
+  toggleButton.title = open ? 'Close Note' : 'Open Split View';
   toggleButton.setAttribute('aria-label', toggleButton.title);
   toggleButton.setAttribute('aria-pressed', String(open));
   const icon = toggleButton.querySelector('i');
@@ -178,7 +285,7 @@ function setSplitPaneVisible(visible, side = 'right') {
 }
 
 function clearSplitPeerBody() {
-  const { peerPane, peerTitle, peerBody } = noteSplitElements();
+  const { peerPane, peerTitle, peerBody, peerFocusButton } = noteSplitElements();
   if (peerTitle) {
     peerTitle.value = '';
     peerTitle.readOnly = true;
@@ -189,6 +296,7 @@ function clearSplitPeerBody() {
     peerBody.contentEditable = 'false';
     peerBody.classList.remove('is-loading', 'is-empty');
   }
+  if (peerFocusButton) peerFocusButton.disabled = true;
   if (peerPane) {
     peerPane.classList.remove('is-loading', 'is-awaiting');
     delete peerPane.dataset.noteId;
@@ -271,23 +379,50 @@ function restoreNoteSplitPeerSelection() {
 function applyNoteSplitToolbarAction(action) {
   const peerId = getNoteSplitPeerId();
   const { peerBody } = noteSplitElements();
-  if (getNoteSplitActivePane() !== 'peer' || !peerId || !peerBody) return false;
+  if (!peerId || !peerBody || noteSplitIsAwaiting()) return false;
   const note = notes?.[peerId];
   if (!note || !canEditNote(note) || peerBody.contentEditable !== 'true') return false;
-  if (action === 'alarm' || action === 'conversation') {
-    if (typeof showToast === 'function') showToast('Use The Primary Note For This Action', 'error');
+
+  const selectionInPeer = selectionBelongsToRoot(peerBody);
+  if (getNoteSplitActivePane() !== 'peer' && !selectionInPeer) return false;
+
+  setNoteSplitActivePane('peer');
+  if (action === 'alarm') {
+    if (selectionInPeer) rememberNoteSplitPeerSelection();
+    restoreNoteSplitPeerSelection();
+    if (typeof runEditorOperationOnRoot === 'function') {
+      runEditorOperationOnRoot(peerBody, () => openNoteAlarmModal?.(peerId));
+    } else {
+      openNoteAlarmModal?.(peerId);
+    }
     return true;
   }
-  rememberNoteSplitPeerSelection();
+  if (action === 'conversation') {
+    if (selectionInPeer) rememberNoteSplitPeerSelection();
+    restoreNoteSplitPeerSelection();
+    if (typeof openConversationComposerFromSelection === 'function') {
+      if (typeof runEditorOperationOnRoot === 'function') {
+        runEditorOperationOnRoot(peerBody, () => openConversationComposerFromSelection());
+      } else {
+        openConversationComposerFromSelection();
+      }
+    }
+    return true;
+  }
+
+  if (selectionInPeer) rememberNoteSplitPeerSelection();
   restoreNoteSplitPeerSelection();
   if (typeof runEditorActionOnRoot !== 'function' || !runEditorActionOnRoot(peerBody, action)) return false;
-  setNoteSplitActivePane('peer');
+  rememberNoteSplitPeerSelection();
+  try { if (typeof decorateTables === 'function') decorateTables(peerBody); } catch (_) {}
+  try { if (typeof decorateNoteImages === 'function') decorateNoteImages(peerBody); } catch (_) {}
+  if (typeof refreshEmpty === 'function') refreshEmpty(peerBody);
   if (syncSplitPeerNote()) scheduleSplitPeerSave();
   return true;
 }
 
 function renderSplitAwaitingPane() {
-  const { peerPane, peerTitle, peerBody } = noteSplitElements();
+  const { peerPane, peerTitle, peerBody, peerFocusButton } = noteSplitElements();
   if (!peerPane || !peerTitle || !peerBody) return;
   peerPane.classList.remove('is-loading');
   peerPane.classList.add('is-awaiting');
@@ -298,10 +433,12 @@ function renderSplitAwaitingPane() {
   peerBody.contentEditable = 'false';
   peerBody.classList.remove('is-loading', 'is-empty');
   peerBody.innerHTML = '<div class="note-split-placeholder"><i class="fa-solid fa-table-columns"></i><span>Drag A Note Here</span></div>';
+  if (peerFocusButton) peerFocusButton.disabled = true;
 }
 
 function renderSplitPeerBody(root, content) {
   if (!root) return;
+  const peerId = typeof getNoteSplitPeerId === 'function' ? getNoteSplitPeerId() : '';
   if (typeof renderMarkdownContent === 'function') root.innerHTML = renderMarkdownContent(content || '');
   else root.textContent = String(content || '');
   try { if (typeof normalizeThemeTextStyles === 'function') normalizeThemeTextStyles(root); } catch (_) {}
@@ -312,7 +449,15 @@ function renderSplitPeerBody(root, content) {
   try { if (typeof restoreAlarmMarks === 'function') restoreAlarmMarks(root); } catch (_) {}
   try { if (typeof restoreConversationAnchorMarks === 'function') restoreConversationAnchorMarks(root); } catch (_) {}
   try { if (typeof decorateTables === 'function') decorateTables(root); } catch (_) {}
+  try { if (typeof decorateNoteImages === 'function') decorateNoteImages(root); } catch (_) {}
+  try {
+    if (typeof restoreCollapsedState === 'function' && peerId) {
+      if (typeof runEditorOperationOnRoot === 'function') runEditorOperationOnRoot(root, () => restoreCollapsedState(peerId, root));
+      else restoreCollapsedState(peerId, root);
+    }
+  } catch (_) {}
   try { if (typeof refreshEmpty === 'function') refreshEmpty(root); } catch (_) {}
+  try { if (typeof initPeerUndoSnapshot === 'function') initPeerUndoSnapshot(root); } catch (_) {}
 }
 
 async function readSplitPeerBody(note, peerId) {
@@ -327,7 +472,7 @@ async function readSplitPeerBody(note, peerId) {
 function refreshNoteSplitView() {
   const peerId = getNoteSplitPeerId();
   const state = noteSplitState();
-  const { peerPane, peerTitle, peerBody } = noteSplitElements();
+  const { peerPane, peerTitle, peerBody, peerFocusButton } = noteSplitElements();
   if (!peerPane || !peerTitle || !peerBody) return false;
 
   if (!peerId && !state.awaiting) {
@@ -361,6 +506,7 @@ function refreshNoteSplitView() {
   peerBody.classList.add('is-loading');
   peerBody.classList.remove('is-empty');
   peerBody.innerHTML = '<div class="note-split-peer-loading" role="status">Loading Note</div>';
+  if (peerFocusButton) peerFocusButton.disabled = false;
   updateNoteSplitToggleButton();
 
   void readSplitPeerBody(note, peerId)
@@ -404,8 +550,27 @@ function openEmptyNoteSplit(side = 'right') {
   return refreshNoteSplitView();
 }
 
+async function closeNoteSplitLivePane() {
+  if (!noteSplitHasPane()) return false;
+  const peerId = getNoteSplitPeerId();
+  flushSplitPeerSave();
+  if (peerId && notes?.[peerId] && typeof openNote === 'function') {
+    // Opening the peer as primary clears split via afterOpenNoteSplit.
+    await openNote(peerId);
+    return true;
+  }
+  return clearNoteSplitView();
+}
+
+function closeNoteSplitPeerPane() {
+  return clearNoteSplitView();
+}
+
 function toggleNoteSplitView() {
-  if (noteSplitHasPane()) return clearNoteSplitView();
+  if (noteSplitHasPane()) {
+    void closeNoteSplitLivePane();
+    return true;
+  }
   return openEmptyNoteSplit();
 }
 
@@ -458,7 +623,7 @@ function pointInRect(clientX, clientY, rect) {
 }
 
 function getNoteSplitDropSide(clientX, clientY) {
-  const { dropOverlay, peerBody } = noteSplitElements();
+  const { dropOverlay, peerArea, peerBody } = noteSplitElements();
   if (!dropOverlay) return '';
   const zones = [...dropOverlay.querySelectorAll('.note-split-drop-zone')];
   for (const zone of zones) {
@@ -466,7 +631,8 @@ function getNoteSplitDropSide(clientX, clientY) {
       return zone.classList.contains('split-left') ? 'left' : 'right';
     }
   }
-  if (noteSplitIsAwaiting() && peerBody && pointInRect(clientX, clientY, peerBody.getBoundingClientRect())) {
+  const dropTarget = peerArea || peerBody;
+  if (noteSplitIsAwaiting() && dropTarget && pointInRect(clientX, clientY, dropTarget.getBoundingClientRect())) {
     return normaliseNoteSplitSide(noteSplitState().side);
   }
   return '';
@@ -617,7 +783,7 @@ function syncSplitPeerTableTitleInput(input) {
 
 function initNoteSplitView() {
   if (_noteSplitInitialised) return true;
-  const { peerPane, peerBody, peerTitle, closeButton, toggleButton, divider } = noteSplitElements();
+  const { peerPane, peerBody, peerTitle, closeButton, peerFocusButton, toggleButton, divider } = noteSplitElements();
   if (!peerPane || !peerBody || !peerTitle) {
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initNoteSplitView, { once: true });
     return false;
@@ -645,7 +811,11 @@ function initNoteSplitView() {
   });
   closeButton?.addEventListener('click', event => {
     event.preventDefault();
-    clearNoteSplitView();
+    closeNoteSplitPeerPane();
+  });
+  peerFocusButton?.addEventListener('click', event => {
+    event.preventDefault();
+    void focusNoteSplitPeerFullscreen();
   });
   toggleButton?.addEventListener('click', event => {
     event.preventDefault();
@@ -656,74 +826,19 @@ function initNoteSplitView() {
   divider?.addEventListener('pointerup', finishNoteSplitResize);
   divider?.addEventListener('pointercancel', finishNoteSplitResize);
   divider?.addEventListener('keydown', handleNoteSplitDividerKeydown);
-  peerBody.addEventListener('beforeinput', event => {
+  if (typeof bindEditorRootListeners === 'function') bindEditorRootListeners(peerBody);
+  peerBody.addEventListener('beforeinput', () => setNoteSplitActivePane('peer'));
+  peerBody.addEventListener('input', () => {
     setNoteSplitActivePane('peer');
-    const note = notes?.[getNoteSplitPeerId()];
-    if (!note || !canEditNote(note)) event.preventDefault();
-  });
-  peerBody.addEventListener('input', event => {
-    setNoteSplitActivePane('peer');
-    const tableTitleInput = event?.target?.closest?.('[data-table-title-input]');
-    if (tableTitleInput && peerBody.contains(tableTitleInput)) syncSplitPeerTableTitleInput(tableTitleInput);
     rememberNoteSplitPeerSelection();
-    if (!syncSplitPeerNote()) return;
-    scheduleSplitPeerSave();
   });
-  peerBody.addEventListener('pointerdown', event => {
-    const imageResizeHandle = event.target.closest?.('[data-note-image-resize]');
-    if (imageResizeHandle && peerBody.contains(imageResizeHandle)) {
-      runNoteSplitPeerTableOperation(() => startNoteImageResize?.(event, imageResizeHandle));
-      return;
-    }
-    const imageDragHandle = event.target.closest?.('[data-note-image-drag]');
-    if (imageDragHandle && peerBody.contains(imageDragHandle)) {
-      const imageBlock = imageDragHandle.closest?.('.note-image-block');
-      if (imageBlock) runNoteSplitPeerTableOperation(() => startEditorBlockDrag?.(event, imageBlock));
-      return;
-    }
-    const tableDragHandle = event.target.closest?.('[data-editor-block-drag="table"]');
-    if (tableDragHandle && peerBody.contains(tableDragHandle)) {
-      const tableWrap = tableDragHandle.closest?.('.note-table-wrap');
-      if (tableWrap) runNoteSplitPeerTableOperation(() => startEditorBlockDrag?.(event, tableWrap));
-      return;
-    }
-    const reorderHandle = event.target.closest?.('[data-table-reorder]');
-    if (reorderHandle && peerBody.contains(reorderHandle)) {
-      runNoteSplitPeerTableOperation(() => startTableReorder?.(event, reorderHandle));
-      return;
-    }
-    const resizeHandle = event.target.closest?.('[data-table-resize]');
-    if (resizeHandle && peerBody.contains(resizeHandle)) {
-      runNoteSplitPeerTableOperation(() => startTableColumnResize?.(event, resizeHandle));
-    }
+  peerBody.addEventListener('mouseup', () => {
+    setNoteSplitActivePane('peer');
+    rememberNoteSplitPeerSelection();
   });
-  peerBody.addEventListener('mousedown', event => {
-    const tableButton = event.target.closest?.('[data-table-action]');
-    if (!tableButton || !peerBody.contains(tableButton)) return;
-    event.preventDefault();
-    event.stopPropagation();
-    runNoteSplitPeerTableOperation(() => handleTableControl?.(tableButton));
-  });
-  peerBody.addEventListener('click', event => {
-    const imageDragHandle = event.target.closest?.('[data-note-image-drag]');
-    if (imageDragHandle && peerBody.contains(imageDragHandle)) {
-      event.preventDefault();
-      event.stopPropagation();
-      return;
-    }
-    const tableDragHandle = event.target.closest?.('[data-editor-block-drag="table"]');
-    if (tableDragHandle && peerBody.contains(tableDragHandle)) {
-      event.preventDefault();
-      event.stopPropagation();
-    }
-  });
-  peerBody.addEventListener('keydown', event => {
-    if (!event.target.closest?.('[data-table-title-input]')) return;
-    if (event.key === 'Enter') {
-      event.preventDefault();
-      event.target.blur();
-    }
-    event.stopPropagation();
+  peerBody.addEventListener('keyup', () => {
+    setNoteSplitActivePane('peer');
+    rememberNoteSplitPeerSelection();
   });
   peerTitle.addEventListener('input', () => {
     setNoteSplitActivePane('peer');
@@ -745,7 +860,10 @@ function initNoteSplitView() {
     const owner = range?.commonAncestorContainer?.nodeType === Node.ELEMENT_NODE
       ? range.commonAncestorContainer
       : range?.commonAncestorContainer?.parentElement;
-    if (owner && peerBody.contains(owner)) markPeerActive();
+    if (owner && peerBody.contains(owner)) {
+      markPeerActive();
+      rememberNoteSplitPeerSelection();
+    }
   });
   document.addEventListener('dragover', handleNoteSplitDragOver);
   document.addEventListener('drop', handleNoteSplitDrop);
@@ -754,7 +872,22 @@ function initNoteSplitView() {
   window.addEventListener('resize', () => {
     if (noteSplitHasPane() && !canUseNoteSplit(false)) clearNoteSplitView();
     else if (noteSplitHasPane()) applyNoteSplitRatio();
+    else tryRestorePersistedNoteSplit();
   });
+  const { workspace } = noteSplitElements();
+  if (workspace && typeof ResizeObserver === 'function') {
+    let resizeFrame = 0;
+    const workspaceObserver = new ResizeObserver(() => {
+      if (!noteSplitHasPane()) return;
+      if (resizeFrame) cancelAnimationFrame(resizeFrame);
+      resizeFrame = requestAnimationFrame(() => {
+        resizeFrame = 0;
+        if (noteSplitHasPane() && canUseNoteSplit(false)) applyNoteSplitRatio();
+        else if (noteSplitHasPane()) clearNoteSplitView();
+      });
+    });
+    workspaceObserver.observe(workspace);
+  }
   document.addEventListener('keydown', event => {
     if (event.key !== 'Escape' || !_noteSplitDrag) return;
     finishNoteSplitDrag();
@@ -764,6 +897,7 @@ function initNoteSplitView() {
       if (noteSplitHasPane() && !canUseNoteSplit(false)) clearNoteSplitView();
     }).observe(document.body, { attributes: true, attributeFilter: ['class'] });
   }
+  beginInitialNoteSplitRestore();
   clearNoteSplitView();
   return true;
 }

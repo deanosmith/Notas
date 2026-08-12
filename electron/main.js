@@ -543,6 +543,13 @@ function createWindow(options, behavior = {}) {
   });
 
   configureWindowSecurity(win);
+  win.webContents.on('before-input-event', (event, input) => {
+    if (!input || input.type !== 'keyDown') return;
+    const key = String(input.key || '').toLowerCase();
+    if ((input.meta || input.control) && !input.alt && !input.shift && key === 'w') {
+      event.preventDefault();
+    }
+  });
   if (behavior.showImmediately) win.show();
   else if (behavior.showOnReady !== false) showWindowWhenReady(win);
   win.on('close', event => {
@@ -995,7 +1002,7 @@ function buildApplicationMenu() {
           click: toggleFocusedNoteWindow
         },
         { type: 'separator' },
-        { label: 'Close Window', role: 'close' }
+        { label: 'Close Window', enabled: false }
       ]
     },
     {

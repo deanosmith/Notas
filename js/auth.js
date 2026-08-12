@@ -362,6 +362,7 @@ onAuthStateChanged(auth, async user => {
       userId = user.uid;
       prepareAuthenticatedHome();
       if (typeof beginInitialNoteRestore === 'function') beginInitialNoteRestore();
+      if (typeof beginInitialNoteSplitRestore === 'function') beginInitialNoteSplitRestore();
       overlay.style.display = 'none';
       updateUserAvatar(user);
       const signoutRow = document.getElementById('signout-row');
