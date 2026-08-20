@@ -23,6 +23,7 @@ let myNoteAccessByNote = {};
 let profileLinkRequests = {};
 let profileLinkRequestSources = {};
 let readNotifications = {};
+let doneReminders = {};
 let noteAlarms = {};
 let sentReminders = {};
 let profileShareNotifications = {};

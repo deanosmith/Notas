@@ -907,7 +907,7 @@ function attachSidebarSelectionHandlers(target) {
     row.dataset.selectionRowHandlerFor = list.id;
     row.addEventListener('click', e => {
       if (!list.classList.contains('selection-mode')) return;
-      if (e.target.closest('.sidebar-select-control, [data-clear-alarm-note], [data-conversation-delete-subject]')) return;
+      if (e.target.closest('.sidebar-select-control, [data-clear-alarm-note], [data-alarm-done-key], [data-conversation-delete-subject]')) return;
       const box = row.querySelector('[data-select-key]');
       if (!box) return;
       e.preventDefault();
@@ -1956,6 +1956,7 @@ function applyFontSize() {
   document.documentElement.style.setProperty('--editor-font-size', editorFontSize + 'px');
   const val = document.getElementById('fs-val');
   if (val) val.textContent = editorFontSize;
+  if (typeof scheduleEditorScrollPastEnd === 'function') scheduleEditorScrollPastEnd();
 }
 
 function normalizeEditorLineHeight(value) {
@@ -1972,6 +1973,7 @@ function applyLineHeight() {
   document.documentElement.style.setProperty('--editor-line-height', formatEditorLineHeight(editorLineHeight));
   const val = document.getElementById('ls-val');
   if (val) val.textContent = formatEditorLineHeight(editorLineHeight);
+  if (typeof scheduleEditorScrollPastEnd === 'function') scheduleEditorScrollPastEnd();
 }
 
 function applySidebarNotePreviewMode() {

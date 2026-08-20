@@ -20,6 +20,10 @@ function _notificationStateStorageKey() {
   return 'notas_read_notifications_' + userId;
 }
 
+function _doneRemindersStorageKey() {
+  return 'notas_done_reminders_' + userId;
+}
+
 function _noteAlarmsStorageKey() {
   return 'notas_note_alarms_' + userId;
 }
@@ -503,6 +507,41 @@ function _readNotificationState(data) {
   return out;
 }
 
+function _readDoneRemindersFromLocal() {
+  if (!userId) return {};
+  try {
+    const raw = localStorage.getItem(_doneRemindersStorageKey());
+    const parsed = raw ? JSON.parse(raw) : {};
+    const out = {};
+    Object.keys(parsed || {}).forEach(id => { if (parsed[id]) out[id] = true; });
+    return out;
+  } catch (err) {
+    console.error('read done reminders local:', err);
+    return {};
+  }
+}
+
+function _writeDoneRemindersToLocal() {
+  if (!userId) return;
+  try {
+    const keys = Object.keys(doneReminders).filter(key => doneReminders[key]);
+    if (keys.length) localStorage.setItem(_doneRemindersStorageKey(), JSON.stringify(keys.reduce((acc, key) => {
+      acc[key] = true;
+      return acc;
+    }, {})));
+    else localStorage.removeItem(_doneRemindersStorageKey());
+  } catch (err) {
+    console.error('write done reminders local:', err);
+  }
+}
+
+function _readDoneReminders(data) {
+  const raw = data?.doneReminders && typeof data.doneReminders === 'object' ? data.doneReminders : {};
+  const out = {};
+  Object.keys(raw).forEach(id => { if (raw[id]) out[id] = true; });
+  return out;
+}
+
 function applyUserProfileData(data) {
   if (data?.profile) {
     const photos = profilePhotoFields(
@@ -532,6 +571,18 @@ function applyUserProfileData(data) {
   if (Object.keys(localOnly).length) {
     setDoc(_getUserDocRef(), { readNotifications: localOnly }, { merge: true })
       .catch(err => console.error('sync local notification reads:', err));
+  }
+  const remoteDoneReminders = _readDoneReminders(data);
+  const localDoneReminders = _readDoneRemindersFromLocal();
+  doneReminders = _mergeNotificationState(remoteDoneReminders, localDoneReminders);
+  _writeDoneRemindersToLocal();
+  const localOnlyDoneReminders = {};
+  Object.keys(localDoneReminders).forEach(id => {
+    if (!remoteDoneReminders[id]) localOnlyDoneReminders[id] = true;
+  });
+  if (Object.keys(localOnlyDoneReminders).length) {
+    setDoc(_getUserDocRef(), { doneReminders: localOnlyDoneReminders }, { merge: true })
+      .catch(err => console.error('sync local done reminders:', err));
   }
   const remoteNoteAlarms = _readNoteAlarms(data);
   const localNoteAlarms = _readNoteAlarmsFromLocal();

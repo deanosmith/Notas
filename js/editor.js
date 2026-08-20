@@ -2012,7 +2012,54 @@ function showEditorView(show) {
   document.getElementById('editorView').style.display  = show ? 'flex' : 'none';
   if (!show && typeof setNoteFocusMode === 'function') setNoteFocusMode(false);
   if (!show && typeof listenToConversationsForNote === 'function') listenToConversationsForNote(null);
+  if (show) scheduleEditorScrollPastEnd();
 }
+
+function editorLineHeightPx(ed) {
+  if (!ed) return 24;
+  const styles = getComputedStyle(ed);
+  const fontSize = parseFloat(styles.fontSize) || 15;
+  const raw = styles.lineHeight;
+  const parsed = parseFloat(raw);
+  if (raw && raw !== 'normal' && Number.isFinite(parsed)) return parsed;
+  const multiplier = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--editor-line-height')) || 1.66;
+  return fontSize * multiplier;
+}
+
+function syncEditorScrollPastEnd(ed) {
+  if (!ed) return;
+  const lineHeight = editorLineHeightPx(ed);
+  const pad = ed.clientHeight > 0 ? Math.max(0, Math.round(ed.clientHeight - lineHeight)) : 0;
+  const next = pad + 'px';
+  if (ed.style.getPropertyValue('--editor-scroll-end') === next) return;
+  ed.style.setProperty('--editor-scroll-end', next);
+}
+
+function syncAllEditorScrollPastEnd() {
+  syncEditorScrollPastEnd(document.getElementById('editor'));
+  syncEditorScrollPastEnd(document.getElementById('note-split-peer-body'));
+}
+
+let _editorScrollPastEndFrame = 0;
+function scheduleEditorScrollPastEnd() {
+  if (_editorScrollPastEndFrame) return;
+  _editorScrollPastEndFrame = requestAnimationFrame(() => {
+    _editorScrollPastEndFrame = 0;
+    syncAllEditorScrollPastEnd();
+  });
+}
+
+function bindEditorScrollPastEnd(root) {
+  if (!root || root.dataset.editorScrollPastEndBound === '1') return;
+  root.dataset.editorScrollPastEndBound = '1';
+  if (typeof ResizeObserver === 'function') {
+    const observer = new ResizeObserver(() => scheduleEditorScrollPastEnd());
+    observer.observe(root);
+  }
+  scheduleEditorScrollPastEnd();
+}
+
+window.addEventListener('resize', scheduleEditorScrollPastEnd);
 
 /* Delete Modal */
 
@@ -5342,7 +5389,10 @@ function getAlarmItems() {
   });
   return items
     .map(normalizeReminderListItem)
-    .sort((a, b) => new Date(a.alarmAt) - new Date(b.alarmAt));
+    .sort((a, b) => {
+      if (!!a.done !== !!b.done) return a.done ? 1 : -1;
+      return new Date(a.alarmAt) - new Date(b.alarmAt);
+    });
 }
 
 function scheduleAlarmRefresh(items = getAlarmItems()) {
@@ -5369,7 +5419,7 @@ function renderAlarmButton() {
   const badge = document.getElementById('alarm-badge');
   if (!badge) return;
   const items = getAlarmItems();
-  const count = items.filter(item => item.due && item.direction !== 'sent').length;
+  const count = items.filter(item => item.due && !item.done && item.direction !== 'sent').length;
   badge.textContent = count > 99 ? '99+' : String(count);
   badge.hidden = count === 0;
   scheduleAlarmRefresh(items);
@@ -5414,23 +5464,29 @@ function reminderItemReadKeys(item) {
 function normalizeReminderListItem(item) {
   const readKeys = reminderItemReadKeys(item);
   const readable = readKeys.length > 0;
+  const key = reminderItemKey(item);
   return {
     ...item,
-    key: reminderItemKey(item),
+    key,
     readable,
-    read: readable ? readKeys.some(key => !!readNotifications[key]) : false
+    read: readable ? readKeys.some(key => !!readNotifications[key]) : false,
+    done: !!(typeof doneReminders === 'object' && doneReminders[key])
   };
 }
 
 function renderReminderItem(item) {
-  return '<div class="profile-row alarm-row sidebar-selectable-row' + (item.due ? ' due' : '') + (item.readable && !item.read ? ' unread' : '') + '" data-alarm-note-id="' + esc(item.noteId) + '" data-alarm-id="' + esc(item.alarmId) + '" data-alarm-kind="' + esc(item.kind) + '" data-alarm-key="' + esc(item.key) + '">' +
+  const doneLabel = item.done ? 'Mark As Active' : 'Mark As Done';
+  return '<div class="profile-row alarm-row sidebar-selectable-row' + (item.due && !item.done ? ' due' : '') + (item.done ? ' done' : '') + (item.readable && !item.read ? ' unread' : '') + '" data-alarm-note-id="' + esc(item.noteId) + '" data-alarm-id="' + esc(item.alarmId) + '" data-alarm-kind="' + esc(item.kind) + '" data-alarm-key="' + esc(item.key) + '">' +
     (typeof renderSidebarSelectionCheckbox === 'function' ? renderSidebarSelectionCheckbox(item.key, 'Select reminder') : '') +
     '<span class="alarm-icon"><i class="' + reminderItemIcon(item) + '"></i></span>' +
     '<div class="profile-main">' +
       '<div class="alarm-text">' + esc(item.text) + '</div>' +
       '<div class="alarm-note-title">' + esc(reminderItemMeta(item)) + '</div>' +
-      '<div class="notification-time">' + esc(formatAlarmDateTime(item.alarmAt)) + (item.due ? ' · Due' : '') + '</div>' +
+      '<div class="notification-time">' + esc(formatAlarmDateTime(item.alarmAt)) + (item.done ? ' · Done' : (item.due ? ' · Due' : '')) + '</div>' +
     '</div>' +
+    '<button class="sidebar-row-icon-btn alarm-done-btn' + (item.done ? ' is-done' : '') + '" type="button" data-alarm-done-key="' + esc(item.key) + '" title="' + esc(doneLabel) + '" aria-label="' + esc(doneLabel) + '" aria-pressed="' + (item.done ? 'true' : 'false') + '">' +
+      '<i class="fa-solid fa-check"></i>' +
+    '</button>' +
   '</div>';
 }
 
@@ -5457,8 +5513,16 @@ function renderAlarmsList(target = 'alarms-list') {
   list.querySelectorAll('[data-alarm-note-id]').forEach(row => {
     row.addEventListener('click', e => {
       if (e.target.closest('[data-clear-alarm-note]')) return;
+      if (e.target.closest('[data-alarm-done-key]')) return;
       if (e.target.closest('[data-select-key]')) return;
       openAlarmFromList(row.dataset.alarmNoteId, row.dataset.alarmId, row.dataset.alarmKind);
+    });
+  });
+  list.querySelectorAll('[data-alarm-done-key]').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      toggleReminderDone(btn.dataset.alarmDoneKey);
     });
   });
   list.querySelectorAll('[data-clear-alarm-note]').forEach(btn => {
@@ -5467,6 +5531,24 @@ function renderAlarmsList(target = 'alarms-list') {
       clearNoteAlarm(btn.dataset.clearAlarmNote, btn.dataset.clearAlarmId, btn.dataset.clearAlarmKind);
     });
   });
+}
+
+async function toggleReminderDone(key) {
+  const reminderKey = String(key || '').trim();
+  if (!reminderKey) return;
+  const next = !doneReminders[reminderKey];
+  if (next) doneReminders[reminderKey] = true;
+  else delete doneReminders[reminderKey];
+  if (typeof _writeDoneRemindersToLocal === 'function') _writeDoneRemindersToLocal();
+  renderAlarmButton();
+  if (document.getElementById('alarms-modal')?.classList.contains('open')) renderAlarmsList();
+  refreshOpenSidebarPage('alarms');
+  if (!userId || typeof _getUserDocRef !== 'function' || typeof setDoc !== 'function') return;
+  try {
+    await setDoc(_getUserDocRef(), { doneReminders: { [reminderKey]: next } }, { merge: true });
+  } catch (err) {
+    console.error('persist reminder done:', err);
+  }
 }
 
 function reminderItemsForKeys(keys = []) {

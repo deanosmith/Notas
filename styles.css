@@ -1054,6 +1054,11 @@ body.note-focus-mode .status-bar {
 .sidebar-row-icon-btn:hover { color: var(--text); border-color: rgba(var(--orb-r),var(--orb-g),var(--orb-b),.32); background: rgba(var(--orb-r),var(--orb-g),var(--orb-b),.12); }
 .sidebar-row-icon-btn.danger { color: var(--danger); border-color: rgba(255,69,58,.28); background: rgba(255,69,58,.1); }
 .sidebar-row-icon-btn.danger:hover { color: #fff; border-color: rgba(255,69,58,.52); background: rgba(255,69,58,.58); }
+.alarm-done-btn { width: 22px; height: 22px; align-self: center; color: var(--muted); }
+.alarm-done-btn i { font-size: 10px; }
+.alarm-done-btn:hover { color: var(--success); border-color: rgba(52,211,153,.38); background: rgba(52,211,153,.12); }
+.alarm-done-btn.is-done { color: var(--success); border-color: rgba(52,211,153,.4); background: rgba(52,211,153,.16); }
+.alarm-done-btn.is-done:hover { color: var(--text); border-color: rgba(52,211,153,.52); background: rgba(52,211,153,.22); }
 .sidebar-page-empty { padding: 14px 4px; color: var(--muted); font-size: 12px; line-height: 1.45; }
 .trash-list { display: flex; flex-direction: column; gap: 7px; }
 .trash-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 9px 10px; border: 1px solid var(--glass-border); border-radius: var(--radius-sm); background: linear-gradient(180deg, rgba(255,255,255,.045), rgba(255,255,255,.015)); }
@@ -1215,6 +1220,10 @@ body.light-mode .notification-badge {
 }
 .alarm-row { cursor: pointer; align-items: flex-start; }
 .alarm-row.due { border-color: rgba(255,159,10,.36); background: linear-gradient(180deg, rgba(255,159,10,.13), rgba(255,255,255,.02)); }
+.alarm-row.done { opacity: .62; }
+.alarm-row.done .alarm-text { color: var(--muted); font-weight: 650; }
+.alarm-row.done .alarm-icon { color: var(--muted); background: rgba(255,255,255,.04); }
+body.light-mode .alarm-row.done .alarm-icon { background: rgba(0,0,0,.05); }
 .alarm-icon { width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0; background: rgba(var(--orb-r),var(--orb-g),var(--orb-b),.14); color: var(--accent-ink, var(--accent)); display: flex; align-items: center; justify-content: center; font-size: 13px; }
 .alarm-text { font-size: 12.5px; font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .alarm-note-title { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -1402,14 +1411,14 @@ body.text-styling-hidden #toolbar { display: none !important; }
 /* WYSIWYG Editor */
 .editor-area { flex: 1; margin: 12px 24px 0; border-radius: var(--radius); overflow: hidden; background: var(--note-panel-bg); border: 1px solid var(--glass-border); display: flex; min-height: 0; box-shadow: var(--shadow); position: relative; -webkit-backdrop-filter: blur(26px) saturate(145%); backdrop-filter: blur(26px) saturate(145%); }
 .editor-area::before { content: ''; position: absolute; inset: 0 0 auto 0; height: 1px; background: linear-gradient(90deg, rgba(255,255,255,0), var(--glass-highlight), rgba(255,255,255,0)); pointer-events: none; }
-.editor { flex: 1; max-width: 100%; padding: 26px 30px; outline: none; overflow-x: hidden; overflow-y: auto; font-size: var(--editor-font-size, 15px); line-height: var(--editor-line-height, 1.66); color: var(--text); caret-color: var(--accent-caret, var(--accent)); cursor: text; word-wrap: break-word; overflow-wrap: anywhere; white-space: pre-wrap; tab-size: 4; background: linear-gradient(180deg, rgba(255,255,255,.018), rgba(255,255,255,.006)); position: relative; box-sizing: border-box; }
-.editor.is-empty::before { content: attr(data-placeholder); color: var(--muted); opacity: .4; pointer-events: none; position: absolute; top: 26px; left: 30px; }
+.editor { --editor-pad-y: 26px; --editor-pad-x: 30px; --editor-scroll-end: 0px; flex: 1; max-width: 100%; padding: var(--editor-pad-y) var(--editor-pad-x) max(var(--editor-pad-y), var(--editor-scroll-end)); outline: none; overflow-x: hidden; overflow-y: auto; font-size: var(--editor-font-size, 15px); line-height: var(--editor-line-height, 1.66); color: var(--text); caret-color: var(--accent-caret, var(--accent)); cursor: text; word-wrap: break-word; overflow-wrap: anywhere; white-space: pre-wrap; tab-size: 4; background: linear-gradient(180deg, rgba(255,255,255,.018), rgba(255,255,255,.006)); position: relative; box-sizing: border-box; }
+.editor.is-empty::before { content: attr(data-placeholder); color: var(--muted); opacity: .4; pointer-events: none; position: absolute; top: var(--editor-pad-y); left: var(--editor-pad-x); }
 .editor.is-loading { cursor: progress; }
 .editor.is-loading::after {
   content: '';
   position: absolute;
-  left: 30px;
-  top: 30px;
+  left: var(--editor-pad-x);
+  top: calc(var(--editor-pad-y) + 4px);
   width: min(120px, calc(100% - 60px));
   height: 6px;
   border-radius: 999px;
@@ -1489,6 +1498,99 @@ body.light-mode .editor [data-header-domain-end]::after {
   font-size: .9em;
 }
 .editor li { margin: 4px 0; }
+.editor :is(ul:not(.checklist), ol) > li:has(> .note-image-block),
+.editor :is(ul:not(.checklist), ol) > li:has(> .note-alarm .note-image-block),
+.editor :is(ul:not(.checklist), ol) > li:has(> .note-conversation-anchor .note-image-block),
+.editor :is(ul:not(.checklist), ol) > li:has(> img.note-image) {
+  position: relative;
+  list-style: none;
+}
+.editor :is(ul:not(.checklist), ol) > li:has(> .note-image-block)::marker,
+.editor :is(ul:not(.checklist), ol) > li:has(> .note-alarm .note-image-block)::marker,
+.editor :is(ul:not(.checklist), ol) > li:has(> .note-conversation-anchor .note-image-block)::marker,
+.editor :is(ul:not(.checklist), ol) > li:has(> img.note-image)::marker {
+  content: none;
+}
+.editor ul:not(.checklist) > li:has(> .note-image-block)::before,
+.editor ul:not(.checklist) > li:has(> .note-alarm .note-image-block)::before,
+.editor ul:not(.checklist) > li:has(> .note-conversation-anchor .note-image-block)::before,
+.editor ul:not(.checklist) > li:has(> img.note-image)::before {
+  content: '';
+  position: absolute;
+  left: -1.35em;
+  top: 50%;
+  width: .42em;
+  height: .42em;
+  border-radius: 50%;
+  background: currentColor;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+.editor ol > li:has(> .note-image-block)::before,
+.editor ol > li:has(> .note-alarm .note-image-block)::before,
+.editor ol > li:has(> .note-conversation-anchor .note-image-block)::before,
+.editor ol > li:has(> img.note-image)::before {
+  content: counter(list-item) '.';
+  position: absolute;
+  left: -1.7em;
+  top: 50%;
+  width: auto;
+  height: auto;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  font-size: .9em;
+  line-height: 1;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+.editor ul:not(.checklist) ul:not(.checklist) > li:has(> .note-image-block)::before,
+.editor ul:not(.checklist) ul:not(.checklist) > li:has(> .note-alarm .note-image-block)::before,
+.editor ul:not(.checklist) ul:not(.checklist) > li:has(> .note-conversation-anchor .note-image-block)::before,
+.editor ul:not(.checklist) ul:not(.checklist) > li:has(> img.note-image)::before {
+  background: transparent;
+  border: 1.5px solid currentColor;
+  box-sizing: border-box;
+}
+.editor ul:not(.checklist) ul:not(.checklist) ul:not(.checklist) > li:has(> .note-image-block)::before,
+.editor ul:not(.checklist) ul:not(.checklist) ul:not(.checklist) > li:has(> .note-alarm .note-image-block)::before,
+.editor ul:not(.checklist) ul:not(.checklist) ul:not(.checklist) > li:has(> .note-conversation-anchor .note-image-block)::before,
+.editor ul:not(.checklist) ul:not(.checklist) ul:not(.checklist) > li:has(> img.note-image)::before {
+  border: 0;
+  border-radius: 1px;
+  background: currentColor;
+}
+.editor ul:not(.checklist) ul:not(.checklist) ul:not(.checklist) ul:not(.checklist) > li:has(> .note-image-block)::before,
+.editor ul:not(.checklist) ul:not(.checklist) ul:not(.checklist) ul:not(.checklist) > li:has(> .note-alarm .note-image-block)::before,
+.editor ul:not(.checklist) ul:not(.checklist) ul:not(.checklist) ul:not(.checklist) > li:has(> .note-conversation-anchor .note-image-block)::before,
+.editor ul:not(.checklist) ul:not(.checklist) ul:not(.checklist) ul:not(.checklist) > li:has(> img.note-image)::before {
+  content: '◻';
+  width: auto;
+  height: auto;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  font-size: .9em;
+  line-height: 1;
+}
+.editor ul:not(.checklist) ul:not(.checklist) ul:not(.checklist) ul:not(.checklist) ul:not(.checklist) > li:has(> .note-image-block)::before,
+.editor ul:not(.checklist) ul:not(.checklist) ul:not(.checklist) ul:not(.checklist) ul:not(.checklist) > li:has(> .note-alarm .note-image-block)::before,
+.editor ul:not(.checklist) ul:not(.checklist) ul:not(.checklist) ul:not(.checklist) ul:not(.checklist) > li:has(> .note-conversation-anchor .note-image-block)::before,
+.editor ul:not(.checklist) ul:not(.checklist) ul:not(.checklist) ul:not(.checklist) ul:not(.checklist) > li:has(> img.note-image)::before {
+  content: '⬥';
+}
+.editor ul:not(.checklist) ul:not(.checklist) ul:not(.checklist) ul:not(.checklist) ul:not(.checklist) ul:not(.checklist) > li:has(> .note-image-block)::before,
+.editor ul:not(.checklist) ul:not(.checklist) ul:not(.checklist) ul:not(.checklist) ul:not(.checklist) ul:not(.checklist) > li:has(> .note-alarm .note-image-block)::before,
+.editor ul:not(.checklist) ul:not(.checklist) ul:not(.checklist) ul:not(.checklist) ul:not(.checklist) ul:not(.checklist) > li:has(> .note-conversation-anchor .note-image-block)::before,
+.editor ul:not(.checklist) ul:not(.checklist) ul:not(.checklist) ul:not(.checklist) ul:not(.checklist) ul:not(.checklist) > li:has(> img.note-image)::before {
+  content: '⬦';
+}
+.editor li > .note-image-block,
+.editor li > .note-alarm.note-image-annotation,
+.editor li > .note-conversation-anchor.note-image-annotation {
+  vertical-align: middle;
+  margin-bottom: 0;
+}
 .editor blockquote { border-left: 3px solid var(--accent); padding: 3px 0 3px 18px; color: var(--muted); margin: 0 0 10px; font-style: italic; }
 .editor code { font-family: var(--mono); background: rgba(var(--orb-r),var(--orb-g),var(--orb-b),.14); color: var(--accent-ink, var(--accent)); font-weight: 400; padding: 2px 5px; border: 1px solid rgba(var(--orb-r),var(--orb-g),var(--orb-b),.24); border-radius: 5px; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; max-width: 100%; box-decoration-break: clone; -webkit-box-decoration-break: clone; line-height: inherit; vertical-align: baseline; }
 .editor [data-inline-code-exit] { color: var(--text); font-family: var(--font); background: none; border: 0; padding: 0; }
@@ -3668,8 +3770,8 @@ body.light-mode .folder-color-swatch { background: rgba(0,0,0,.03); border-color
   .doc-title-input { font-size: 19px; }
   .tb-btn { height: 32px; min-width: 32px; font-size: 13px; }
   .editor-area { margin: 8px 14px 0; border-radius: var(--radius-sm); }
-  .editor { padding: 18px 20px; font-size: max(var(--editor-font-size, 16px), 16px); }
-  .editor.is-empty::before { top: 18px; left: 20px; }
+  .editor { --editor-pad-y: 18px; --editor-pad-x: 20px; font-size: max(var(--editor-font-size, 16px), 16px); }
+  .editor.is-empty::before { top: var(--editor-pad-y); left: var(--editor-pad-x); }
   .modal-input { font-size: 16px; }
   .sidebar-search input { font-size: 16px; }
   .item-menu-btn { opacity: .55; }

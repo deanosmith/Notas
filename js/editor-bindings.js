@@ -1,6 +1,7 @@
 function bindEditorRootListeners(root) {
   if (!root || root.dataset.editorInteractionsBound === '1') return false;
   root.dataset.editorInteractionsBound = '1';
+  if (typeof bindEditorScrollPastEnd === 'function') bindEditorScrollPastEnd(root);
   const noteId = () => editorRootNoteId(root);
 
   function runNoteImageClipboardCommand(command) {

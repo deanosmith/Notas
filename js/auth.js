@@ -67,6 +67,7 @@ function resetAuthenticatedWorkspaceState() {
   profileLinkRequests = {};
   profileLinkRequestSources = {};
   readNotifications = {};
+  doneReminders = {};
   noteAlarms = {};
   sentReminders = {};
   profileShareNotifications = {};
@@ -437,6 +438,7 @@ onAuthStateChanged(auth, async user => {
     profileLinkRequests = {};
     profileLinkRequestSources = {};
     readNotifications = {};
+    doneReminders = {};
     noteAlarms = {};
     sentReminders = {};
     profileShareNotifications = {};
