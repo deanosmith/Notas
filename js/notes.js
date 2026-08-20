@@ -225,11 +225,14 @@ function applyNoteEditorChrome(note) {
   titleEl.value    = note.title;
   titleEl.readOnly = !isEditable;
   document.getElementById('toolbar').style.display   = isEditable ? '' : 'none';
+  const undoRedo = document.getElementById('mob-undo-redo');
+  if (undoRedo) undoRedo.hidden = !isEditable;
   document.getElementById('share-btn').style.display = isOwned && !isTrashedNote(note) ? '' : 'none';
   const conversationToggleBtn = document.getElementById('conversation-toggle-btn');
   if (conversationToggleBtn) conversationToggleBtn.style.display = userId ? '' : 'none';
   const ed = document.getElementById('editor');
   ed.contentEditable = isEditable ? 'true' : 'false';
+  if (typeof updateUndoRedoButtons === 'function') updateUndoRedoButtons();
   return { ed, titleEl, isOwned, isEditable };
 }
 

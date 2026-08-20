@@ -75,6 +75,22 @@ function trimUndoStackMemory(stack) {
   }
 }
 
+function updateUndoRedoButtons() {
+  const undoBtn = document.getElementById('mob-undo-btn');
+  const redoBtn = document.getElementById('mob-redo-btn');
+  if (!undoBtn && !redoBtn) return;
+  const canUndo = undoStack.length > 0 || appUndoStack.length > 0;
+  const canRedo = redoStack.length > 0 || appRedoStack.length > 0;
+  if (undoBtn) {
+    undoBtn.disabled = !canUndo;
+    undoBtn.setAttribute('aria-disabled', undoBtn.disabled ? 'true' : 'false');
+  }
+  if (redoBtn) {
+    redoBtn.disabled = !canRedo;
+    redoBtn.setAttribute('aria-disabled', redoBtn.disabled ? 'true' : 'false');
+  }
+}
+
 function pushUndoState(stack, snapshot) {
   if (!snapshot) return;
   const top = stack[stack.length - 1];
@@ -139,6 +155,7 @@ function pushUndo() {
   }
   pushUndoState(undoStack, _lastUndoSnapshot);
   _undoTransactionOpen = true;
+  updateUndoRedoButtons();
 }
 
 function initUndoSnapshot() {
@@ -148,6 +165,7 @@ function initUndoSnapshot() {
   redoStack.length = 0;
   clearTimeout(_undoDebounceTimer);
   _undoTransactionOpen = false;
+  updateUndoRedoButtons();
 }
 
 function initPeerUndoSnapshot(root = document.getElementById('note-split-peer-body')) {
@@ -199,6 +217,7 @@ function commitUndoSnapshot() {
       undoStack.pop();
     }
     _undoTransactionOpen = false;
+    updateUndoRedoButtons();
     return;
   }
   markEditorHistoryTouched();
@@ -206,11 +225,13 @@ function commitUndoSnapshot() {
     _lastUndoSnapshot = current;
     redoStack.length = 0;
     _undoTransactionOpen = false;
+    updateUndoRedoButtons();
     return;
   }
   pushUndoState(undoStack, _lastUndoSnapshot);
   _lastUndoSnapshot = current;
   redoStack.length = 0;
+  updateUndoRedoButtons();
 }
 
 function flushUndoSnapshot() {
@@ -250,6 +271,7 @@ function performUndo() {
     _peerLastUndoSnapshot = makeUndoSnapshot(ed);
     _peerUndoTransactionOpen = false;
     if (syncEditorRootContent(ed)) scheduleEditorRootSave(ed);
+    updateUndoRedoButtons();
     return;
   }
   if (!undoStack.length) return;
@@ -260,6 +282,7 @@ function performUndo() {
   _lastUndoDomain = 'editor';
   _lastRedoDomain = 'editor';
   if (syncActiveNoteFromEditor()) scheduleSave();
+  updateUndoRedoButtons();
 }
 
 function performRedo() {
@@ -272,6 +295,7 @@ function performRedo() {
     _peerLastUndoSnapshot = makeUndoSnapshot(ed);
     _peerUndoTransactionOpen = false;
     if (syncEditorRootContent(ed)) scheduleEditorRootSave(ed);
+    updateUndoRedoButtons();
     return;
   }
   if (!redoStack.length) return;
@@ -282,6 +306,7 @@ function performRedo() {
   _lastUndoDomain = 'editor';
   _lastRedoDomain = 'editor';
   if (syncActiveNoteFromEditor()) scheduleSave();
+  updateUndoRedoButtons();
 }
 
 function recordAppHistoryAction(action) {
@@ -309,6 +334,7 @@ function recordAppHistoryAction(action) {
   appRedoStack.length = 0;
   _lastUndoDomain = 'app';
   _lastRedoDomain = '';
+  updateUndoRedoButtons();
 }
 
 async function applyNoteTitleHistory(action, title) {
@@ -433,6 +459,7 @@ async function performAppUndo() {
   } finally {
     _appHistoryApplying = false;
     _appHistoryBusy = false;
+    updateUndoRedoButtons();
   }
 }
 
@@ -459,6 +486,7 @@ async function performAppRedo() {
   } finally {
     _appHistoryApplying = false;
     _appHistoryBusy = false;
+    updateUndoRedoButtons();
   }
 }
 
@@ -5416,12 +5444,15 @@ function scheduleAlarmRefresh(items = getAlarmItems()) {
 }
 
 function renderAlarmButton() {
-  const badge = document.getElementById('alarm-badge');
-  if (!badge) return;
   const items = getAlarmItems();
   const count = items.filter(item => item.due && !item.done && item.direction !== 'sent').length;
-  badge.textContent = count > 99 ? '99+' : String(count);
-  badge.hidden = count === 0;
+  const label = count > 99 ? '99+' : String(count);
+  ['alarm-badge', 'mob-alarm-badge'].forEach(id => {
+    const badge = document.getElementById(id);
+    if (!badge) return;
+    badge.textContent = label;
+    badge.hidden = count === 0;
+  });
   scheduleAlarmRefresh(items);
   if (typeof notifyNotificationIndicatorsChanged === 'function') notifyNotificationIndicatorsChanged();
 }

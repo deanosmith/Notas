@@ -26,12 +26,12 @@
   <div id="loading-overlay"><div class="loading-spinner"></div></div>
 
   <header id="mob-header">
-    <button class="mob-btn" id="drawer-btn"><i class="fa-solid fa-bars"></i></button>
+    <button class="mob-btn" id="drawer-btn" type="button" title="Open Sidebar" aria-label="Open Sidebar"><i class="fa-solid fa-bars"></i></button>
     <button class="mob-logo" id="mob-logo-btn" type="button" title="Home" aria-label="Home">
       <img class="brand-icon" src="notas-icon.png" alt="" />
       <img class="brand-wordmark" src="notas.png" alt="Notas" />
     </button>
-    <button class="mob-btn accent" id="mob-new-btn"><i class="fa-solid fa-plus"></i></button>
+    <button class="mob-btn accent" id="mob-new-btn" type="button" title="New Note" aria-label="New Note"><i class="fa-solid fa-plus"></i></button>
   </header>
 
   <div id="drawer-overlay"></div>
@@ -81,6 +81,7 @@
         <button class="app-logo" id="sidebar-logo-btn" type="button" title="Home" aria-label="Home">
           <img class="brand-wordmark" src="notas.png" alt="Notas" />
         </button>
+        <div class="sidebar-mobile-heading" id="sidebar-mobile-heading">Notes</div>
         <div class="app-history-controls" role="group" aria-label="Note Navigation">
           <button class="app-history-btn" id="app-back-btn" type="button" title="Previous Note" aria-label="Previous Note" disabled>
             <i class="fa-solid fa-chevron-left"></i>
@@ -90,6 +91,26 @@
           </button>
         </div>
       </div>
+      <nav class="sidebar-mobile-nav" aria-label="Library">
+        <button class="sidebar-mobile-nav-btn" data-sidebar-view="alarms" type="button" title="Reminders" aria-label="Reminders" aria-pressed="false">
+          <i class="fa-solid fa-clock"></i>
+          <span>Reminders</span>
+          <span class="notification-badge" id="mob-alarm-badge" hidden>0</span>
+        </button>
+        <button class="sidebar-mobile-nav-btn" data-sidebar-view="conversations" type="button" title="Conversations" aria-label="Conversations" aria-pressed="false">
+          <i class="fa-solid fa-comments"></i>
+          <span>Conversations</span>
+          <span class="notification-badge" id="mob-conversation-badge" hidden>0</span>
+        </button>
+        <button class="sidebar-mobile-nav-btn" data-sidebar-view="friends" type="button" title="Friends" aria-label="Friends" aria-pressed="false">
+          <i class="fa-solid fa-user-group"></i>
+          <span>Friends</span>
+        </button>
+        <button class="sidebar-mobile-nav-btn" data-sidebar-view="trash" type="button" title="Trash" aria-label="Trash" aria-pressed="false">
+          <i class="fa-solid fa-trash"></i>
+          <span>Trash</span>
+        </button>
+      </nav>
       <div class="sidebar-search">
         <input type="text" id="search-input" placeholder="Search Notes" autocomplete="off" />
         <button class="sidebar-search-clear" id="search-clear-btn" type="button" title="Clear Search" aria-label="Clear Search" hidden><i class="fa-solid fa-xmark"></i></button>
@@ -148,6 +169,16 @@
                 </div>
                 <div class="header-actions" id="header-actions">
                   <button class="new-note-btn header-action-btn" id="share-btn" type="button" title="Share Note"><i class="fa-solid fa-arrow-up-from-bracket"></i></button>
+                </div>
+                <div class="mob-undo-redo" id="mob-undo-redo">
+                  <button class="mob-history-btn" id="mob-undo-btn" type="button" title="Undo" aria-label="Undo" disabled>
+                    <i class="fa-solid fa-rotate-left"></i>
+                    <span>Undo</span>
+                  </button>
+                  <button class="mob-history-btn" id="mob-redo-btn" type="button" title="Redo" aria-label="Redo" disabled>
+                    <i class="fa-solid fa-rotate-right"></i>
+                    <span>Redo</span>
+                  </button>
                 </div>
               </div>
             </div>
@@ -223,6 +254,22 @@
       <button class="conversation-resize-handle conversation-resize-handle-right" id="conversation-resize-right" type="button" title="Resize Conversations" aria-label="Resize Conversations" data-conversation-resize-edge="right"></button>
     </aside>
   </div>
+
+  <nav id="mob-tabbar" aria-label="Mobile Navigation">
+    <button class="mob-tab" id="mob-tab-notifications" data-mob-tab="notifications" type="button" aria-label="Notifications">
+      <i class="fa-solid fa-bell"></i>
+      <span>Notifications</span>
+      <span class="notification-badge" id="mob-notification-badge" hidden>0</span>
+    </button>
+    <button class="mob-tab active" id="mob-tab-notes" data-mob-tab="notes" type="button" aria-label="Notes" aria-current="page">
+      <i class="fa-regular fa-note-sticky"></i>
+      <span>Notes</span>
+    </button>
+    <button class="mob-tab" id="mob-tab-settings" data-mob-tab="settings" type="button" aria-label="Settings">
+      <i class="fa-solid fa-gear"></i>
+      <span>Settings</span>
+    </button>
+  </nav>
 
   <div id="conversation-selection-popover" class="conversation-selection-popover" hidden>
     <button id="conversation-selection-start-btn" type="button" title="Start Conversation" aria-label="Start Conversation">

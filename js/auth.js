@@ -27,6 +27,7 @@ function closeTransientSurfaces() {
   document.getElementById('sidebar')?.classList.remove('open');
   document.getElementById('drawer-overlay')?.classList.remove('open');
   if (typeof updateMobileSidebarToggleLabel === 'function') updateMobileSidebarToggleLabel(false);
+  if (typeof updateMobileTabState === 'function') updateMobileTabState();
   if (_mentionShareResolver) {
     const resolve = _mentionShareResolver;
     _mentionShareResolver = null;

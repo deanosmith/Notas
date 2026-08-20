@@ -351,14 +351,23 @@ function sortedAllConversations() {
 
 function updateConversationRailBadge() {
   const badge = document.getElementById('conversation-badge');
-  if (!badge) return;
   const unreadCount = Object.values(allConversations || {}).reduce((sum, conv) => sum + conversationUnreadCount(conv.id), 0);
   const label = unreadCount + ' unread conversation message' + (unreadCount === 1 ? '' : 's');
-  badge.classList.add('conversation-notification-icon');
-  badge.innerHTML = '<i class="fa-solid fa-bell"></i>';
-  badge.title = label;
-  badge.setAttribute('aria-label', label);
-  badge.hidden = unreadCount <= 0;
+  if (badge) {
+    badge.classList.add('conversation-notification-icon');
+    badge.innerHTML = '<i class="fa-solid fa-bell"></i>';
+    badge.title = label;
+    badge.setAttribute('aria-label', label);
+    badge.hidden = unreadCount <= 0;
+  }
+  const mobBadge = document.getElementById('mob-conversation-badge');
+  if (mobBadge) {
+    mobBadge.classList.remove('conversation-notification-icon');
+    mobBadge.textContent = unreadCount > 99 ? '99+' : String(unreadCount);
+    mobBadge.title = label;
+    mobBadge.setAttribute('aria-label', label);
+    mobBadge.hidden = unreadCount <= 0;
+  }
   if (typeof notifyNotificationIndicatorsChanged === 'function') notifyNotificationIndicatorsChanged();
   if (typeof refreshOpenSidebarPage === 'function') refreshOpenSidebarPage('conversations');
 }

@@ -3143,11 +3143,14 @@ function getMentionItems() {
 }
 
 function renderNotificationButton() {
-  const badge = document.getElementById('notification-badge');
-  if (!badge) return;
   const unread = getNotificationItems().filter(n => !n.read).length;
-  badge.textContent = unread > 99 ? '99+' : String(unread);
-  badge.hidden = unread === 0;
+  const label = unread > 99 ? '99+' : String(unread);
+  ['notification-badge', 'mob-notification-badge'].forEach(id => {
+    const badge = document.getElementById(id);
+    if (!badge) return;
+    badge.textContent = label;
+    badge.hidden = unread === 0;
+  });
   if (typeof notifyNotificationIndicatorsChanged === 'function') notifyNotificationIndicatorsChanged();
 }
 

@@ -69,6 +69,7 @@ function closeSettingsModal() {
   document.getElementById('color-popover')?.setAttribute('hidden', '');
   document.getElementById('accent-picker-btn')?.setAttribute('aria-expanded', 'false');
   document.getElementById('settings-modal')?.classList.remove('open');
+  if (typeof updateMobileTabState === 'function') updateMobileTabState();
 }
 
 function closeColorPopover() {
@@ -140,6 +141,10 @@ function handleEscapeNavigation() {
     setNoteFocusMode(false);
     return true;
   }
+  if (isMobile() && document.getElementById('sidebar')?.classList.contains('open')) {
+    closeDrawer();
+    return true;
+  }
   if (typeof navigateAlternatingNoteHistory === 'function' && navigateAlternatingNoteHistory()) {
     return true;
   }
@@ -148,6 +153,9 @@ function handleEscapeNavigation() {
 
 document.getElementById('drawer-btn').addEventListener('click',     toggleDrawer);
 document.getElementById('mob-logo-btn').addEventListener('click', () => setSidebarView('notes'));
+document.querySelectorAll('[data-mob-tab]').forEach(btn => {
+  btn.addEventListener('click', () => selectMobileTab(btn.dataset.mobTab));
+});
 document.getElementById('sidebar-logo-btn').addEventListener('click', e => {
   toggleSidebarFromLogo(e);
 });
@@ -376,6 +384,36 @@ document.getElementById('toolbar').addEventListener('touchend', e => {
   if (!['link', 'alarm', 'conversation'].includes(btn.dataset.action)) scheduleUndoSnapshot();
 });
 
+function runMobileEditorHistory(direction) {
+  const redo = direction === 'redo';
+  const peerBody = document.getElementById('note-split-peer-body');
+  const peerEditorFocused = !!peerBody && document.activeElement === peerBody;
+  if (peerEditorFocused) {
+    runEditorOperationOnRoot(peerBody, () => redo ? performRedo() : performUndo());
+    return;
+  }
+  if (redo) {
+    if (_lastRedoDomain === 'app' && appRedoStack.length) performAppRedo();
+    else if (redoStack.length) performRedo();
+    else performAppRedo();
+    return;
+  }
+  if (_lastUndoDomain === 'app' && appUndoStack.length) performAppUndo();
+  else if (undoStack.length) performUndo();
+  else performAppUndo();
+}
+
+['mob-undo-btn', 'mob-redo-btn'].forEach(id => {
+  const btn = document.getElementById(id);
+  if (!btn) return;
+  const direction = id === 'mob-redo-btn' ? 'redo' : 'undo';
+  btn.addEventListener('mousedown', e => e.preventDefault());
+  btn.addEventListener('click', () => {
+    if (btn.disabled) return;
+    runMobileEditorHistory(direction);
+  });
+});
+
 document.getElementById('doc-title').addEventListener('focus', () => {
   _docTitleUndoState = activeId && notes[activeId]
     ? { noteId: activeId, title: notes[activeId].title || 'Untitled Note' }
@@ -546,9 +584,37 @@ document.addEventListener('keydown', e => {
 let _sx = 0;
 document.addEventListener('touchstart', e => { _sx = e.touches[0].clientX; }, { passive: true });
 document.addEventListener('touchend',   e => {
+  if (!isMobile()) return;
+  if (document.querySelector('.modal-overlay.open')) return;
+  if (document.body.classList.contains('mob-keyboard-open')) return;
   const dx = e.changedTouches[0].clientX - _sx;
-  if (Math.abs(dx) > 52) { dx > 0 && _sx < 30 ? openDrawer() : closeDrawer(); }
+  if (Math.abs(dx) <= 52) return;
+  const sidebarOpen = document.getElementById('sidebar')?.classList.contains('open');
+  if (dx > 0 && _sx < 24) {
+    if (sidebarOpen) return;
+    if (sidebarView !== 'notes') setSidebarView('notes');
+    else openDrawer();
+    return;
+  }
+  if (dx < 0 && sidebarOpen) closeDrawer();
 }, { passive: true });
+
+function syncMobileKeyboardInset() {
+  if (!isMobile()) {
+    document.body.classList.remove('mob-keyboard-open');
+    document.documentElement.style.removeProperty('--mob-vv-height');
+    return;
+  }
+  const viewport = window.visualViewport;
+  const visibleHeight = viewport?.height || window.innerHeight;
+  const keyboardOpen = !!viewport && (window.innerHeight - visibleHeight) > 80;
+  document.body.classList.toggle('mob-keyboard-open', keyboardOpen);
+  document.documentElement.style.setProperty('--mob-vv-height', Math.round(visibleHeight) + 'px');
+}
+syncMobileKeyboardInset();
+window.visualViewport?.addEventListener('resize', syncMobileKeyboardInset);
+window.visualViewport?.addEventListener('scroll', syncMobileKeyboardInset);
+window.addEventListener('resize', syncMobileKeyboardInset);
 
 document.execCommand('defaultParagraphSeparator', false, 'p');
 
@@ -583,6 +649,8 @@ renderNotificationButton();
 renderAlarmButton();
 renderProfileConnectionUI();
 updateAppNavigationButtons();
+updateUndoRedoButtons();
+updateMobileTabState();
 // Always start open; only a direct logo click can fold the desktop sidebar.
 localStorage.removeItem('notas_sidebar_minimized');
 sidebarMinimized = false;
