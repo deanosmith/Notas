@@ -33,6 +33,7 @@ function nextFolderOrderValue() {
 }
 
 function createFolder(title) {
+  if (typeof isGuestReadOnly === 'function' && isGuestReadOnly()) return;
   const id  = 'folder_' + Date.now();
   const now = new Date().toISOString();
   const folder = { id, title: title.trim() || 'Untitled Folder', public: false, iconColor: DEFAULT_FOLDER_ICON_COLOR, iconColorMode: 'manual', sharedWith: {}, sharedAccessKeys: [], order: nextFolderOrderValue(), created: now, modified: now };

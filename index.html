@@ -131,6 +131,13 @@
       <div id="editorView">
         <div class="note-workspace" id="note-workspace">
           <section class="note-live-pane" id="note-live-pane" aria-label="Active Note">
+            <div class="guest-read-bar" id="guest-read-bar" hidden>
+              <div class="guest-read-brand">
+                <img src="notas-icon.png" alt="" />
+                <span>Read Only</span>
+              </div>
+              <button class="modal-btn primary" id="guest-sign-in-btn" type="button">Sign In</button>
+            </div>
             <div class="main-header">
               <div class="main-title-row">
                 <input class="doc-title-input" id="doc-title" type="text" placeholder="Untitled Note" autocomplete="off" />
@@ -436,6 +443,12 @@
         <span class="visually-hidden">Notas</span>
       </h1>
       <p class="auth-sub">Your personal notes, synced across devices.</p>
+      <div id="guest-share-actions" hidden>
+        <button id="guest-view-note-btn" type="button">View Without Signing In</button>
+        <button id="guest-back-to-note-btn" type="button" hidden>Back to Note</button>
+        <p class="auth-guest-hint" id="guest-share-hint">Read this note only. Sign in to use the rest of Notas.</p>
+        <div class="auth-divider"><span>or</span></div>
+      </div>
       <form id="early-access-form" class="early-access-form">
         <label class="auth-field" for="early-access-code">
           <span>Early Access Code</span>
@@ -473,21 +486,7 @@
     <div class="modal">
       <div class="modal-title"><i class="fa-solid fa-arrow-up-from-bracket" style="margin-right:8px;opacity:.7;"></i><span id="share-modal-title">Share Note</span></div>
       <div class="share-link-panel" id="share-link-panel">
-        <div class="share-link-header">
-          <div>
-            <div class="share-link-title"><i class="fa-solid fa-link"></i><span>Link Sharing</span></div>
-            <div class="share-link-sub" id="share-link-status">Off</div>
-          </div>
-          <label class="toggle" title="Link Sharing">
-            <input id="share-link-toggle" type="checkbox" aria-label="Link Sharing" />
-            <span class="toggle-slider"></span>
-          </label>
-        </div>
-        <input class="modal-input" id="share-link-input" type="text" readonly />
-        <div class="share-link-actions">
-          <button class="modal-btn primary" id="copy-link-btn" style="flex:1;justify-content:center;display:flex;gap:6px;"><i class="fa-solid fa-copy"></i> Copy Link</button>
-          <button class="modal-btn primary" id="native-share-btn" style="flex:1;justify-content:center;display:none;gap:6px;"><i class="fa-solid fa-share-nodes"></i> Share</button>
-        </div>
+        <button class="modal-btn primary" id="copy-link-btn" type="button"><i class="fa-solid fa-copy"></i> Copy Link</button>
       </div>
       <p style="font-size:12px;color:var(--muted);margin-bottom:20px;line-height:1.5;" id="share-modal-desc">Friends receive this note directly.</p>
       <div class="share-profile-panel" id="share-profile-panel">

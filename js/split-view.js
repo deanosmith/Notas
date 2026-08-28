@@ -231,6 +231,7 @@ function applyNoteSplitRatio(value = noteSplitState().dividerRatio) {
 }
 
 function noteSplitBlockedReason() {
+  if (typeof isGuestReadOnly === 'function' && isGuestReadOnly()) return 'Split View Is Not Available For Read Only Notes';
   if (window.innerWidth < NOTE_SPLIT_MIN_WIDTH) return 'Split View Requires A Wider Window';
   if (typeof isNoteFocusMode === 'function' && isNoteFocusMode()) return 'Exit Focus Mode To Use Split View';
   if (document.body?.classList.contains('desktop-note-window')) return 'Split View Is Not Available In Pop Out Notes';

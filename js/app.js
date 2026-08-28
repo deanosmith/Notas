@@ -58,6 +58,7 @@ showEditorView(false);
 configureAuthLandingUI();
 
 function openShortcutsModal() {
+  if (typeof isGuestReadOnly === 'function' && isGuestReadOnly()) return;
   document.getElementById('shortcuts-modal')?.classList.add('open');
 }
 
@@ -88,6 +89,13 @@ function closeOpenOverlayById(id) {
 }
 
 function handleEscapeNavigation() {
+  if (typeof isGuestReadOnly === 'function' && isGuestReadOnly()) {
+    const overlay = document.getElementById('auth-overlay');
+    if (overlay && overlay.style.display === 'flex') {
+      if (typeof returnToGuestNote === 'function') returnToGuestNote();
+      return true;
+    }
+  }
   const mentionPopoverClosed = typeof hideMentionPopover === 'function' && hideMentionPopover();
   if (mentionPopoverClosed) return true;
   const conversationSelectionClosed = typeof hideConversationSelectionPopover === 'function' && hideConversationSelectionPopover();
@@ -177,6 +185,9 @@ document.getElementById('auth-logo-btn')?.addEventListener('click', toggleTestPa
 document.getElementById('early-access-form')?.addEventListener('submit', submitEarlyAccessCode);
 document.getElementById('google-signin-btn').addEventListener('click', signInWithGoogle);
 document.getElementById('test-password-signin-form')?.addEventListener('submit', signInWithTestPassword);
+document.getElementById('guest-view-note-btn')?.addEventListener('click', () => enterGuestReadOnlyMode());
+document.getElementById('guest-back-to-note-btn')?.addEventListener('click', returnToGuestNote);
+document.getElementById('guest-sign-in-btn')?.addEventListener('click', showAuthOverlayFromGuest);
 document.getElementById('signout-btn').addEventListener('click', () => {
   closeTransientSurfaces();
   signOut(auth);
@@ -291,9 +302,7 @@ document.getElementById('profile-link-modal').addEventListener('click', e => { i
 document.getElementById('note-focus-btn')?.addEventListener('click', toggleNoteFocusMode);
 document.getElementById('note-focus-exit-btn')?.addEventListener('click', () => setNoteFocusMode(false));
 document.getElementById('share-btn').addEventListener('click',       () => openShareModal('note', activeId));
-document.getElementById('share-link-toggle').addEventListener('change', e => setShareLinkEnabled(e.target.checked));
 document.getElementById('copy-link-btn').addEventListener('click',   copyShareLink);
-document.getElementById('native-share-btn').addEventListener('click', nativeShare);
 document.getElementById('share-close').addEventListener('click',     () => document.getElementById('share-modal').classList.remove('open'));
 document.getElementById('share-modal').addEventListener('click',     e => { if (e.target === e.currentTarget) document.getElementById('share-modal').classList.remove('open'); });
 document.getElementById('new-folder-btn')?.addEventListener('click', openFolderModal);
@@ -483,6 +492,11 @@ document.addEventListener('keydown', e => {
   }
   const mod = /Mac/.test(navigator.platform) ? e.metaKey : e.ctrlKey;
   if (!mod) return;
+  if (typeof isGuestReadOnly === 'function' && isGuestReadOnly()) {
+    const guestKey = e.key.toLowerCase();
+    if (guestKey === 'n' || guestKey === 'p' || (guestKey === 'f' && e.shiftKey)) e.preventDefault();
+    return;
+  }
   const key = e.key.toLowerCase();
   // Browser/Electron may still close the tab/window; Electron menu also disables this.
   if (key === 'w' && !e.shiftKey && !e.altKey) {
@@ -585,6 +599,7 @@ let _sx = 0;
 document.addEventListener('touchstart', e => { _sx = e.touches[0].clientX; }, { passive: true });
 document.addEventListener('touchend',   e => {
   if (!isMobile()) return;
+  if (typeof isGuestReadOnly === 'function' && isGuestReadOnly()) return;
   if (document.querySelector('.modal-overlay.open')) return;
   if (document.body.classList.contains('mob-keyboard-open')) return;
   const dx = e.changedTouches[0].clientX - _sx;

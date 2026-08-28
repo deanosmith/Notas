@@ -32,6 +32,23 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/notes/$(noteId)).data.owner == request.auth.uid;
     }
 
+    function noteData(noteId) {
+      return get(/databases/$(database)/documents/notes/$(noteId)).data;
+    }
+
+    function noteIsNotDeleted(data) {
+      return !data.keys().hasAny(["deletedAt"]);
+    }
+
+    function noteIsPublicLink(data) {
+      return (data.public == true || data.linkPublic == true) && noteIsNotDeleted(data);
+    }
+
+    function noteIsGuestReadable(noteId) {
+      return exists(/databases/$(database)/documents/notes/$(noteId))
+        && noteIsPublicLink(noteData(noteId));
+    }
+
     function canConverseOnNote(noteId) {
       return signedIn()
         && exists(/databases/$(database)/documents/notes/$(noteId))
@@ -188,7 +205,16 @@ service cloud.firestore {
       allow create: if signedIn()
         && request.resource.data.owner == request.auth.uid;
 
-      allow read: if signedIn()
+      allow get: if noteIsPublicLink(resource.data)
+        || (
+          signedIn() && (
+            resource.data.owner == request.auth.uid
+            || resource.data.public == true
+            || hasNoteAccess(noteId)
+          )
+        );
+
+      allow list: if signedIn()
         && (
           resource.data.owner == request.auth.uid
           || resource.data.public == true
@@ -222,6 +248,34 @@ service cloud.firestore {
 
       allow update, delete: if signedIn()
         && resource.data.owner == request.auth.uid;
+    }
+
+    match /noteBodies/{noteId} {
+      allow get: if noteIsGuestReadable(noteId)
+        || (
+          signedIn() && (
+            resource.data.owner == request.auth.uid
+            || isNoteOwner(noteId)
+            || hasNoteAccess(noteId)
+          )
+        );
+
+      allow list: if false;
+
+      allow create, update: if signedIn()
+        && (
+          isNoteOwner(noteId)
+          || (
+            hasNoteAccess(noteId)
+            && noteAccessRole(noteId) == "editor"
+          )
+        );
+
+      allow delete: if signedIn()
+        && (
+          isNoteOwner(noteId)
+          || resource.data.owner == request.auth.uid
+        );
     }
 
     match /noteAccess/{accessId} {

@@ -38,6 +38,7 @@ function readLastOpenNoteId() {
 
 function rememberLastOpenNote(id) {
   if (!id) return;
+  if (typeof isGuestReadOnly === 'function' && isGuestReadOnly()) return;
   try {
     localStorage.setItem(LAST_OPEN_NOTE_STORAGE_KEY, id);
   } catch {}
@@ -85,6 +86,7 @@ function openInitialNoteOrFirst() {
 }
 
 async function createNote(title, folderId) {
+  if (typeof isGuestReadOnly === 'function' && isGuestReadOnly()) return;
   if (folderId && !isOwnedFolder(folders[folderId])) folderId = null;
   const id  = 'note_' + Date.now();
   const now = new Date().toISOString();
@@ -288,6 +290,7 @@ function applyRemoteNoteBodyContent(noteId, content) {
 async function openNote(id, options = {}) {
   const note = notes[id];
   if (!note) return;
+  if (typeof isGuestReadOnly === 'function' && isGuestReadOnly() && id !== guestNoteId) return;
   if (options?.source === 'sidebar' && typeof routeSidebarNoteOpenInSplit === 'function' && routeSidebarNoteOpenInSplit(id)) return;
   if (activeId && activeId !== id) flushActiveNoteBeforeSwitch(id);
   if (activeId !== id && typeof beforeOpenNoteSplit === 'function') beforeOpenNoteSplit(id);

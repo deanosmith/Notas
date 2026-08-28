@@ -4018,6 +4018,7 @@ function updateTableReorderHandles(table) {
   const rows = [...table.rows];
   const colCount = tableColumnCount(table);
   if (!rows.length || !tableEditorIsEditable(table)) {
+    wrap.classList.remove('has-column-reorder');
     if (controls.childElementCount) controls.replaceChildren();
     return;
   }
@@ -4037,6 +4038,7 @@ function updateTableReorderHandles(table) {
       .map(handle => [handle.dataset.tableReorder + ':' + (handle.dataset.tableRowReorder || handle.dataset.tableColumnReorder), handle])
   );
   const keep = new Set();
+  wrap.classList.toggle('has-column-reorder', colCount > 1);
 
   rows.forEach((row, index) => {
     const rect = row.getBoundingClientRect();
@@ -4062,35 +4064,37 @@ function updateTableReorderHandles(table) {
     keep.add(key);
   });
 
-  for (let index = 0; index < colCount; index++) {
-    const cell = firstRow.cells[index];
-    if (!cell) continue;
-    const rect = cell.getBoundingClientRect();
-    const key = 'column:' + index;
-    const handle = existing.get(key) || document.createElement('button');
-    const active = _tableReorderState?.type === 'column' && _tableReorderState.table === table && _tableReorderState.fromIndex === index;
-    handle.classList.add('table-reorder-handle', 'table-column-reorder-handle');
-    handle.classList.remove('table-row-reorder-handle');
-    handle.classList.toggle('dragging', active);
-    handle.type = 'button';
-    if (handle.dataset.tableReorder !== 'column') handle.dataset.tableReorder = 'column';
-    const columnIndex = String(index);
-    if (handle.dataset.tableColumnReorder !== columnIndex) handle.dataset.tableColumnReorder = columnIndex;
-    if (handle.getAttribute('contenteditable') !== 'false') handle.setAttribute('contenteditable', 'false');
-    if (handle.getAttribute('title') !== 'Move Column') handle.setAttribute('title', 'Move Column');
-    if (handle.getAttribute('aria-label') !== 'Move Column') handle.setAttribute('aria-label', 'Move Column');
-    if (!handle.querySelector(':scope > i.fa-left-right')) handle.innerHTML = '<i class="fa-solid fa-left-right"></i>';
-    const left = rect.left - wrapRect.left + rect.width / 2;
-    if (left < visibleLeft || left > visibleRight) {
-      handle.remove();
-      continue;
+  if (colCount > 1) {
+    for (let index = 0; index < colCount; index++) {
+      const cell = firstRow.cells[index];
+      if (!cell) continue;
+      const rect = cell.getBoundingClientRect();
+      const key = 'column:' + index;
+      const handle = existing.get(key) || document.createElement('button');
+      const active = _tableReorderState?.type === 'column' && _tableReorderState.table === table && _tableReorderState.fromIndex === index;
+      handle.classList.add('table-reorder-handle', 'table-column-reorder-handle');
+      handle.classList.remove('table-row-reorder-handle');
+      handle.classList.toggle('dragging', active);
+      handle.type = 'button';
+      if (handle.dataset.tableReorder !== 'column') handle.dataset.tableReorder = 'column';
+      const columnIndex = String(index);
+      if (handle.dataset.tableColumnReorder !== columnIndex) handle.dataset.tableColumnReorder = columnIndex;
+      if (handle.getAttribute('contenteditable') !== 'false') handle.setAttribute('contenteditable', 'false');
+      if (handle.getAttribute('title') !== 'Move Column') handle.setAttribute('title', 'Move Column');
+      if (handle.getAttribute('aria-label') !== 'Move Column') handle.setAttribute('aria-label', 'Move Column');
+      if (!handle.querySelector(':scope > i.fa-left-right')) handle.innerHTML = '<i class="fa-solid fa-left-right"></i>';
+      const left = rect.left - wrapRect.left + rect.width / 2;
+      if (left < visibleLeft || left > visibleRight) {
+        handle.remove();
+        continue;
+      }
+      const columnLeft = left + 'px';
+      const columnTop = (tableTop + 16) + 'px';
+      if (handle.style.left !== columnLeft) handle.style.left = columnLeft;
+      if (handle.style.top !== columnTop) handle.style.top = columnTop;
+      if (handle.parentNode !== controls) controls.appendChild(handle);
+      keep.add(key);
     }
-    const columnLeft = left + 'px';
-    const columnTop = tableTop + 'px';
-    if (handle.style.left !== columnLeft) handle.style.left = columnLeft;
-    if (handle.style.top !== columnTop) handle.style.top = columnTop;
-    if (handle.parentNode !== controls) controls.appendChild(handle);
-    keep.add(key);
   }
 
   existing.forEach((handle, key) => {
@@ -4240,7 +4244,7 @@ function decorateTables(root = getEd()) {
     updateTableScrollState(table);
     wrap.dataset.noteTableReady = '1';
     if (!editable) {
-      wrap.classList.remove('has-table-controls');
+      wrap.classList.remove('has-table-controls', 'has-column-reorder');
       const controls = wrap.querySelector(':scope > .table-controls');
       if (controls) {
         controls.remove();
@@ -4279,7 +4283,7 @@ function stripTableEditorChrome(root) {
   root.querySelectorAll('.table-reorder-controls,.table-reorder-indicator').forEach(el => el.remove());
   root.querySelectorAll('.editor-block-drop-indicator').forEach(el => el.remove());
   root.querySelectorAll('.note-table-wrap').forEach(wrap => {
-    wrap.classList.remove('has-table-controls', 'editor-block-dragging');
+    wrap.classList.remove('has-table-controls', 'has-column-reorder', 'editor-block-dragging');
     const table = wrap.querySelector(':scope > .note-table-scroll > table, :scope > table');
     if (table) {
       wrap.replaceWith(table);

@@ -119,6 +119,10 @@ let _docTitleUndoState = null;
 
 const _sharedNoteId   = new URLSearchParams(location.search).get('note');
 const _sharedFolderId = new URLSearchParams(location.search).get('folder');
+const GUEST_NOTE_STORAGE_KEY = 'notas_guest_note_id';
+let guestReadOnly = false;
+let guestNoteId = null;
+let _guestEnterSeq = 0;
 
 function notifyNotificationIndicatorsChanged() {
   if (typeof window.refreshDesktopNotificationBadge === 'function') {

@@ -87,6 +87,7 @@ async function confirmDelete() {
 
 /* Sidebar */
 function isOwnedNote(note) {
+  if (typeof isGuestReadOnly === 'function' && isGuestReadOnly()) return false;
   return !note?.owner || note.owner === userId;
 }
 
@@ -843,6 +844,7 @@ function navigateAlternatingNoteHistory() {
 }
 
 function setSidebarView(view) {
+  if (typeof isGuestReadOnly === 'function' && isGuestReadOnly()) return;
   sidebarView = SIDEBAR_VIEWS.has(view) ? view : 'notes';
   if (sidebarMinimized && !isMobile()) setSidebarMinimized(false);
   if (isMobile()) openDrawer();
@@ -1426,6 +1428,7 @@ function updateMobileSidebarToggleLabel(open) {
 }
 
 function openDrawer() {
+  if (typeof isGuestReadOnly === 'function' && isGuestReadOnly()) return;
   document.getElementById('app-rail')?.classList.add('open');
   document.getElementById('sidebar')?.classList.add('open');
   document.getElementById('drawer-overlay')?.classList.add('open');
@@ -1509,6 +1512,7 @@ function updateNoteFocusControl() {
 }
 
 function setNoteFocusMode(enabled) {
+  if (typeof isGuestReadOnly === 'function' && isGuestReadOnly()) enabled = false;
   if (enabled && typeof clearNoteSplitView === 'function') clearNoteSplitView();
   const editorView = document.getElementById('editorView');
   const canFocus = !!activeId && editorView?.style.display !== 'none';
@@ -1523,6 +1527,7 @@ function toggleNoteFocusMode() {
 
 function toggleSidebarFromLogo(e) {
   e?.stopPropagation?.();
+  if (typeof isGuestReadOnly === 'function' && isGuestReadOnly()) return;
   if (isMobile()) {
     if (sidebarView !== 'notes') setSidebarView('notes');
     else toggleDrawer();
@@ -1556,6 +1561,7 @@ function setCreateModalType(type) {
   });
 }
 function openModal(type = 'note') {
+  if (typeof isGuestReadOnly === 'function' && isGuestReadOnly()) return;
   if (type && typeof type === 'object') type = 'note';
   setCreateModalType(type);
   document.getElementById('modal').classList.add('open');
@@ -1633,7 +1639,7 @@ let _themeTransitionTimer = 0;
 const systemThemeQuery = window.matchMedia ? window.matchMedia('(prefers-color-scheme: light)') : null;
 
 const ACCENT_PALETTES = {
-  notas:  { r:205, g:155, b:80,  r2:154, g2:102, b2:48,  accent:'#cd9b50', accentH:'#f5ca7c',
+  notas:  { r:205, g:155, b:80,  r2:154, g2:102, b2:48,  accent:'#bb893e', accentH:'#e3b86a',
             muted:'#71717a', text2:'#d4d4d8', border:'#2b4d73',
             lightMuted:'#6b7280', lightText2:'#1e3a5f', lightBorder:'#98b6d4' },
   blue:   { r:0,   g:180, b:255, r2:0,   g2:80,  b2:180, accent:'#00b4ff', accentH:'#40d0ff',
@@ -2179,6 +2185,7 @@ function initSettings() {
   }
 
   function openSettingsModal() {
+    if (typeof isGuestReadOnly === 'function' && isGuestReadOnly()) return;
     if (isMobile()) closeDrawer();
     updateThemeToggleUI();
     const sidebarPreviewToggle = document.getElementById('sidebar-preview-toggle');

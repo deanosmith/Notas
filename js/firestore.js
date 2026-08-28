@@ -90,7 +90,8 @@ async function loadNoteBody(noteId, options = {}) {
 function listenToActiveNoteBody(noteId) {
   if (activeNoteBodyListeningId === noteId) return;
   clearActiveNoteBodyListener();
-  if (!noteId || !userId) return;
+  if (!noteId) return;
+  if (!userId && !(typeof isGuestReadOnly === 'function' && isGuestReadOnly())) return;
   activeNoteBodyListeningId = noteId;
   activeNoteBodyUnsub = onSnapshot(noteBodyDocRef(noteId), snap => {
     if (!snap.exists()) return;

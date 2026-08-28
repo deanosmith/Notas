@@ -975,37 +975,22 @@ function isShareLinkEnabled() {
   return !!folders[_shareCtx.id]?.public;
 }
 
-function updateShareLinkUI() {
-  const panel = document.getElementById('share-link-panel');
-  const toggle = document.getElementById('share-link-toggle');
-  const status = document.getElementById('share-link-status');
-  const input = document.getElementById('share-link-input');
-  const copyBtn = document.getElementById('copy-link-btn');
-  const nativeBtn = document.getElementById('native-share-btn');
-  const active = isShareLinkEnabled();
-  if (panel) panel.classList.toggle('link-off', !active);
-  if (toggle) toggle.checked = active;
-  if (status) status.textContent = active ? 'On' : 'Off';
-  if (input) input.value = active && _shareCtx
-    ? (_shareCtx.type === 'note' ? getShareUrl(_shareCtx.id) : getFolderShareUrl(_shareCtx.id))
-    : '';
-  if (copyBtn) copyBtn.disabled = !active;
-  if (nativeBtn) nativeBtn.disabled = !active;
+function currentShareUrl() {
+  if (!_shareCtx) return '';
+  return _shareCtx.type === 'note' ? getShareUrl(_shareCtx.id) : getFolderShareUrl(_shareCtx.id);
 }
 
 function openShareModal(type, id) {
+  if (typeof isGuestReadOnly === 'function' && isGuestReadOnly()) return;
   if (type === 'note'   && !notes[id])   return;
   if (type === 'folder' && !folders[id]) return;
   _shareCtx = { type, id };
 
   document.getElementById('share-modal-title').textContent = type === 'note' ? 'Share Note' : 'Share Folder';
   document.getElementById('share-modal-desc').textContent  = type === 'note'
-    ? 'Choose friends to give write access, or turn on a read-only public link.'
-    : 'Choose friends to give write access to every note in this folder, or turn on a read-only public folder link.';
+    ? 'Choose friends to give write access, or copy a read-only public link.'
+    : 'Choose friends to give write access to every note in this folder, or copy a read-only public folder link.';
 
-  const nativeBtn = document.getElementById('native-share-btn');
-  nativeBtn.style.display = navigator.share ? 'flex' : 'none';
-  updateShareLinkUI();
   renderShareProfileList();
 
   document.getElementById('share-modal').classList.add('open');
@@ -1461,6 +1446,7 @@ function directAccessRoleForNote(noteId) {
 
 function canEditNote(note) {
   if (!note) return false;
+  if (typeof isGuestReadOnly === 'function' && isGuestReadOnly()) return false;
   if (isTrashedNote(note)) return false;
   if (isOwnedNote(note)) return true;
   return directAccessRoleForNote(note.id) === 'editor' || note.directAccessRole === 'editor';
@@ -2166,42 +2152,49 @@ async function setNotePublic(noteId, isPublic) {
 
 async function setShareLinkEnabled(enabled) {
   if (!_shareCtx) return false;
-  const toggle = document.getElementById('share-link-toggle');
-  if (toggle) toggle.disabled = true;
   const ok = _shareCtx.type === 'note'
     ? await setNotePublic(_shareCtx.id, enabled)
     : await setFolderPublic(_shareCtx.id, enabled);
-  if (toggle) toggle.disabled = false;
-  updateShareLinkUI();
-  if (ok) {
-    renderSidebar();
-    showToast(enabled ? 'Link Sharing On' : 'Link Sharing Off', 'success');
-  }
+  if (ok) renderSidebar();
   return ok;
 }
 
-async function copyShareLink() {
-  if (!isShareLinkEnabled()) {
-    showToast('Turn On Link Sharing First', 'error');
-    return;
+function copyTextToClipboard(text) {
+  if (navigator.clipboard?.writeText) {
+    return navigator.clipboard.writeText(text).catch(() => copyTextWithFallback(text));
   }
-  const val = document.getElementById('share-link-input').value;
-  navigator.clipboard?.writeText(val).catch(() => {
-    const inp = document.getElementById('share-link-input');
-    inp.select(); document.execCommand('copy');
-  });
-  showToast('Link Copied!', 'success');
+  copyTextWithFallback(text);
+  return Promise.resolve();
 }
 
-async function nativeShare() {
+function copyTextWithFallback(text) {
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.setAttribute('readonly', '');
+  ta.style.position = 'fixed';
+  ta.style.left = '-9999px';
+  document.body.appendChild(ta);
+  ta.select();
+  document.execCommand('copy');
+  ta.remove();
+}
+
+async function copyShareLink() {
   if (!_shareCtx) return;
-  if (!isShareLinkEnabled()) {
-    showToast('Turn On Link Sharing First', 'error');
-    return;
+  const copyBtn = document.getElementById('copy-link-btn');
+  if (copyBtn) copyBtn.disabled = true;
+  try {
+    if (!isShareLinkEnabled()) {
+      const ok = await setShareLinkEnabled(true);
+      if (!ok) return;
+    }
+    const val = currentShareUrl();
+    if (!val) return;
+    await copyTextToClipboard(val);
+    showToast('Link Copied!', 'success');
+  } finally {
+    if (copyBtn) copyBtn.disabled = false;
   }
-  const url   = _shareCtx.type === 'note' ? getShareUrl(_shareCtx.id) : getFolderShareUrl(_shareCtx.id);
-  const title = _shareCtx.type === 'note' ? (notes[_shareCtx.id]?.title || 'Note') : (folders[_shareCtx.id]?.title || 'Folder');
-  navigator.share({ title, url }).catch(() => {});
 }
 
 /* ── Shared Notes: Firestore-backed + per-document real-time listeners ── */
@@ -3504,6 +3497,145 @@ function listenToSharedNotes() {
     settleInitial(fallbackLoads);
   });
   return initialLoad;
+}
+
+function isGuestReadOnly() {
+  return !!guestReadOnly;
+}
+
+function guestShareNoteId() {
+  return String(_sharedNoteId || guestNoteId || '').trim();
+}
+
+function persistGuestNoteSession(noteId) {
+  try {
+    if (noteId) sessionStorage.setItem(GUEST_NOTE_STORAGE_KEY, noteId);
+    else sessionStorage.removeItem(GUEST_NOTE_STORAGE_KEY);
+  } catch {}
+}
+
+function readGuestNoteSession() {
+  try {
+    return String(sessionStorage.getItem(GUEST_NOTE_STORAGE_KEY) || '').trim();
+  } catch {
+    return '';
+  }
+}
+
+function isPublicGuestNoteData(data) {
+  if (!data || data.deletedAt) return false;
+  return !!(data.public || data.linkPublic || (typeof noteLinkPublicFromData === 'function' && noteLinkPublicFromData(data)));
+}
+
+function applyGuestReadOnlyChrome(enabled) {
+  document.body.classList.toggle('guest-read-only', !!enabled);
+  const bar = document.getElementById('guest-read-bar');
+  if (bar) bar.hidden = !enabled;
+  if (enabled) {
+    if (typeof setNoteFocusMode === 'function') setNoteFocusMode(false);
+    if (typeof clearNoteSplitView === 'function') clearNoteSplitView();
+  }
+}
+
+function configureGuestShareUI() {
+  const wrap = document.getElementById('guest-share-actions');
+  const viewBtn = document.getElementById('guest-view-note-btn');
+  const backBtn = document.getElementById('guest-back-to-note-btn');
+  const hint = document.getElementById('guest-share-hint');
+  const sub = document.querySelector('#auth-overlay .auth-sub');
+  if (!wrap) return;
+  const hasLink = !!guestShareNoteId();
+  wrap.hidden = !hasLink;
+  const viewing = isGuestReadOnly();
+  if (viewBtn) viewBtn.hidden = !hasLink || viewing;
+  if (backBtn) backBtn.hidden = !hasLink || !viewing;
+  if (hint) hint.hidden = !hasLink || viewing;
+  if (sub) {
+    sub.textContent = hasLink
+      ? 'Open this shared note without an account, or sign in to add it to your library.'
+      : 'Your personal notes, synced across devices.';
+  }
+}
+
+function exitGuestReadOnlyMode() {
+  _guestEnterSeq += 1;
+  guestReadOnly = false;
+  guestNoteId = null;
+  persistGuestNoteSession('');
+  applyGuestReadOnlyChrome(false);
+  configureGuestShareUI();
+}
+
+function showAuthOverlayFromGuest() {
+  const overlay = document.getElementById('auth-overlay');
+  if (overlay) overlay.style.display = 'flex';
+  setAuthError('');
+  configureAuthLandingUI();
+  configureGuestShareUI();
+}
+
+function returnToGuestNote() {
+  if (!isGuestReadOnly()) return;
+  const overlay = document.getElementById('auth-overlay');
+  if (overlay) overlay.style.display = 'none';
+  setAuthError('');
+}
+
+async function enterGuestReadOnlyMode(noteId) {
+  const id = String(noteId || guestShareNoteId() || '').trim();
+  if (!id) {
+    setAuthError('This shared note is no longer available.');
+    return false;
+  }
+  if (userId) return false;
+  const seq = ++_guestEnterSeq;
+  setAuthControlsDisabled(true);
+  setAuthError('');
+  showLoadingOverlay();
+  try {
+    const snap = await getDoc(doc(fsDb, 'notes', id));
+    if (seq !== _guestEnterSeq || userId) return false;
+    if (!snap.exists()) {
+      setAuthError('This shared note is no longer available.');
+      return false;
+    }
+    const d = snap.data() || {};
+    if (!isPublicGuestNoteData(d)) {
+      setAuthError('Sign in to view this note.');
+      return false;
+    }
+    guestReadOnly = true;
+    guestNoteId = id;
+    persistGuestNoteSession(id);
+    applyGuestReadOnlyChrome(true);
+    notes = { [id]: noteFromFirestoreData(id, d) };
+    folders = {};
+    const overlay = document.getElementById('auth-overlay');
+    if (overlay) overlay.style.display = 'none';
+    await openNote(id);
+    return true;
+  } catch (err) {
+    console.error('guest shared note:', err);
+    if (seq === _guestEnterSeq) {
+      setAuthError(err?.code === 'permission-denied'
+        ? 'Sign in to view this note.'
+        : 'Could not open this shared note.');
+    }
+    return false;
+  } finally {
+    if (seq === _guestEnterSeq) {
+      setAuthControlsDisabled(false);
+      hideLoadingOverlay();
+      configureGuestShareUI();
+    }
+  }
+}
+
+function maybeResumeGuestNoteSession() {
+  const shareId = String(_sharedNoteId || '').trim();
+  const resumeId = readGuestNoteSession();
+  if (!shareId || !resumeId || resumeId !== shareId) return Promise.resolve(false);
+  return enterGuestReadOnlyMode(shareId);
 }
 
 // Called when the user opens a ?note=<id> link.

@@ -210,6 +210,7 @@ root.addEventListener('click', e => runEditorOperationOnRoot(root, () => {
     const relX = e.clientX - li.getBoundingClientRect().left;
     if (relX >= 0 && relX <= 20) {
       e.preventDefault();
+      if (!canEditNote(notes[noteId()])) return;
       pushUndo();
       const ul = li.closest('ul.checklist');
       li.classList.toggle('checked');
@@ -248,6 +249,7 @@ root.addEventListener('click', e => runEditorOperationOnRoot(root, () => {
   }
   const conversationMark = e.target.closest('.note-conversation-anchor');
   if (conversationMark && root.contains(conversationMark) && typeof openConversationFromMarker === 'function') {
+    if (typeof isGuestReadOnly === 'function' && isGuestReadOnly()) return;
     e.preventDefault();
     e.stopPropagation();
     openConversationFromMarker(conversationMark);

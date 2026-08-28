@@ -209,10 +209,14 @@ function setAuthControlsDisabled(disabled) {
   const earlyAccessInput = document.getElementById('early-access-code');
   const googleBtn = document.getElementById('google-signin-btn');
   const testBtn = document.getElementById('test-password-signin-btn');
+  const guestViewBtn = document.getElementById('guest-view-note-btn');
+  const guestBackBtn = document.getElementById('guest-back-to-note-btn');
   if (earlyAccessBtn) earlyAccessBtn.disabled = disabled;
   if (earlyAccessInput) earlyAccessInput.disabled = disabled;
   if (googleBtn) googleBtn.disabled = disabled;
   if (testBtn) testBtn.disabled = disabled;
+  if (guestViewBtn) guestViewBtn.disabled = disabled;
+  if (guestBackBtn) guestBackBtn.disabled = disabled;
 }
 
 function testPasswordAuthErrorMessage(err) {
@@ -329,6 +333,7 @@ function toggleTestPasswordAuthFromLogo() {
 function configureAuthLandingUI() {
   configureEarlyAccessUI();
   configureTestPasswordAuthUI();
+  if (typeof configureGuestShareUI === 'function') configureGuestShareUI();
 }
 
 async function authenticateTestPasswordUser(email, password) {
@@ -361,6 +366,7 @@ onAuthStateChanged(auth, async user => {
   if (user) {
     showLoadingOverlay();
     try {
+      if (typeof exitGuestReadOnlyMode === 'function') exitGuestReadOnlyMode();
       userId = user.uid;
       prepareAuthenticatedHome();
       if (typeof beginInitialNoteRestore === 'function') beginInitialNoteRestore();
@@ -401,9 +407,7 @@ onAuthStateChanged(auth, async user => {
     }
   } else {
     closeTransientSurfaces();
-    overlay.style.display = 'flex';
     setAuthControlsDisabled(false);
-    configureAuthLandingUI();
     const av = document.getElementById('user-avatar');
     av?.removeAttribute('src');
     if (av) av.style.display = 'none';
@@ -474,6 +478,9 @@ onAuthStateChanged(auth, async user => {
     renderProfileConnectionUI();
     renderProfileLinkRequestsUI();
     hideLoadingOverlay();
+    if (typeof maybeResumeGuestNoteSession === 'function' && await maybeResumeGuestNoteSession()) return;
+    overlay.style.display = 'flex';
+    configureAuthLandingUI();
   }
 });
 
