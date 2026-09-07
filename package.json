@@ -32,6 +32,8 @@
       "notas.png",
       "notas-icon.png",
       "notas-menubar-icon.png",
+      "notas-menubar-iconTemplate.png",
+      "notas-menubar-iconTemplate@2x.png",
       "notas.icns",
       "package.json"
     ],

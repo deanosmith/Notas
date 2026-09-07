@@ -10,6 +10,7 @@ const serveRoot = path.resolve(__dirname, '..');
 const preloadPath = path.join(__dirname, 'preload.js');
 const iconPath = path.join(serveRoot, 'notas.icns');
 const menuBarIconPath = path.join(serveRoot, 'notas-menubar-icon.png');
+const menuBarTemplateIconPath = path.join(serveRoot, 'notas-menubar-iconTemplate.png');
 
 let appBaseUrl = '';
 let staticServer = null;
@@ -285,7 +286,7 @@ function normalizeThemeState(state) {
   if (!state || typeof state !== 'object') return null;
   const mode = ['light', 'dark', 'system'].includes(state.mode) ? state.mode : '';
   const accent = String(state.accent || '').trim();
-  const accentMode = ['notas', 'custom'].includes(state.accentMode) ? state.accentMode : 'custom';
+  const accentMode = ['notas', 'bg', 'custom'].includes(state.accentMode) ? state.accentMode : 'custom';
   const fontSize = Math.trunc(Number(state.fontSize) || 0);
   const lineHeight = Number(state.lineHeight);
   if (!mode || !/^#[0-9a-f]{6}$/i.test(accent) || fontSize < 10 || fontSize > 26) return null;
@@ -339,63 +340,125 @@ function secureWebPreferences(includePreload = true) {
   return preferences;
 }
 
-function showEditorImageContextMenu(win, payload = {}) {
-  if (!win || win.isDestroyed()) return;
-  const editable = payload?.editable === true;
-  const template = editable
-    ? [
-        { label: 'Undo', role: 'undo' },
-        { label: 'Redo', role: 'redo' },
-        { type: 'separator' },
-        { label: 'Cut', role: 'cut' },
-        { label: 'Copy', role: 'copy' },
-        { label: 'Paste', role: 'paste' },
-        { label: 'Select All', role: 'selectAll' }
-      ]
-    : [
-        { label: 'Copy', role: 'copy' },
-        { label: 'Select All', role: 'selectAll' }
-      ];
-  const options = { window: win };
-  if (Number.isFinite(payload?.x) && Number.isFinite(payload?.y)) {
-    options.x = Math.max(0, Math.trunc(payload.x));
-    options.y = Math.max(0, Math.trunc(payload.y));
+function contextMenuFrame(win, params = {}) {
+  return params.frame || win?.webContents?.focusedFrame || win?.webContents?.mainFrame || undefined;
+}
+
+function lookupLabel(selectionText) {
+  const snippet = String(selectionText || '').trim().replace(/\s+/g, ' ');
+  if (!snippet) return '';
+  const clipped = snippet.length > 32 ? `${snippet.slice(0, 32)}…` : snippet;
+  return `Look Up “${clipped}”`;
+}
+
+function buildNativeContextMenuTemplate(win, params = {}, { editable } = {}) {
+  const isEditable = editable ?? !!params.isEditable;
+  const selectionText = String(params.selectionText || '').trim();
+  const hasSelection = !!selectionText;
+  const editFlags = params.editFlags || {};
+  const misspelledWord = String(params.misspelledWord || '').trim();
+  const suggestions = Array.isArray(params.dictionarySuggestions) ? params.dictionarySuggestions : [];
+  const template = [];
+
+  if (misspelledWord) {
+    const validSuggestions = suggestions.map(suggestion => String(suggestion || '').trim()).filter(Boolean);
+    validSuggestions.forEach(label => {
+      template.push({
+        label,
+        click: () => win.webContents.replaceMisspelling(label)
+      });
+    });
+    if (validSuggestions.length) template.push({ type: 'separator' });
+    template.push({
+      label: 'Learn Spelling',
+      click: () => win.webContents.session.addWordToSpellCheckerDictionary(misspelledWord)
+    });
+    template.push({ type: 'separator' });
   }
-  Menu.buildFromTemplate(template).popup(options);
+
+  if (process.platform === 'darwin' && hasSelection) {
+    template.push({
+      label: lookupLabel(selectionText),
+      click: () => win.webContents.showDefinitionForSelection()
+    });
+    template.push({ type: 'separator' });
+  }
+
+  if (isEditable) {
+    template.push(
+      { role: 'undo', enabled: editFlags.canUndo !== false },
+      { role: 'redo', enabled: editFlags.canRedo !== false },
+      { type: 'separator' },
+      { role: 'cut', enabled: editFlags.canCut !== false },
+      { role: 'copy', enabled: editFlags.canCopy !== false },
+      { role: 'paste', enabled: editFlags.canPaste !== false },
+      { role: 'pasteAndMatchStyle', enabled: editFlags.canPaste !== false },
+      { role: 'delete', enabled: editFlags.canDelete !== false },
+      { type: 'separator' },
+      { role: 'selectAll', enabled: editFlags.canSelectAll !== false }
+    );
+  } else {
+    template.push(
+      { role: 'copy', enabled: hasSelection || editFlags.canCopy === true },
+      { role: 'selectAll', enabled: editFlags.canSelectAll !== false }
+    );
+  }
+
+  if (process.platform === 'darwin') {
+    const sharingItems = {};
+    if (hasSelection) sharingItems.texts = [selectionText];
+    if (params.linkURL && /^https?:\/\//i.test(params.linkURL)) sharingItems.urls = [params.linkURL];
+    template.push({ type: 'separator' });
+    if (Object.keys(sharingItems).length) {
+      template.push({ role: 'shareMenu', sharingItems });
+      template.push({ type: 'separator' });
+    }
+    template.push({
+      label: 'Speech',
+      submenu: [
+        { role: 'startSpeaking' },
+        { role: 'stopSpeaking' }
+      ]
+    });
+  }
+
+  if (app.isPackaged === false) {
+    template.push(
+      { type: 'separator' },
+      { label: 'Inspect Element', click: () => win.webContents.inspectElement(params.x || 0, params.y || 0) }
+    );
+  }
+
+  return template;
+}
+
+function popupNativeContextMenu(win, params = {}, options = {}) {
+  if (!win || win.isDestroyed()) return;
+  const template = buildNativeContextMenuTemplate(win, params, options);
+  const popupOptions = { window: win };
+  const frame = contextMenuFrame(win, params);
+  if (frame) popupOptions.frame = frame;
+  if (Number.isFinite(params?.x) && Number.isFinite(params?.y)) {
+    popupOptions.x = Math.max(0, Math.trunc(params.x));
+    popupOptions.y = Math.max(0, Math.trunc(params.y));
+  }
+  try {
+    Menu.buildFromTemplate(template).popup(popupOptions);
+  } catch (err) {
+    console.error('context menu:', err);
+    delete popupOptions.frame;
+    Menu.buildFromTemplate(template).popup(popupOptions);
+  }
+}
+
+function showEditorImageContextMenu(win, payload = {}) {
+  popupNativeContextMenu(win, payload, { editable: payload?.editable === true });
 }
 
 function configureWindowSecurity(win) {
   win.webContents.on('context-menu', (_event, params) => {
     if (params.mediaType === 'image' && isAppUrl(params.pageURL || win.webContents.getURL())) return;
-    const template = [];
-    const hasSelection = !!String(params.selectionText || '').trim();
-    const isEditable = !!params.isEditable;
-
-    if (isEditable) {
-      template.push(
-        { label: 'Undo', role: 'undo' },
-        { label: 'Redo', role: 'redo' },
-        { type: 'separator' },
-        { label: 'Cut', role: 'cut' },
-        { label: 'Copy', role: 'copy', enabled: hasSelection },
-        { label: 'Paste', role: 'paste' },
-        { label: 'Select All', role: 'selectAll' }
-      );
-    } else {
-      template.push(
-        { label: 'Copy', role: 'copy', enabled: hasSelection },
-        { label: 'Select All', role: 'selectAll' }
-      );
-    }
-
-    if (app.isPackaged === false) {
-      template.push(
-        { type: 'separator' },
-        { label: 'Inspect Element', click: () => win.webContents.inspectElement(params.x, params.y) }
-      );
-    }
-
-    Menu.buildFromTemplate(template).popup({ window: win });
+    popupNativeContextMenu(win, params);
   });
 
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -946,11 +1009,26 @@ function buildMenuBarContextMenu() {
   ]);
 }
 
+function loadMenuBarTrayImage() {
+  const template2xPath = path.join(serveRoot, 'notas-menubar-iconTemplate@2x.png');
+  let trayImage = nativeImage.createEmpty();
+  try {
+    trayImage.addRepresentation({ scaleFactor: 1, buffer: readFileSync(menuBarTemplateIconPath) });
+    trayImage.addRepresentation({ scaleFactor: 2, buffer: readFileSync(template2xPath) });
+  } catch {
+    trayImage = nativeImage.createFromPath(menuBarTemplateIconPath);
+  }
+  if (trayImage.isEmpty()) {
+    trayImage = nativeImage.createFromPath(menuBarIconPath);
+    if (!trayImage.isEmpty()) trayImage = trayImage.resize({ width: 18, height: 18 });
+  }
+  if (!trayImage.isEmpty() && process.platform === 'darwin') trayImage.setTemplateImage(true);
+  return trayImage;
+}
+
 function createMenuBarTray() {
   if (menuBarTray) return menuBarTray;
-  let trayImage = nativeImage.createFromPath(menuBarIconPath);
-  if (!trayImage.isEmpty()) trayImage = trayImage.resize({ width: 18, height: 18 });
-  menuBarTray = new Tray(trayImage);
+  menuBarTray = new Tray(loadMenuBarTrayImage());
   menuBarTray.setToolTip(APP_NAME);
   menuBarTray.on('click', toggleMenuBarTarget);
   menuBarTray.on('right-click', () => menuBarTray?.popUpContextMenu(buildMenuBarContextMenu()));

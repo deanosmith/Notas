@@ -227,6 +227,8 @@ function applyNoteEditorChrome(note) {
   titleEl.value    = note.title;
   titleEl.readOnly = !isEditable;
   document.getElementById('toolbar').style.display   = isEditable ? '' : 'none';
+  const textStylingToggleGroup = document.getElementById('text-styling-toggle-group');
+  if (textStylingToggleGroup) textStylingToggleGroup.style.display = isEditable ? '' : 'none';
   const undoRedo = document.getElementById('mob-undo-redo');
   if (undoRedo) undoRedo.hidden = !isEditable;
   document.getElementById('share-btn').style.display = isOwned && !isTrashedNote(note) ? '' : 'none';

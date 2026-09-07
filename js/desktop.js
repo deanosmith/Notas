@@ -115,7 +115,7 @@
     if (!state || typeof state !== 'object') return;
     const nextMode = ['light', 'dark', 'system'].includes(state.mode) ? state.mode : '';
     const nextAccent = typeof normalizeAccentColor === 'function' ? normalizeAccentColor(state.accent) : '';
-    const nextAccentMode = ['notas', 'custom'].includes(state.accentMode) ? state.accentMode : '';
+    const nextAccentMode = ['notas', 'bg', 'custom'].includes(state.accentMode) ? state.accentMode : '';
     const nextFontSize = Math.max(12, Math.min(24, Math.trunc(Number(state.fontSize) || editorFontSize || 15)));
     const nextLineHeight = typeof normalizeEditorLineHeight === 'function'
       ? normalizeEditorLineHeight(state.lineHeight || editorLineHeight || 1.66)
@@ -143,9 +143,9 @@
         localStorage.setItem('notas_custom_accent', customAccentColor);
         themeChanged = true;
       }
-      if (normalizeAccentColor(accentColor) !== nextAccent || nextAccentMode === 'notas') {
+      if (normalizeAccentColor(accentColor) !== nextAccent || nextAccentMode === 'notas' || nextAccentMode === 'bg') {
         accentColor = nextAccent;
-        if (nextAccentMode !== 'notas') localStorage.setItem('notas_accent', accentColor);
+        if (nextAccentMode !== 'notas' && nextAccentMode !== 'bg') localStorage.setItem('notas_accent', accentColor);
         themeChanged = true;
       }
       if (nextAccentMode) localStorage.setItem('notas_accent_mode', nextAccentMode);
@@ -580,6 +580,8 @@
         titleEl.value = note.title;
         titleEl.readOnly = !isEditable;
         document.getElementById('toolbar').style.display = isEditable ? '' : 'none';
+        const textStylingToggleGroup = document.getElementById('text-styling-toggle-group');
+        if (textStylingToggleGroup) textStylingToggleGroup.style.display = isEditable ? '' : 'none';
         const undoRedo = document.getElementById('mob-undo-redo');
         if (undoRedo) undoRedo.hidden = !isEditable;
         document.getElementById('share-btn').style.display = isOwned && !(typeof isTrashedNote === 'function' && isTrashedNote(note)) ? '' : 'none';

@@ -1642,6 +1642,9 @@ const ACCENT_PALETTES = {
   notas:  { r:205, g:155, b:80,  r2:154, g2:102, b2:48,  accent:'#bb893e', accentH:'#e3b86a',
             muted:'#71717a', text2:'#d4d4d8', border:'#2b4d73',
             lightMuted:'#6b7280', lightText2:'#1e3a5f', lightBorder:'#98b6d4' },
+  bg:     { r:205, g:155, b:80,  r2:154, g2:102, b2:48,  accent:'#bb893e', accentH:'#e3b86a',
+            muted:'#737373', text2:'#d4d4d8', border:'#2a2a2a',
+            lightMuted:'#6b6b6b', lightText2:'#1a1a1a', lightBorder:'#b5b5b5' },
   blue:   { r:0,   g:180, b:255, r2:0,   g2:80,  b2:180, accent:'#00b4ff', accentH:'#40d0ff',
             muted:'#4a6a8a', text2:'#b8cce8', border:'#1a2e48',
             lightMuted:'#2a6090', lightText2:'#1a3050', lightBorder:'#78a8cc' },
@@ -1663,17 +1666,18 @@ const ACCENT_PALETTES = {
 };
 const DEFAULT_ACCENT = ACCENT_PALETTES.notas.accent;
 const DEFAULT_CUSTOM_ACCENT = ACCENT_PALETTES.blue.accent;
+const ACCENT_MODES = ['notas', 'bg', 'custom'];
 const ACCENT_MODE_STORAGE_KEY = 'notas_accent_mode';
 const CUSTOM_ACCENT_STORAGE_KEY = 'notas_custom_accent';
 const savedAccentColor = localStorage.getItem('notas_accent');
 const savedAccentMode = localStorage.getItem(ACCENT_MODE_STORAGE_KEY);
 const savedCustomAccent = localStorage.getItem(CUSTOM_ACCENT_STORAGE_KEY);
-const hasSavedAccentMode = ['notas', 'custom'].includes(savedAccentMode);
+const hasSavedAccentMode = ACCENT_MODES.includes(savedAccentMode);
 const storedCustomAccent = /^#[a-f\d]{6}$/i.test(savedCustomAccent || '') ? savedCustomAccent.toLowerCase() : '';
 const legacyCustomAccent = !hasSavedAccentMode && /^#[a-f\d]{6}$/i.test(savedAccentColor || '') ? savedAccentColor.toLowerCase() : '';
 let accentMode = hasSavedAccentMode ? savedAccentMode : (legacyCustomAccent ? 'custom' : 'notas');
 let customAccentColor = storedCustomAccent || legacyCustomAccent || DEFAULT_CUSTOM_ACCENT;
-let accentColor = accentMode === 'notas' ? DEFAULT_ACCENT : customAccentColor;
+let accentColor = accentMode === 'custom' ? customAccentColor : DEFAULT_ACCENT;
 let _accentApplyFrame = 0;
 let _accentScrubbing = false;
 let _accentDesktopSyncPending = false;
@@ -1895,8 +1899,13 @@ function saveFolderColorPicker() {
   if (folderId) setFolderIconColor(folderId, value);
 }
 
+function isBrandAccentMode(mode = accentMode) {
+  return mode === 'notas' || mode === 'bg';
+}
+
 function accentPalette(value, mode = '') {
   if (mode === 'notas') return ACCENT_PALETTES.notas;
+  if (mode === 'bg') return ACCENT_PALETTES.bg;
   if (ACCENT_PALETTES[value]) return ACCENT_PALETTES[value];
   const rgb = hexToRgb(normalizeAccentColor(value)) || hexToRgb(DEFAULT_ACCENT);
   const deep = mixColor(rgb, { r: 0, g: 0, b: 0 }, .48);
@@ -1932,6 +1941,7 @@ function applyAccentColor(value, { refreshPicker = true } = {}) {
 
   // Orb/ambient/glass on <html> — cascade correctly in both modes
   body.classList.toggle('notas-branding', accentMode === 'notas');
+  body.classList.toggle('bg-branding', accentMode === 'bg');
   body.classList.toggle('custom-accent-mode', accentMode === 'custom');
   s.setProperty('--orb-r',    p.r);
   s.setProperty('--orb-g',    p.g);
@@ -1945,10 +1955,10 @@ function applyAccentColor(value, { refreshPicker = true } = {}) {
   b.setProperty('--orb2-r',   p.r2);
   b.setProperty('--orb2-g',   p.g2);
   b.setProperty('--orb2-b',   p.b2);
-  const glassBorder = accentMode === 'notas'
+  const glassBorder = isBrandAccentMode()
     ? 'rgba(205, 155, 80, .24)'
     : `rgba(${Math.min(p.r+80,255)},${Math.min(p.g+30,255)},${Math.min(p.b+10,255)},.16)`;
-  const glassHighlight = accentMode === 'notas'
+  const glassHighlight = isBrandAccentMode()
     ? 'rgba(245, 202, 124, .16)'
     : `rgba(${Math.min(p.r+80,255)},${Math.min(p.g+30,255)},${Math.min(p.b+10,255)},.12)`;
   s.setProperty('--glass-border', glassBorder);
@@ -1972,7 +1982,9 @@ function applyAccentColor(value, { refreshPicker = true } = {}) {
   b.setProperty('--muted',  lm ? p.lightMuted  : brightenDarkUiColor(p.muted, .16));
   b.setProperty('--text2',  lm ? p.lightText2  : brightenDarkUiColor(p.text2, .08));
   b.setProperty('--border', lm ? p.lightBorder : brightenDarkUiColor(p.border, .18));
-  b.setProperty('--note-subtext', lm ? 'rgba(16, 32, 51, .66)' : 'rgba(237, 244, 255, .76)');
+  b.setProperty('--note-subtext', accentMode === 'bg'
+    ? (lm ? 'rgba(17, 17, 17, .66)' : 'rgba(237, 237, 237, .76)')
+    : (lm ? 'rgba(16, 32, 51, .66)' : 'rgba(237, 244, 255, .76)'));
   // Ambient glows adapt in both modes
   b.setProperty('--ambient-a', `rgba(${p.r},${p.g},${p.b},${lm ? '.2' : '.18'})`);
   b.setProperty('--ambient-b', `rgba(${p.r2},${p.g2},${p.b2},${lm ? '.16' : '.12'})`);
@@ -2006,8 +2018,8 @@ function setAccentColor(value) {
 }
 
 function setAccentMode(mode) {
-  accentMode = mode === 'notas' ? 'notas' : 'custom';
-  accentColor = accentMode === 'notas' ? DEFAULT_ACCENT : customAccentColor;
+  accentMode = ACCENT_MODES.includes(mode) ? mode : 'custom';
+  accentColor = accentMode === 'custom' ? customAccentColor : DEFAULT_ACCENT;
   localStorage.setItem(ACCENT_MODE_STORAGE_KEY, accentMode);
   if (accentMode === 'custom') {
     localStorage.setItem(CUSTOM_ACCENT_STORAGE_KEY, customAccentColor);
@@ -2126,8 +2138,13 @@ function applySidebarNotePreviewMode() {
 
 function applyTextStylingVisibility() {
   document.body.classList.toggle('text-styling-hidden', !textStylingVisible);
-  const toggle = document.getElementById('text-styling-toggle');
-  if (toggle) toggle.checked = textStylingVisible;
+  const btn = document.getElementById('text-styling-toggle-btn');
+  if (!btn) return;
+  const label = textStylingVisible ? 'Hide Text Styling' : 'Show Text Styling';
+  btn.classList.toggle('active', textStylingVisible);
+  btn.setAttribute('aria-pressed', textStylingVisible ? 'true' : 'false');
+  btn.title = label;
+  btn.setAttribute('aria-label', label);
 }
 
 function initSettings() {
@@ -2190,8 +2207,7 @@ function initSettings() {
     updateThemeToggleUI();
     const sidebarPreviewToggle = document.getElementById('sidebar-preview-toggle');
     if (sidebarPreviewToggle) sidebarPreviewToggle.checked = sidebarNotePreviewMode === 'title-text';
-    const textStylingToggle = document.getElementById('text-styling-toggle');
-    if (textStylingToggle) textStylingToggle.checked = textStylingVisible;
+    applyTextStylingVisibility();
     updateColorPickerUI(accentColor);
     settingsModal.classList.add('open');
     updateMobileTabState();
@@ -2236,8 +2252,9 @@ function initSettings() {
     localStorage.setItem(SIDEBAR_NOTE_PREVIEW_STORAGE_KEY, sidebarNotePreviewMode);
     renderSidebar();
   });
-  document.getElementById('text-styling-toggle')?.addEventListener('change', e => {
-    textStylingVisible = !!e.target.checked;
+  document.getElementById('text-styling-toggle-btn')?.addEventListener('mousedown', e => e.preventDefault());
+  document.getElementById('text-styling-toggle-btn')?.addEventListener('click', () => {
+    textStylingVisible = !textStylingVisible;
     localStorage.setItem(TEXT_STYLING_STORAGE_KEY, textStylingVisible ? 'true' : 'false');
     applyTextStylingVisibility();
     if (typeof notifyDesktopThemeStateChanged === 'function') notifyDesktopThemeStateChanged();

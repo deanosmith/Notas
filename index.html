@@ -14,11 +14,16 @@
     (() => {
       try {
         const mode = localStorage.getItem('notas_theme') || 'dark';
+        const accentMode = localStorage.getItem('notas_accent_mode') || 'notas';
         const systemLight = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches;
         const isLight = mode === 'light' || (mode === 'system' && systemLight);
         document.documentElement.classList.toggle('light-mode', isLight);
         document.documentElement.style.colorScheme = isLight ? 'light' : 'dark';
         document.body.classList.toggle('light-mode', isLight);
+        document.body.classList.toggle('notas-branding', accentMode === 'notas');
+        document.body.classList.toggle('bg-branding', accentMode === 'bg');
+        document.body.classList.toggle('custom-accent-mode', accentMode === 'custom');
+        document.body.classList.toggle('text-styling-hidden', localStorage.getItem('notas_text_styling_visible') === 'false');
       } catch {}
     })();
   </script>
@@ -144,6 +149,9 @@
                 <div id="doc-access-avatars" aria-hidden="true"></div>
               </div>
               <div class="main-toolbar-row">
+                <div class="toolbar-group text-styling-toggle-group" id="text-styling-toggle-group">
+                  <button class="tb-btn text-styling-toggle-btn" id="text-styling-toggle-btn" type="button" title="Hide Text Styling" aria-label="Hide Text Styling" aria-pressed="true">T</button>
+                </div>
                 <div class="toolbar" id="toolbar">
                   <div class="toolbar-group">
                     <button class="tb-btn" data-action="h1"            title="Heading 1">H1</button>
@@ -353,6 +361,7 @@
           <div class="color-control" id="color-control">
             <div class="color-mode-toggle" role="group" aria-label="Colour palette">
               <button class="color-mode-option" type="button" data-accent-mode="notas" aria-pressed="false">Notas</button>
+              <button class="color-mode-option" type="button" data-accent-mode="bg" aria-pressed="false">B & G</button>
               <button class="color-mode-option" type="button" data-accent-mode="custom" aria-pressed="false">Custom</button>
             </div>
             <button class="accent-picker" id="accent-picker-btn" type="button" title="Choose colour" aria-label="Choose colour" aria-expanded="false"></button>
@@ -384,13 +393,6 @@
           <span class="settings-label"><i class="fa-solid fa-list"></i>Note Text</span>
           <label class="toggle" title="Show note text in sidebar">
             <input id="sidebar-preview-toggle" type="checkbox" aria-label="Show note text in sidebar" />
-            <span class="toggle-slider"></span>
-          </label>
-        </div>
-        <div class="settings-row">
-          <span class="settings-label"><i class="fa-solid fa-wand-magic-sparkles"></i>Show Controls</span>
-          <label class="toggle" title="Show text styling controls">
-            <input id="text-styling-toggle" type="checkbox" aria-label="Show text styling controls" />
             <span class="toggle-slider"></span>
           </label>
         </div>
