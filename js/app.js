@@ -159,7 +159,7 @@ function handleEscapeNavigation() {
   return false;
 }
 
-document.getElementById('drawer-btn').addEventListener('click',     toggleDrawer);
+document.getElementById('drawer-btn').addEventListener('click', toggleDrawer);
 document.getElementById('mob-logo-btn').addEventListener('click', () => setSidebarView('notes'));
 document.querySelectorAll('[data-mob-tab]').forEach(btn => {
   btn.addEventListener('click', () => selectMobileTab(btn.dataset.mobTab));
@@ -180,7 +180,7 @@ document.getElementById('rail-create-btn')?.addEventListener('click', () => open
 document.getElementById('shortcuts-btn')?.addEventListener('click', openShortcutsModal);
 document.getElementById('shortcuts-close')?.addEventListener('click', closeShortcutsModal);
 document.getElementById('shortcuts-modal')?.addEventListener('click', e => { if (e.target === e.currentTarget) closeShortcutsModal(); });
-document.getElementById('mob-new-btn').addEventListener('click',    openModal);
+document.getElementById('mob-new-btn').addEventListener('click', openModal);
 document.getElementById('auth-logo-btn')?.addEventListener('click', toggleTestPasswordAuthFromLogo);
 document.getElementById('early-access-form')?.addEventListener('submit', submitEarlyAccessCode);
 document.getElementById('google-signin-btn').addEventListener('click', signInWithGoogle);
@@ -301,10 +301,10 @@ document.getElementById('profile-link-deny').addEventListener('click', denyPendi
 document.getElementById('profile-link-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeProfileLinkApproval(); });
 document.getElementById('note-focus-btn')?.addEventListener('click', toggleNoteFocusMode);
 document.getElementById('note-focus-exit-btn')?.addEventListener('click', () => setNoteFocusMode(false));
-document.getElementById('share-btn').addEventListener('click',       () => openShareModal('note', activeId));
-document.getElementById('copy-link-btn').addEventListener('click',   copyShareLink);
-document.getElementById('share-close').addEventListener('click',     () => document.getElementById('share-modal').classList.remove('open'));
-document.getElementById('share-modal').addEventListener('click',     e => { if (e.target === e.currentTarget) document.getElementById('share-modal').classList.remove('open'); });
+document.getElementById('share-btn').addEventListener('click', () => openShareModal('note', activeId));
+document.getElementById('copy-link-btn').addEventListener('click', copyShareLink);
+document.getElementById('share-close').addEventListener('click', () => document.getElementById('share-modal').classList.remove('open'));
+document.getElementById('share-modal').addEventListener('click', e => { if (e.target === e.currentTarget) document.getElementById('share-modal').classList.remove('open'); });
 document.getElementById('new-folder-btn')?.addEventListener('click', openFolderModal);
 document.getElementById('folder-modal-create').addEventListener('click', confirmCreateFolder);
 document.getElementById('folder-modal-cancel').addEventListener('click', closeFolderModal);
@@ -326,14 +326,14 @@ document.getElementById('link-modal-url').addEventListener('keydown', e => {
 document.getElementById('move-modal-cancel').addEventListener('click', closeMoveModal);
 document.getElementById('move-modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeMoveModal(); });
 document.getElementById('drawer-overlay').addEventListener('click', closeDrawer);
-document.getElementById('new-note-btn')?.addEventListener('click',   openModal);
-document.getElementById('empty-cta-btn').addEventListener('click',  openModal);
+document.getElementById('new-note-btn')?.addEventListener('click', openModal);
+document.getElementById('empty-cta-btn').addEventListener('click', openModal);
 document.querySelectorAll('[data-create-type]').forEach(btn => {
   btn.addEventListener('click', () => setCreateModalType(btn.dataset.createType));
 });
-document.getElementById('modal-create').addEventListener('click',   confirmCreate);
+document.getElementById('modal-create').addEventListener('click', confirmCreate);
 document.getElementById('modal-parent-select')?.addEventListener('change', e => { createModalParentId = e.target.value || null; });
-document.getElementById('modal-cancel').addEventListener('click',   closeModal);
+document.getElementById('modal-cancel').addEventListener('click', closeModal);
 document.getElementById('modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeModal(); });
 document.getElementById('modal-input').addEventListener('keydown', e => {
   if (e.key === 'Enter') confirmCreate();
@@ -598,7 +598,7 @@ document.addEventListener('keydown', e => {
 
 let _sx = 0;
 document.addEventListener('touchstart', e => { _sx = e.touches[0].clientX; }, { passive: true });
-document.addEventListener('touchend',   e => {
+document.addEventListener('touchend', e => {
   if (!isMobile()) return;
   if (typeof isGuestReadOnly === 'function' && isGuestReadOnly()) return;
   if (document.querySelector('.modal-overlay.open')) return;
@@ -676,11 +676,11 @@ sidebarMinimized = false;
   const SIDEBAR_MAX = 520;
   const STORAGE_KEY = 'notas_sidebar_w';
   const sidebar = document.getElementById('sidebar');
-  const handle  = document.getElementById('sidebar-resize');
+  const handle = document.getElementById('sidebar-resize');
 
   const saved = parseInt(localStorage.getItem(STORAGE_KEY) || '');
   if (saved >= SIDEBAR_ICON_SAFE_WIDTH && saved <= SIDEBAR_MAX) {
-    sidebar.style.width    = saved + 'px';
+    sidebar.style.width = saved + 'px';
     sidebar.style.minWidth = saved + 'px';
     updateSidebarWidthState(saved);
   } else {
@@ -693,7 +693,7 @@ sidebarMinimized = false;
     dragging = false;
     handle.classList.remove('dragging');
     sidebar.style.transition = '';
-    document.body.style.cursor     = '';
+    document.body.style.cursor = '';
     document.body.style.userSelect = '';
   }
 
@@ -701,12 +701,12 @@ sidebarMinimized = false;
     if (window.innerWidth <= 767) return;
     if (sidebarMinimized) return;
     dragging = true;
-    startX   = e.clientX;
-    startW   = sidebar.getBoundingClientRect().width;
+    startX = e.clientX;
+    startW = sidebar.getBoundingClientRect().width;
     handle.classList.add('dragging');
     // Disable transition during drag to eliminate lag
     sidebar.style.transition = 'none';
-    document.body.style.cursor     = 'col-resize';
+    document.body.style.cursor = 'col-resize';
     document.body.style.userSelect = 'none';
     e.preventDefault();
   });
@@ -715,7 +715,7 @@ sidebarMinimized = false;
     if (!dragging) return;
     const intendedW = startW + (e.clientX - startX);
     const w = Math.max(SIDEBAR_ICON_SAFE_WIDTH, Math.min(SIDEBAR_MAX, intendedW));
-    sidebar.style.width    = w + 'px';
+    sidebar.style.width = w + 'px';
     sidebar.style.minWidth = w + 'px';
     updateSidebarWidthState(w);
   });

@@ -57,7 +57,7 @@ function createFolder(title, parentId = null) {
   if (typeof isGuestReadOnly === 'function' && isGuestReadOnly()) return;
   const parent = parentId ? folders[parentId] : null;
   if (!parent || !isOwnedFolder(parent) || folderParentId(parent)) parentId = null;
-  const id  = 'folder_' + Date.now();
+  const id = 'folder_' + Date.now();
   const now = new Date().toISOString();
   const folder = { id, title: title.trim() || 'Untitled Folder', public: false, iconColor: DEFAULT_FOLDER_ICON_COLOR, iconColorMode: 'manual', sharedWith: {}, sharedAccessKeys: [], parentId, order: nextFolderOrderValue(), created: now, modified: now };
   folders[id] = folder;
@@ -308,15 +308,15 @@ async function setFolderIconColor(folderId, color) {
 function openMoveModal(noteId) {
   if (!notes[noteId]) return;
   _moveNoteId = noteId;
-  const note  = notes[noteId];
+  const note = notes[noteId];
   document.getElementById('move-modal-title').textContent = 'Move Note';
   document.getElementById('move-modal-note-name').textContent = note.title;
-  const list  = document.getElementById('move-modal-list');
+  const list = document.getElementById('move-modal-list');
   list.innerHTML = '';
 
   const defaultFolderName = isOwnedNote(note) ? 'No Folder' : 'Shared Notes';
   const noFolderItem = document.createElement('div');
-  const isNoFolder   = !hasVisibleFolder(note);
+  const isNoFolder = !hasVisibleFolder(note);
   noFolderItem.className = 'move-folder-item' + (isNoFolder ? ' is-current' : '');
   noFolderItem.innerHTML =
     '<i class="mfi fa-solid fa-inbox"></i><span>' + defaultFolderName + (isNoFolder ? ' (current)' : '') + '</span>';
