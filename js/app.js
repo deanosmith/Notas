@@ -332,6 +332,7 @@ document.querySelectorAll('[data-create-type]').forEach(btn => {
   btn.addEventListener('click', () => setCreateModalType(btn.dataset.createType));
 });
 document.getElementById('modal-create').addEventListener('click',   confirmCreate);
+document.getElementById('modal-parent-select')?.addEventListener('change', e => { createModalParentId = e.target.value || null; });
 document.getElementById('modal-cancel').addEventListener('click',   closeModal);
 document.getElementById('modal').addEventListener('click', e => { if (e.target === e.currentTarget) closeModal(); });
 document.getElementById('modal-input').addEventListener('keydown', e => {
@@ -727,6 +728,8 @@ sidebarMinimized = false;
   });
 
   window.addEventListener('resize', () => {
+    if (document.visibilityState === 'hidden' || document.documentElement.classList.contains('desktop-occluded')) return;
+    if (window.innerWidth > 0 && window.innerWidth < 320) return;
     updateSidebarWidthState();
     refreshTableResizeHandles(editorEl);
   });

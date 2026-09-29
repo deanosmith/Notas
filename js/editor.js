@@ -392,27 +392,29 @@ async function applyFolderOrderHistory(entries) {
   const previous = available.map(entry => ({
     id: entry.id,
     order: folders[entry.id].order,
+    parentId: folders[entry.id].parentId || null,
     modified: folders[entry.id].modified
   }));
   available.forEach(entry => {
     const folder = folders[entry.id];
     folder.order = Number.isFinite(Number(entry.order)) ? Number(entry.order) : null;
+    if ('parentId' in entry) folder.parentId = entry.parentId || null;
     folder.modified = new Date().toISOString();
   });
   renderSidebar();
   try {
     await Promise.all(available.map(entry => {
       const order = Number.isFinite(Number(entry.order)) ? Number(entry.order) : deleteField();
-      return setDoc(doc(fsDb, 'folders', entry.id), {
-        order,
-        modified: serverTimestamp()
-      }, { merge: true });
+      const payload = { order, modified: serverTimestamp() };
+      if ('parentId' in entry) payload.parentId = entry.parentId || deleteField();
+      return setDoc(doc(fsDb, 'folders', entry.id), payload, { merge: true });
     }));
     return true;
   } catch (err) {
     previous.forEach(entry => {
       if (!folders[entry.id]) return;
       folders[entry.id].order = entry.order;
+      folders[entry.id].parentId = entry.parentId;
       folders[entry.id].modified = entry.modified;
     });
     renderSidebar();
@@ -508,7 +510,7 @@ function scheduleUndoSnapshot() {
 
 /* Helpers */
 const esc = s =>
-  s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const looksLikeHtml = s => /<\/?[a-z][^>]*>/i.test(s);
 const noteTime = value => {
   const time = new Date(value || 0).getTime();
@@ -534,7 +536,27 @@ const trashSortedIds = () =>
   Object.keys(notes)
     .filter(id => isOwnedNote(notes[id]) && isTrashedNote(notes[id]))
     .sort((a, b) => noteTime(notes[b].deletedAt) - noteTime(notes[a].deletedAt));
-const isMobile = () => window.innerWidth <= 767;
+
+let _layoutViewportWidth = typeof window !== 'undefined' && window.innerWidth > 0 ? window.innerWidth : 1280;
+function layoutViewportWidth() {
+  const width = window.innerWidth;
+  if (document.visibilityState === 'hidden' || document.documentElement.classList.contains('desktop-occluded')) {
+    return _layoutViewportWidth;
+  }
+  if (width >= 320) {
+    _layoutViewportWidth = width;
+    return width;
+  }
+  return _layoutViewportWidth;
+}
+
+function isTransientViewport() {
+  return document.visibilityState === 'hidden' ||
+    document.documentElement.classList.contains('desktop-occluded') ||
+    window.innerWidth < 320;
+}
+
+const isMobile = () => layoutViewportWidth() <= 767;
 
 function renderMarkdownContent(content) {
   if (!content) return '';
@@ -987,7 +1009,7 @@ function noteImageBlockForRange(range, root = getEd()) {
   if (selected) {
     try {
       if (range.intersectsNode(selected)) return selected;
-    } catch (_) {}
+    } catch (_) { }
   }
   return [...root.querySelectorAll('.note-image-block')].find(block => {
     try { return range.intersectsNode(block); }
@@ -1215,7 +1237,7 @@ function startNoteImageResize(e, handle) {
   document.body.style.cursor = 'nwse-resize';
   document.body.style.userSelect = 'none';
   block.classList.add('image-resizing');
-  try { handle.setPointerCapture?.(e.pointerId); } catch (_) {}
+  try { handle.setPointerCapture?.(e.pointerId); } catch (_) { }
 
   const move = evt => {
     evt.preventDefault();
@@ -1228,7 +1250,7 @@ function startNoteImageResize(e, handle) {
     document.removeEventListener('pointermove', move);
     document.removeEventListener('pointerup', finish);
     document.removeEventListener('pointercancel', finish);
-    try { handle.releasePointerCapture?.(e.pointerId); } catch (_) {}
+    try { handle.releasePointerCapture?.(e.pointerId); } catch (_) { }
     document.body.style.cursor = '';
     document.body.style.userSelect = '';
     block.classList.remove('image-resizing');
@@ -1413,7 +1435,7 @@ function restoreChecklistSelection(snapshot, fallbackLi = null) {
         ed.focus();
         refreshUndoSnapshotSelection();
         return;
-      } catch (_) {}
+      } catch (_) { }
     }
   }
 }
@@ -1588,9 +1610,9 @@ function splitListAtLi(li, newListClass) {
   const siblings = [...parentList.children];
   const idx = siblings.indexOf(li);
   const before = siblings.slice(0, idx);
-  const after  = siblings.slice(idx + 1);
+  const after = siblings.slice(idx + 1);
 
-  const origTag   = parentList.tagName.toLowerCase();
+  const origTag = parentList.tagName.toLowerCase();
   const origClass = parentList.className;
 
   // Items before the current li stay in a list of the same original type
@@ -1632,21 +1654,180 @@ function refreshEmpty(el) {
   el.classList.toggle('is-empty', !hasText && !hasStructure);
 }
 
+function editorCaretAllowsAutocapitalize(root = getEd()) {
+  if (!root) return false;
+  if (typeof closestInlineCodeFromSelection === 'function' && closestInlineCodeFromSelection()) return false;
+  const sel = window.getSelection();
+  if (!sel || !sel.rangeCount || !sel.isCollapsed) return false;
+  const node = sel.anchorNode;
+  if (!node) return false;
+  const el = node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
+  if (!el || !root.contains(el)) return false;
+  return !el.closest('pre, code, [data-table-title-input]');
+}
+
+function compareRangeToNode(range, node, offset = 0) {
+  try {
+    return range.comparePoint(node, offset);
+  } catch {
+    return 0;
+  }
+}
+
+function restoreCollapsedCaret(node, offset) {
+  if (!node) return;
+  const sel = window.getSelection();
+  const range = document.createRange();
+  const max = node.nodeType === Node.TEXT_NODE ? node.textContent.length : node.childNodes.length;
+  range.setStart(node, Math.max(0, Math.min(offset, max)));
+  range.collapse(true);
+  sel.removeAllRanges();
+  sel.addRange(range);
+}
+
+function visualLinePrefix(root = getEd()) {
+  const sel = window.getSelection();
+  if (!sel || !sel.rangeCount) return '';
+  const caret = sel.getRangeAt(0);
+  const block = typeof currentBlockFromSelection === 'function' ? currentBlockFromSelection() : null;
+  if (!block || !root.contains(block)) return '';
+  const walker = document.createTreeWalker(block, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT);
+  let prefix = '';
+  while (walker.nextNode()) {
+    const node = walker.currentNode;
+    if (node.nodeType === Node.ELEMENT_NODE) {
+      if (node.tagName === 'BR' && compareRangeToNode(caret, node) <= 0) prefix = '';
+      continue;
+    }
+    if (compareRangeToNode(caret, node) > 0) break;
+    if (node === caret.startContainer) {
+      prefix += node.textContent.slice(0, caret.startOffset);
+      break;
+    }
+    if (compareRangeToNode(caret, node, node.textContent.length) <= 0) prefix += node.textContent;
+  }
+  return prefix.replace(/\u00a0/g, ' ');
+}
+
+function visualLinePrefixIsBlank(root = getEd()) {
+  return !visualLinePrefix(root).replace(/\s+/g, '');
+}
+
+function isLowerLetter(ch) {
+  return typeof ch === 'string' && /\p{Ll}/u.test(ch);
+}
+
+function isUpperLetter(ch) {
+  return typeof ch === 'string' && /\p{Lu}/u.test(ch);
+}
+
+function isNewlineInput(inputType, data) {
+  if (inputType === 'insertParagraph' || inputType === 'insertLineBreak') return true;
+  return inputType === 'insertText' && !!data && /[\r\n]/.test(data);
+}
+
 function capitalizeCurrentChar(charLen) {
   const sel = window.getSelection();
-  if (!sel || !sel.rangeCount) return;
-  const node   = sel.anchorNode;
+  if (!sel || !sel.rangeCount) return false;
+  const node = sel.anchorNode;
   const offset = sel.anchorOffset;
-  if (!node || node.nodeType !== Node.TEXT_NODE || offset < charLen) return;
+  if (!node || node.nodeType !== Node.TEXT_NODE || offset < charLen) return false;
   const text = node.textContent;
-  const pos  = offset - charLen;
-  if (/[a-z]/.test(text[pos])) {
-    node.textContent = text.slice(0, pos) + text[pos].toUpperCase() + text.slice(pos + 1);
-    const r = document.createRange();
-    r.setStart(node, offset);
-    r.collapse(true);
-    sel.removeAllRanges();
-    sel.addRange(r);
+  const pos = offset - charLen;
+  if (!isLowerLetter(text[pos])) return isUpperLetter(text[pos]);
+  node.textContent = text.slice(0, pos) + text[pos].toUpperCase() + text.slice(pos + 1);
+  restoreCollapsedCaret(node, offset);
+  return true;
+}
+
+function capitalizeInsertedTextAtLineStart(data) {
+  if (!data || !isLowerLetter(data[0])) return false;
+  const prefix = visualLinePrefix();
+  const inserted = data.replace(/\u00a0/g, ' ');
+  const capitalized = data[0].toUpperCase() + data.slice(1);
+  let before = '';
+  if (prefix.endsWith(inserted)) before = prefix.slice(0, prefix.length - inserted.length);
+  else if (prefix.endsWith(capitalized)) before = prefix.slice(0, prefix.length - capitalized.length);
+  else if (!prefix.replace(/\s+/g, '') || prefix.replace(/\s+/g, '').length <= inserted.replace(/\s+/g, '').length) before = '';
+  else return false;
+  if (before.replace(/\s+/g, '')) return false;
+  return capitalizeCurrentChar(data.length);
+}
+
+function capitalizeFirstLetterOfVisualLine(root = getEd()) {
+  if (!editorCaretAllowsAutocapitalize(root)) return false;
+  const sel = window.getSelection();
+  const caret = sel.getRangeAt(0);
+  const caretNode = caret.startContainer;
+  const caretOffset = caret.startOffset;
+  const block = typeof currentBlockFromSelection === 'function' ? currentBlockFromSelection() : null;
+  if (!block || !root.contains(block)) return false;
+
+  let lastBr = null;
+  const brWalker = document.createTreeWalker(block, NodeFilter.SHOW_ELEMENT);
+  while (brWalker.nextNode()) {
+    const node = brWalker.currentNode;
+    if (node.tagName !== 'BR') continue;
+    if (compareRangeToNode(caret, node) > 0) break;
+    lastBr = node;
+  }
+
+  const walker = document.createTreeWalker(block, NodeFilter.SHOW_TEXT);
+  if (lastBr) walker.currentNode = lastBr;
+  while (walker.nextNode()) {
+    const node = walker.currentNode;
+    const text = node.textContent;
+    const idx = text.search(/\p{L}/u);
+    if (idx < 0) {
+      if (text.replace(/\u00a0/g, ' ').trim()) return false;
+      continue;
+    }
+    if (isUpperLetter(text[idx])) return true;
+    if (!isLowerLetter(text[idx])) return false;
+    node.textContent = text.slice(0, idx) + text[idx].toUpperCase() + text.slice(idx + 1);
+    restoreCollapsedCaret(caretNode, caretOffset);
+    return true;
+  }
+  return false;
+}
+
+function markLineStartCapitalize(root, e) {
+  if (!e || e.isComposing) return;
+  if (isNewlineInput(e.inputType, e.data)) {
+    _capitalizeNext = true;
+    return;
+  }
+  if (
+    e.inputType === 'insertText' &&
+    e.data &&
+    !/[\r\n]/.test(e.data) &&
+    editorCaretAllowsAutocapitalize(root) &&
+    visualLinePrefixIsBlank(root) &&
+    isLowerLetter(e.data[0])
+  ) {
+    _pendingLineStartCapitalize = e.data.length;
+  }
+}
+
+function applyEditorAutocapitalize(root, e) {
+  if (!e || e.isComposing) return;
+  const data = e.data || '';
+  if (isNewlineInput(e.inputType, data) || (!e.inputType && _capitalizeNext)) {
+    _capitalizeNext = !capitalizeFirstLetterOfVisualLine(root);
+    _pendingLineStartCapitalize = 0;
+    return;
+  }
+  if ((e.inputType === 'insertText' && data && !/[\r\n]/.test(data)) || _pendingLineStartCapitalize) {
+    if (_pendingLineStartCapitalize || _capitalizeNext) {
+      if (data) capitalizeInsertedTextAtLineStart(data);
+      else capitalizeCurrentChar(_pendingLineStartCapitalize);
+      _capitalizeNext = false;
+      _pendingLineStartCapitalize = 0;
+    }
+    return;
+  }
+  if (_capitalizeNext && e.inputType && !isNewlineInput(e.inputType, data)) {
+    _capitalizeNext = false;
   }
 }
 
@@ -2022,13 +2203,13 @@ function hasLinkifiableTextNodes(root) {
 function setSaveState(s) {
   const dot = document.getElementById('save-dot');
   const lbl = document.getElementById('save-label');
-  const cfg = { saved:['saved','Saved'], unsaved:['unsaved','Saving'], saving:['saving','Saving...'], loading:['saving','Loading...'], error:['error','Error'], local:['local','Local'], readonly:['local','Read Only'] };
+  const cfg = { saved: ['saved', 'Saved'], unsaved: ['unsaved', 'Saving'], saving: ['saving', 'Saving...'], loading: ['saving', 'Loading...'], error: ['error', 'Error'], local: ['local', 'Local'], readonly: ['local', 'Read Only'] };
   const [cls, txt] = cfg[s] || cfg.local;
   dot.className = 'save-dot ' + cls; lbl.textContent = txt;
 }
 
 function updateCounts() {
-  const txt   = (document.getElementById('editor').innerText || '').replace(/\u200b/g, '');
+  const txt = (document.getElementById('editor').innerText || '').replace(/\u200b/g, '');
   const words = txt.trim() ? txt.trim().split(/\s+/).length : 0;
   const chars = txt.length;
   document.getElementById('word-count').textContent = words + (words === 1 ? ' Word' : ' Words');
@@ -2037,7 +2218,7 @@ function updateCounts() {
 
 function showEditorView(show) {
   document.getElementById('empty-state').style.display = show ? 'none' : 'flex';
-  document.getElementById('editorView').style.display  = show ? 'flex' : 'none';
+  document.getElementById('editorView').style.display = show ? 'flex' : 'none';
   if (!show && typeof setNoteFocusMode === 'function') setNoteFocusMode(false);
   if (!show && typeof listenToConversationsForNote === 'function') listenToConversationsForNote(null);
   if (show) scheduleEditorScrollPastEnd();
@@ -2087,7 +2268,10 @@ function bindEditorScrollPastEnd(root) {
   scheduleEditorScrollPastEnd();
 }
 
-window.addEventListener('resize', scheduleEditorScrollPastEnd);
+window.addEventListener('resize', () => {
+  if (typeof isTransientViewport === 'function' && isTransientViewport()) return;
+  scheduleEditorScrollPastEnd();
+});
 
 /* Delete Modal */
 
@@ -2515,6 +2699,7 @@ function insertCleanLineBelowCaret() {
   }
   recomputeCollapsedSections();
   placeCursorAtStart(target);
+  _capitalizeNext = true;
   ed.dispatchEvent(new Event('input'));
   return true;
 }
@@ -2544,6 +2729,7 @@ function insertCleanLineAboveCaret() {
   }
   recomputeCollapsedSections();
   placeCursorAtStart(target);
+  _capitalizeNext = true;
   ed.dispatchEvent(new Event('input'));
   return true;
 }
@@ -2571,7 +2757,7 @@ function restoreCollapsedState(noteId, root = getEd()) {
         indices.forEach(i => { if (headings[i]) headings[i].setAttribute('data-collapsed', ''); });
         restored = true;
       }
-    } catch (_) {}
+    } catch (_) { }
   }
   if (!restored) {
     headings.forEach(heading => heading.setAttribute('data-collapsed', ''));
@@ -2621,7 +2807,7 @@ let _toastTimer;
 function showToast(msg, type) {
   const el = document.getElementById('toast');
   el.textContent = msg;
-  el.className   = 'show' + (type ? ' ' + type : '');
+  el.className = 'show' + (type ? ' ' + type : '');
   clearTimeout(_toastTimer);
   _toastTimer = setTimeout(() => { el.className = ''; }, 4000);
 }
@@ -2669,7 +2855,7 @@ function dispatchEditorRootInput(root) {
   root?.dispatchEvent?.(new Event('input', { bubbles: true }));
 }
 
-const cmd   = (command, value) => { getEd().focus(); document.execCommand(command, false, value || null); };
+const cmd = (command, value) => { getEd().focus(); document.execCommand(command, false, value || null); };
 
 function currentBlockFromSelection() {
   const sel = window.getSelection();
@@ -3130,6 +3316,7 @@ function splitInlineCodeAtCaret() {
   afterRange.setStart(range.startContainer, range.startOffset);
   afterRange.setEnd(code, code.childNodes.length);
   const afterFragment = afterRange.extractContents();
+  const tailHasCode = !!((afterFragment.textContent || '').replace(/\u200b/g, '') || afterFragment.querySelector('br, img'));
 
   stripInlineCodePlaceholder(code);
   const keepOriginal = !!(code.textContent.replace(/\u200b/g, '') || code.querySelector('br, img'));
@@ -3139,6 +3326,18 @@ function splitInlineCodeAtCaret() {
   nextCode.appendChild(afterFragment);
   ensureInlineCodeFocusable(nextCode);
 
+  // Enter at the end of a chip leaves code, so the new line starts as normal text.
+  const placeCaretOnNewLine = () => {
+    if (tailHasCode) {
+      placeCaretInInlineCode(nextCode, true);
+      return;
+    }
+    const exitParent = nextCode.parentNode;
+    const exitBefore = nextCode.nextSibling;
+    nextCode.remove();
+    placeCaretAtInlineCodeExit(exitParent, exitBefore);
+  };
+
   // List/table cells keep a soft line break inside the same block.
   if (block && (block.tagName === 'LI' || block.tagName === 'TD' || block.tagName === 'TH')) {
     const br = document.createElement('br');
@@ -3147,7 +3346,7 @@ function splitInlineCodeAtCaret() {
       parent.insertBefore(br, parent.firstChild);
       br.after(nextCode);
     }
-    placeCaretInInlineCode(nextCode, true);
+    placeCaretOnNewLine();
     return true;
   }
 
@@ -3164,21 +3363,39 @@ function splitInlineCodeAtCaret() {
     const tailFragment = tailRange.extractContents();
     marker.remove();
 
-    const nextBlock = document.createElement(block.tagName.toLowerCase());
+    const nextBlock = document.createElement(/^H[1-4]$/.test(block.tagName) ? 'p' : block.tagName.toLowerCase());
     nextBlock.appendChild(nextCode);
     while (tailFragment.firstChild) nextBlock.appendChild(tailFragment.firstChild);
     block.after(nextBlock);
     if (!(block.textContent || '').replace(/\u200b/g, '') && !block.querySelector('br, img, code, a')) {
       block.appendChild(document.createElement('br'));
     }
-    placeCaretInInlineCode(nextCode, true);
+    placeCaretOnNewLine();
     return true;
   }
 
   const br = document.createElement('br');
   if (keepOriginal && code.isConnected) code.after(br, nextCode);
   else parent.append(br, nextCode);
-  placeCaretInInlineCode(nextCode, true);
+  placeCaretOnNewLine();
+  return true;
+}
+
+/* Enter onto an empty line drops inline formats (bold, italic, marks) carried over from the line above. */
+function resetInlineFormattingOnNewLine(root = getEd()) {
+  const sel = window.getSelection();
+  if (!root || !sel?.rangeCount || !sel.isCollapsed || !root.contains(sel.anchorNode)) return false;
+  const anchor = sel.anchorNode.nodeType === Node.ELEMENT_NODE ? sel.anchorNode : sel.anchorNode.parentElement;
+  const block = anchor?.closest('p, div, li, h1, h2, h3, h4, blockquote');
+  if (!block || block === root || !root.contains(block) || block.closest('pre, table')) return false;
+  if ((block.textContent || '').replace(/[\s\u200b]/g, '') || block.querySelector('img, ul, ol, table')) return false;
+  block.replaceChildren(document.createElement('br'));
+  const range = document.createRange();
+  range.setStart(block, 0);
+  range.collapse(true);
+  // Re-selecting also clears the browser's pending typing style.
+  sel.removeAllRanges();
+  sel.addRange(range);
   return true;
 }
 
@@ -3203,7 +3420,7 @@ function insertInlineCode() {
     return;
   }
 
-  const code  = document.createElement('code');
+  const code = document.createElement('code');
   if (range.collapsed) {
     const marker = document.createTextNode('\u200b');
     code.dataset.inlineCodeEmpty = '1';
@@ -3311,12 +3528,12 @@ function createTableControls(title = '') {
     '<button class="table-drag-btn" data-editor-block-drag="table" type="button" title="Move Table" aria-label="Move Table"><i class="fa-solid fa-up-down-left-right"></i></button>' +
     '<button class="table-delete-btn" data-table-action="delete-table" type="button" title="Delete Table" aria-label="Delete Table"><i class="fa-solid fa-xmark"></i></button>' +
     '<div class="table-axis-controls table-row-controls" aria-label="Row controls">' +
-      '<button class="table-btn" data-table-action="add-row" type="button" title="Add Row" aria-label="Add Row"><i class="fa-solid fa-plus"></i></button>' +
-      '<button class="table-btn" data-table-action="remove-row" type="button" title="Remove Row" aria-label="Remove Row"><i class="fa-solid fa-minus"></i></button>' +
+    '<button class="table-btn" data-table-action="add-row" type="button" title="Add Row" aria-label="Add Row"><i class="fa-solid fa-plus"></i></button>' +
+    '<button class="table-btn" data-table-action="remove-row" type="button" title="Remove Row" aria-label="Remove Row"><i class="fa-solid fa-minus"></i></button>' +
     '</div>' +
     '<div class="table-axis-controls table-column-controls" aria-label="Column controls">' +
-      '<button class="table-btn" data-table-action="add-column" type="button" title="Add Column" aria-label="Add Column"><i class="fa-solid fa-plus"></i></button>' +
-      '<button class="table-btn" data-table-action="remove-column" type="button" title="Remove Column" aria-label="Remove Column"><i class="fa-solid fa-minus"></i></button>' +
+    '<button class="table-btn" data-table-action="add-column" type="button" title="Add Column" aria-label="Add Column"><i class="fa-solid fa-plus"></i></button>' +
+    '<button class="table-btn" data-table-action="remove-column" type="button" title="Remove Column" aria-label="Remove Column"><i class="fa-solid fa-minus"></i></button>' +
     '</div>';
   return controls;
 }
@@ -3551,8 +3768,8 @@ function startEditorBlockDrag(e, block) {
   updateEditorBlockDropIndicator(root, _editorBlockDragState.beforeNode);
   document.body.style.cursor = 'grabbing';
   document.body.style.userSelect = 'none';
-  try { e.currentTarget?.setPointerCapture?.(e.pointerId); } catch (_) {}
-  try { block.setPointerCapture?.(e.pointerId); } catch (_) {}
+  try { e.currentTarget?.setPointerCapture?.(e.pointerId); } catch (_) { }
+  try { block.setPointerCapture?.(e.pointerId); } catch (_) { }
 
   let latestY = e.clientY;
   let frame = 0;
@@ -3583,8 +3800,8 @@ function startEditorBlockDrag(e, block) {
       frame = 0;
       if (evt?.type !== 'pointercancel') updatePreview();
     }
-    try { e.currentTarget?.releasePointerCapture?.(e.pointerId); } catch (_) {}
-    try { block.releasePointerCapture?.(e.pointerId); } catch (_) {}
+    try { e.currentTarget?.releasePointerCapture?.(e.pointerId); } catch (_) { }
+    try { block.releasePointerCapture?.(e.pointerId); } catch (_) { }
     document.body.style.cursor = '';
     document.body.style.userSelect = '';
 
@@ -4659,7 +4876,7 @@ function startTableReorder(e, handle) {
   updateTableReorderIndicator(table, type, _tableReorderState.insertionIndex);
   document.body.style.cursor = 'grabbing';
   document.body.style.userSelect = 'none';
-  try { handle.setPointerCapture?.(e.pointerId); } catch (_) {}
+  try { handle.setPointerCapture?.(e.pointerId); } catch (_) { }
 
   let latestX = e.clientX;
   let latestY = e.clientY;
@@ -4696,7 +4913,7 @@ function startTableReorder(e, handle) {
       if (evt?.type !== 'pointercancel') updatePreview();
     }
     handle.classList.remove('dragging');
-    try { handle.releasePointerCapture?.(e.pointerId); } catch (_) {}
+    try { handle.releasePointerCapture?.(e.pointerId); } catch (_) { }
     document.body.style.cursor = '';
     document.body.style.userSelect = '';
     table.closest('.note-table-wrap')?.classList.remove('table-reordering');
@@ -4843,7 +5060,7 @@ function startTableColumnResize(e, handle) {
   handle.classList.add('dragging');
   document.body.style.cursor = 'col-resize';
   document.body.style.userSelect = 'none';
-  try { handle.setPointerCapture?.(e.pointerId); } catch (_) {}
+  try { handle.setPointerCapture?.(e.pointerId); } catch (_) { }
 
   const applyResize = clientX => {
     const delta = clampValue(clientX - startX, minDelta, maxDelta);
@@ -4874,7 +5091,7 @@ function startTableColumnResize(e, handle) {
       applyResize(latestX);
     }
     handle.classList.remove('dragging');
-    try { handle.releasePointerCapture?.(e.pointerId); } catch (_) {}
+    try { handle.releasePointerCapture?.(e.pointerId); } catch (_) { }
     document.body.style.cursor = '';
     document.body.style.userSelect = '';
     scrollWrap?.classList.remove('is-resizing');
@@ -4911,7 +5128,7 @@ function startTableWidthResize(e, handle) {
   handle.classList.add('dragging');
   document.body.style.cursor = 'col-resize';
   document.body.style.userSelect = 'none';
-  try { handle.setPointerCapture?.(e.pointerId); } catch (_) {}
+  try { handle.setPointerCapture?.(e.pointerId); } catch (_) { }
 
   const applyResize = clientX => {
     const nextWidth = clampValue(startWidth + clientX - startX, minWidth, maxWidth);
@@ -4939,7 +5156,7 @@ function startTableWidthResize(e, handle) {
       applyResize(latestX);
     }
     handle.classList.remove('dragging');
-    try { handle.releasePointerCapture?.(e.pointerId); } catch (_) {}
+    try { handle.releasePointerCapture?.(e.pointerId); } catch (_) { }
     document.body.style.cursor = '';
     document.body.style.userSelect = '';
     scrollWrap?.classList.remove('is-resizing');
@@ -5130,17 +5347,17 @@ function shouldBlockTableAction(action) {
 }
 
 const ACTIONS = {
-  bold:          () => cmd('bold'),
-  italic:        () => cmd('italic'),
+  bold: () => cmd('bold'),
+  italic: () => cmd('italic'),
   strikethrough: () => cmd('strikeThrough'),
-  h1:            () => {
+  h1: () => {
     const blocks = getSelectedLineBlocks();
     if (blocks) { applyBlockFormatToBlocks(blocks, 'h1'); return; }
     toggleBlock('h1');
   },
-  h2:            () => toggleBlock('h2'),
-  h3:            () => toggleBlock('h3'),
-  ul:            () => {
+  h2: () => toggleBlock('h2'),
+  h3: () => toggleBlock('h3'),
+  ul: () => {
     const blocks = getSelectedLineBlocks();
     if (blocks) { applyBlockFormatToBlocks(blocks, 'ul'); return; }
     // If inside a checklist, convert only this item to a regular bullet
@@ -5156,12 +5373,12 @@ const ACTIONS = {
     }
     cmd('insertUnorderedList'); getEd().focus();
   },
-  ol:            () => {
+  ol: () => {
     const blocks = getSelectedLineBlocks();
     if (blocks) { applyBlockFormatToBlocks(blocks, 'ol'); return; }
     cmd('insertOrderedList'); getEd().focus();
   },
-  checklist:     () => {
+  checklist: () => {
     const blocks = getSelectedLineBlocks();
     if (blocks) { applyBlockFormatToBlocks(blocks, 'checklist'); return; }
     getEd().focus();
@@ -5183,9 +5400,9 @@ const ACTIONS = {
     }
     // Not in a list — wrap current block's content in a new checklist item
     const block = currentBlockFromSelection();
-    const list  = document.createElement('ul');
+    const list = document.createElement('ul');
     list.className = 'checklist';
-    const item  = document.createElement('li');
+    const item = document.createElement('li');
     if (block && block !== getEd()) {
       // Transfer existing text/nodes into the new li
       while (block.firstChild) item.appendChild(block.firstChild);
@@ -5199,15 +5416,15 @@ const ACTIONS = {
     placeCursorAtEnd(item);
     getEd().dispatchEvent(new Event('input'));
   },
-  quote:         () => toggleBlock('blockquote'),
-  code:          insertInlineCode,
-  codeblock:     insertCodeBlock,
-  table:         insertTable,
-  link:          insertLink,
-  alarm:         () => openNoteAlarmModal(activeId),
-  conversation:  () => openConversationComposerFromSelection(),
-  hr:            () => { cmd('insertHorizontalRule'); getEd().focus(); },
-  indentLeft:    () => {
+  quote: () => toggleBlock('blockquote'),
+  code: insertInlineCode,
+  codeblock: insertCodeBlock,
+  table: insertTable,
+  link: insertLink,
+  alarm: () => openNoteAlarmModal(activeId),
+  conversation: () => openConversationComposerFromSelection(),
+  hr: () => { cmd('insertHorizontalRule'); getEd().focus(); },
+  indentLeft: () => {
     const checklistLi = currentChecklistItemFromSelection();
     if (checklistLi) {
       if (checklistOutdent(checklistLi)) getEd().dispatchEvent(new Event('input'));
@@ -5216,7 +5433,7 @@ const ACTIONS = {
     }
     getEd().focus();
   },
-  indentRight:   () => {
+  indentRight: () => {
     const checklistLi = currentChecklistItemFromSelection();
     if (checklistLi) {
       if (checklistIndent(checklistLi)) getEd().dispatchEvent(new Event('input'));
@@ -5515,14 +5732,14 @@ function renderReminderItem(item) {
     (typeof renderSidebarSelectionCheckbox === 'function' ? renderSidebarSelectionCheckbox(item.key, 'Select reminder') : '') +
     '<span class="alarm-icon"><i class="' + reminderItemIcon(item) + '"></i></span>' +
     '<div class="profile-main">' +
-      '<div class="alarm-text">' + esc(item.text) + '</div>' +
-      '<div class="alarm-note-title">' + esc(reminderItemMeta(item)) + '</div>' +
-      '<div class="notification-time">' + esc(formatAlarmDateTime(item.alarmAt)) + (item.done ? ' · Done' : (item.due ? ' · Due' : '')) + '</div>' +
+    '<div class="alarm-text">' + esc(item.text) + '</div>' +
+    '<div class="alarm-note-title">' + esc(reminderItemMeta(item)) + '</div>' +
+    '<div class="notification-time">' + esc(formatAlarmDateTime(item.alarmAt)) + (item.done ? ' · Done' : (item.due ? ' · Due' : '')) + '</div>' +
     '</div>' +
     '<button class="sidebar-row-icon-btn alarm-done-btn' + (item.done ? ' is-done' : '') + '" type="button" data-alarm-done-key="' + esc(item.key) + '" title="' + esc(doneLabel) + '" aria-label="' + esc(doneLabel) + '" aria-pressed="' + (item.done ? 'true' : 'false') + '">' +
-      '<i class="fa-solid fa-check"></i>' +
+    '<i class="fa-solid fa-check"></i>' +
     '</button>' +
-  '</div>';
+    '</div>';
 }
 
 function renderAlarmsList(target = 'alarms-list') {
@@ -5541,7 +5758,7 @@ function renderAlarmsList(target = 'alarms-list') {
     return '<div class="reminder-section">' +
       '<div class="sidebar-section-label">' + reminderSectionLabel(direction) + '</div>' +
       sectionItems.map(renderReminderItem).join('') +
-    '</div>';
+      '</div>';
   }).join('');
   if (typeof attachSidebarSelectionHandlers === 'function') attachSidebarSelectionHandlers(list);
 
@@ -5770,10 +5987,10 @@ function renderAlarmRecipientOption(value, profile, selected, needsAccess = fals
   return '<button class="alarm-recipient-option' + (selected ? ' active' : '') + (needsAccess ? ' needs-note-access' : '') + '" data-alarm-recipient-option="' + esc(value) + '" type="button" role="radio" aria-checked="' + (selected ? 'true' : 'false') + '">' +
     renderProfileAvatar(profile) +
     '<span class="alarm-recipient-copy">' +
-      '<span class="alarm-recipient-name">' + esc(value === 'me' ? 'You' : (profile.displayName || 'Friend')) + '</span>' +
-      (value === 'me' ? '' : '<span class="alarm-recipient-sub">' + esc(needsAccess ? 'Needs Note Access' : 'Write Access') + '</span>') +
+    '<span class="alarm-recipient-name">' + esc(value === 'me' ? 'You' : (profile.displayName || 'Friend')) + '</span>' +
+    (value === 'me' ? '' : '<span class="alarm-recipient-sub">' + esc(needsAccess ? 'Needs Note Access' : 'Write Access') + '</span>') +
     '</span>' +
-  '</button>';
+    '</button>';
 }
 
 function updateAlarmRecipientOptionState() {
@@ -6215,10 +6432,12 @@ async function deleteReminderDeliveryCopies(reminder, fallbackUid = '', fallback
   if (targetUid) deletes.push({ promise: deleteDoc(doc(fsDb, 'profileShares', targetUid, 'items', reminderId)) });
   if (targetEmail) deletes.push({ promise: deleteDoc(doc(fsDb, 'profileEmailShares', emailProfileDocId(targetEmail), 'items', reminderId)) });
   if (reminder?.noteId && targetUid && targetUid !== userId && typeof noteAccessDocId === 'function') {
-    deletes.push({ optionalMissing: true, promise: updateDoc(doc(fsDb, 'noteAccess', noteAccessDocId(reminder.noteId, targetUid)), {
-      ['reminders.' + reminderId]: deleteField(),
-      modified: serverTimestamp()
-    }) });
+    deletes.push({
+      optionalMissing: true, promise: updateDoc(doc(fsDb, 'noteAccess', noteAccessDocId(reminder.noteId, targetUid)), {
+        ['reminders.' + reminderId]: deleteField(),
+        modified: serverTimestamp()
+      })
+    });
   }
   if (!deletes.length) return true;
   const results = await Promise.allSettled(deletes.map(item => item.promise));
@@ -6417,7 +6636,7 @@ function renderMentionPopover() {
     return '<div class="mention-option' + (i === _mentionActiveIndex ? ' active' : '') + (needsAccess ? ' needs-note-access' : '') + '" data-mention-uid="' + esc(p.uid) + '">' +
       renderProfileAvatar(p) +
       '<div class="profile-main"><div class="profile-name">' + esc(p.displayName) + '</div><div class="profile-sub">' + esc(needsAccess ? 'Needs Note Access' : '@mention') + '</div></div>' +
-    '</div>';
+      '</div>';
   }).join('');
   pop.hidden = false;
   positionMentionPopover(ctx.range);

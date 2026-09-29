@@ -14,26 +14,26 @@ function openDeleteModal(type, id) {
   titleEl.textContent = isPermanentTrashDelete
     ? 'Delete Forever?'
     : isOwned
-    ? (type === 'note' ? 'Delete Note?' : 'Delete Folder?')
-    : (type === 'note' ? 'Remove Shared Note?' : 'Remove Shared Folder?');
+      ? (type === 'note' ? 'Delete Note?' : 'Delete Folder?')
+      : (type === 'note' ? 'Remove Shared Note?' : 'Remove Shared Folder?');
   bodyEl.className = 'delete-message' + (isOwned ? '' : ' remove');
   const copy = isPermanentTrashDelete
     ? 'Permanently deletes this note now. This cannot be undone.'
     : isOwned
-    ? (type === 'note'
-      ? 'Moves this note to Trash for 30 days. You can restore it before it is permanently deleted.'
-      : 'Deletes the folder. Notes inside move to Notes.')
-    : (type === 'note'
-      ? 'Removes it from your library only. The owner keeps the note.'
-      : 'Removes this folder and its shared notes from your library only.');
+      ? (type === 'note'
+        ? 'Moves this note to Trash for 30 days. You can restore it before it is permanently deleted.'
+        : 'Deletes the folder. Notes inside move to Notes and subfolders move to the top level.')
+      : (type === 'note'
+        ? 'Removes it from your library only. The owner keeps the note.'
+        : 'Removes this folder and its shared notes from your library only.');
   bodyEl.innerHTML =
     '<strong class="delete-target">' + esc(name) + '</strong>' +
     '<div class="delete-copy">' + esc(copy) + '</div>';
   confirmBtn.innerHTML = isPermanentTrashDelete
     ? '<i class="fa-solid fa-trash" style="margin-right:6px;"></i>Delete Forever'
     : isOwned
-    ? '<i class="fa-solid fa-trash" style="margin-right:6px;"></i>Move To Trash'
-    : '<i class="fa-solid fa-xmark" style="margin-right:6px;"></i>Remove';
+      ? '<i class="fa-solid fa-trash" style="margin-right:6px;"></i>Move To Trash'
+      : '<i class="fa-solid fa-xmark" style="margin-right:6px;"></i>Remove';
   document.getElementById('delete-modal').classList.add('open');
 }
 function openDeleteConfirmationModal(options = {}) {
@@ -182,17 +182,14 @@ function renderAccessAvatars(profiles, label) {
   return '<span class="access-avatars" title="' + esc(title) + '">' +
     shown.map(p => renderAvatar(p, 'access-avatar')).join('') +
     (visible.length > shown.length ? '<span class="access-avatar access-more">+' + (visible.length - shown.length) + '</span>' : '') +
-  '</span>';
+    '</span>';
 }
 
 function updateActiveNoteAccessAvatars() {
   const el = document.getElementById('doc-access-avatars');
   if (!el) return;
   const note = activeId ? notes[activeId] : null;
-  const linkBadge = note?.linkPublic
-    ? '<span class="note-shared-badge" title="Link sharing is on"><i class="fa-solid fa-link"></i></span>'
-    : '';
-  el.innerHTML = note ? renderAccessAvatars(accessProfilesForNote(note), isOwnedNote(note) ? 'Shared with' : 'Your access') + linkBadge : '';
+  el.innerHTML = note ? renderAccessAvatars(accessProfilesForNote(note), isOwnedNote(note) ? 'Shared with' : 'Your access') : '';
 }
 
 /* ── Context Menu ────────────────────────────────── */
@@ -237,19 +234,19 @@ function openCtxMenu(anchorEl, items, options = {}) {
   anchorEl.classList.add('open');
   menu.classList.add('open');
   requestAnimationFrame(() => {
-    const r  = anchorEl.getBoundingClientRect();
-    const mw = menu.offsetWidth  || 180;
+    const r = anchorEl.getBoundingClientRect();
+    const mw = menu.offsetWidth || 180;
     const mh = menu.offsetHeight || 160;
     const hasPosition = Number.isFinite(options?.x) && Number.isFinite(options?.y);
     let left = hasPosition ? options.x : r.right - mw;
-    let top  = hasPosition ? options.y : r.bottom + 4;
+    let top = hasPosition ? options.y : r.bottom + 4;
     if (!hasPosition && left < 8) left = r.left;
     if (top + mh > window.innerHeight - 8) {
       top = hasPosition ? options.y - mh - 4 : r.top - mh - 4;
     }
     left = Math.max(8, Math.min(left, window.innerWidth - mw - 8));
     menu.style.left = left + 'px';
-    menu.style.top  = top  + 'px';
+    menu.style.top = top + 'px';
   });
   _ctxCloseHandler = e => { if (!menu.contains(e.target) && e.target !== anchorEl) closeCtxMenu(); };
   setTimeout(() => document.addEventListener('click', _ctxCloseHandler), 0);
@@ -329,47 +326,43 @@ function enableMouseOnlyDrag(el) {
 }
 
 function makeSidebarNoteEl(note, { inFolder = false } = {}) {
-  const active   = note.id === activeId;
-  const isOwned  = isOwnedNote(note);
+  const active = note.id === activeId;
+  const isOwned = isOwnedNote(note);
   const isPinned = isPinnedNote(note);
   const pinScope = pinScopeForNote(note);
   const canChoosePinScope = hasVisibleFolder(note);
   const pinMenu = canChoosePinScope
     ? {
-        icon: 'fa-solid fa-thumbtack',
-        label: 'Pin',
-        children: [
-          { icon: 'fa-solid fa-arrow-up', label: pinScope === 'major' ? 'Major Pin Active' : 'Major Pin', action: () => setNotePinned(note.id, true, 'major') },
-          { icon: 'fa-solid fa-thumbtack', label: pinScope === 'minor' ? 'Minor Pin Active' : 'Minor Pin', action: () => setNotePinned(note.id, true, 'minor') },
-          ...(isPinned ? ['sep', { icon: 'fa-solid fa-xmark', label: 'Unpin', action: () => setNotePinned(note.id, false) }] : [])
-        ]
-      }
+      icon: 'fa-solid fa-thumbtack',
+      label: 'Pin',
+      children: [
+        { icon: 'fa-solid fa-arrow-up', label: pinScope === 'major' ? 'Major Pin Active' : 'Major Pin', action: () => setNotePinned(note.id, true, 'major') },
+        { icon: 'fa-solid fa-thumbtack', label: pinScope === 'minor' ? 'Minor Pin Active' : 'Minor Pin', action: () => setNotePinned(note.id, true, 'minor') },
+        ...(isPinned ? ['sep', { icon: 'fa-solid fa-xmark', label: 'Unpin', action: () => setNotePinned(note.id, false) }] : [])
+      ]
+    }
     : {
-        icon: 'fa-solid fa-thumbtack',
-        label: isPinned ? 'Unpin from Sidebar' : 'Pin to Sidebar',
-        action: () => setNotePinned(note.id, !isPinnedNote(note), 'major')
-      };
+      icon: 'fa-solid fa-thumbtack',
+      label: isPinned ? 'Unpin from Sidebar' : 'Pin to Sidebar',
+      action: () => setNotePinned(note.id, !isPinnedNote(note), 'major')
+    };
   const showPreview = sidebarNotePreviewMode === 'title-text';
-  const snippet  = showPreview ? notePreviewText(note) : '';
+  const snippet = showPreview ? notePreviewText(note) : '';
   const accessAvatars = inFolder ? '' : renderAccessAvatars(accessProfilesForNote(note), isOwned ? 'Shared with' : 'Shared by');
-  const linkBadge = note.linkPublic
-    ? '<span class="note-shared-badge" title="Link sharing is on"><i class="fa-solid fa-link"></i></span>'
-    : '';
   const noteFolder = note.folderId ? folders[note.folderId] : null;
   const noteFolderColor = noteFolder ? resolveFolderIconColor(noteFolder.iconColor, noteFolder.iconColorMode) : '';
-  const el       = document.createElement('div');
-  el.className   = 'sidebar-item' + (active ? ' active' : '') + (showPreview ? '' : ' titles-only');
-  el.dataset.id  = note.id;
+  const el = document.createElement('div');
+  el.className = 'sidebar-item' + (active ? ' active' : '') + (showPreview ? '' : ' titles-only');
+  el.dataset.id = note.id;
   enableMouseOnlyDrag(el);
   if (noteFolderColor) {
     el.classList.add('note-folder-border');
     el.style.setProperty('--note-folder-color', noteFolderColor);
   }
-  el.innerHTML   =
+  el.innerHTML =
     '<div class="item-info"><div class="item-name">' + esc(note.title) + '</div>' + (showPreview ? '<div class="item-preview">' + esc(snippet) + '</div>' : '') + '</div>' +
     accessAvatars +
     (isPinned ? '<span class="note-pin-badge" title="' + (pinScope === 'minor' ? 'Pinned in folder' : 'Pinned to sidebar') + '"><i class="fa-solid fa-thumbtack"></i></span>' : '') +
-    linkBadge +
     '<button class="item-menu-btn" title="More Options"><i class="fa-solid fa-ellipsis"></i></button>';
   el.addEventListener('click', e => {
     if (!e.target.closest('.item-menu-btn')) openNote(note.id, { source: 'sidebar' });
@@ -378,20 +371,20 @@ function makeSidebarNoteEl(note, { inFolder = false } = {}) {
     e.stopPropagation();
     const items = isOwned
       ? [
-          pinMenu,
-          { icon: 'fa-solid fa-arrow-up-from-bracket', label: 'Share',              action: () => openShareModal('note', note.id) },
-          ...(inFolder ? [{ icon: 'fa-solid fa-folder-minus', label: 'Remove from Folder', action: () => moveNoteToFolder(note.id, null) }] : []),
-          { icon: 'fa-solid fa-folder-open',            label: 'Move to Folder',    action: () => openMoveModal(note.id) },
-          'sep',
-          { icon: 'fa-solid fa-trash', label: 'Delete', danger: true,              action: () => deleteNote(note.id) }
-        ]
+        pinMenu,
+        { icon: 'fa-solid fa-arrow-up-from-bracket', label: 'Share', action: () => openShareModal('note', note.id) },
+        ...(inFolder ? [{ icon: 'fa-solid fa-folder-minus', label: 'Remove from Folder', action: () => moveNoteToFolder(note.id, null) }] : []),
+        { icon: 'fa-solid fa-folder-open', label: 'Move to Folder', action: () => openMoveModal(note.id) },
+        'sep',
+        { icon: 'fa-solid fa-trash', label: 'Delete', danger: true, action: () => deleteNote(note.id) }
+      ]
       : [
-          pinMenu,
-          ...(inFolder ? [{ icon: 'fa-solid fa-folder-minus', label: 'Remove from Folder', action: () => moveNoteToFolder(note.id, null) }] : []),
-          { icon: 'fa-solid fa-folder-open', label: 'Move to Folder', action: () => openMoveModal(note.id) },
-          'sep',
-          { icon: 'fa-solid fa-xmark', label: 'Remove from Library', danger: true, action: () => deleteNote(note.id) }
-        ];
+        pinMenu,
+        ...(inFolder ? [{ icon: 'fa-solid fa-folder-minus', label: 'Remove from Folder', action: () => moveNoteToFolder(note.id, null) }] : []),
+        { icon: 'fa-solid fa-folder-open', label: 'Move to Folder', action: () => openMoveModal(note.id) },
+        'sep',
+        { icon: 'fa-solid fa-xmark', label: 'Remove from Library', danger: true, action: () => deleteNote(note.id) }
+      ];
     openCtxMenu(e.currentTarget, items);
   });
   el.addEventListener('dragstart', e => {
@@ -882,30 +875,30 @@ function renderSidebarActionButtons(readId, deleteId, listId = '') {
     '<button class="sidebar-page-action compact" id="' + esc(readId) + '" type="button"><i class="fa-solid fa-check-double"></i><span>Read All</span></button>' +
     '<button class="sidebar-page-action compact" id="' + esc(deleteId) + '" type="button"><i class="fa-solid fa-trash"></i><span>Delete Read</span></button>' +
     selectionToggle +
-  '</div>';
+    '</div>';
 }
 
 function renderSidebarSelectionBar(listId) {
   return '<div class="sidebar-selection-bar" data-selection-tools-for="' + esc(listId) + '">' +
     '<div class="sidebar-selection-tools-left">' +
-      '<label class="sidebar-selection-master" title="Select all" aria-label="Select all">' +
-        '<input type="checkbox" data-selection-master-for="' + esc(listId) + '" />' +
-        '<span class="sidebar-selection-master-label"><i class="fa-solid fa-check-double"></i><span>Select All</span></span>' +
-      '</label>' +
-      '<span class="sidebar-selection-count" data-selection-count-for="' + esc(listId) + '" aria-live="polite" hidden></span>' +
+    '<label class="sidebar-selection-master" title="Select all" aria-label="Select all">' +
+    '<input type="checkbox" data-selection-master-for="' + esc(listId) + '" />' +
+    '<span class="sidebar-selection-master-label"><i class="fa-solid fa-check-double"></i><span>Select All</span></span>' +
+    '</label>' +
+    '<span class="sidebar-selection-count" data-selection-count-for="' + esc(listId) + '" aria-live="polite" hidden></span>' +
     '</div>' +
     '<div class="sidebar-selection-actions">' +
-      '<button class="sidebar-selection-action" data-selection-unread-for="' + esc(listId) + '" type="button" disabled><i class="fa-solid fa-envelope"></i><span>Unread</span></button>' +
-      '<button class="sidebar-selection-action danger" data-selection-delete-for="' + esc(listId) + '" type="button" disabled><i class="fa-solid fa-trash"></i><span>Delete</span></button>' +
+    '<button class="sidebar-selection-action" data-selection-unread-for="' + esc(listId) + '" type="button" disabled><i class="fa-solid fa-envelope"></i><span>Unread</span></button>' +
+    '<button class="sidebar-selection-action danger" data-selection-delete-for="' + esc(listId) + '" type="button" disabled><i class="fa-solid fa-trash"></i><span>Delete</span></button>' +
     '</div>' +
-  '</div>';
+    '</div>';
 }
 
 function renderSidebarSelectionCheckbox(key, label = 'Select item') {
   return '<label class="sidebar-select-control" title="' + esc(label) + '" aria-label="' + esc(label) + '">' +
     '<input type="checkbox" data-select-key="' + esc(key) + '" />' +
     '<span></span>' +
-  '</label>';
+    '</label>';
 }
 
 function sidebarListFromTarget(target) {
@@ -1037,20 +1030,20 @@ function renderSidebarPage(view, filter = currentSidebarSearchFilter()) {
   updateRailActiveState();
 
   const meta = {
-    create:        { icon: 'fa-solid fa-plus',       label: 'Create' },
-    notifications: { icon: 'fa-solid fa-bell',       label: 'Notifications' },
-    alarms:        { icon: 'fa-solid fa-clock',      label: 'Reminders' },
-    conversations: { icon: 'fa-solid fa-comments',   label: 'Conversations' },
-    friends:       { icon: 'fa-solid fa-user-group', label: 'Friends' },
-    trash:         { icon: 'fa-solid fa-trash',      label: 'Trash' }
+    create: { icon: 'fa-solid fa-plus', label: 'Create' },
+    notifications: { icon: 'fa-solid fa-bell', label: 'Notifications' },
+    alarms: { icon: 'fa-solid fa-clock', label: 'Reminders' },
+    conversations: { icon: 'fa-solid fa-comments', label: 'Conversations' },
+    friends: { icon: 'fa-solid fa-user-group', label: 'Friends' },
+    trash: { icon: 'fa-solid fa-trash', label: 'Trash' }
   }[view] || { icon: 'fa-solid fa-note-sticky', label: 'Notes' };
 
   list.innerHTML =
     '<div class="sidebar-page">' +
-      '<div class="sidebar-page-header">' +
-        '<div class="sidebar-page-title"><i class="' + meta.icon + '"></i><span>' + meta.label + '</span></div>' +
-      '</div>' +
-      '<div class="sidebar-page-content" id="sidebar-page-content"></div>' +
+    '<div class="sidebar-page-header">' +
+    '<div class="sidebar-page-title"><i class="' + meta.icon + '"></i><span>' + meta.label + '</span></div>' +
+    '</div>' +
+    '<div class="sidebar-page-content" id="sidebar-page-content"></div>' +
     '</div>';
 
   const content = document.getElementById('sidebar-page-content');
@@ -1103,12 +1096,12 @@ function renderSidebarPage(view, filter = currentSidebarSearchFilter()) {
   if (view === 'friends') {
     content.innerHTML =
       '<div class="profile-connect-row">' +
-        '<input class="modal-input" id="sidebar-connect-profile-email-input" type="email" placeholder="Friend Email" autocomplete="email" />' +
-        '<button class="modal-btn primary" id="sidebar-connect-profile-btn" type="button">Add</button>' +
+      '<input class="modal-input" id="sidebar-connect-profile-email-input" type="email" placeholder="Friend Email" autocomplete="email" />' +
+      '<button class="modal-btn primary" id="sidebar-connect-profile-btn" type="button">Add</button>' +
       '</div>' +
       '<div class="profile-link-requests" id="sidebar-profile-link-requests-panel" hidden>' +
-        '<div class="share-section-title"><i class="fa-solid fa-user-check"></i><span>Friend Requests</span></div>' +
-        '<div class="profile-list" id="sidebar-profile-link-requests-list"></div>' +
+      '<div class="share-section-title"><i class="fa-solid fa-user-check"></i><span>Friend Requests</span></div>' +
+      '<div class="profile-list" id="sidebar-profile-link-requests-list"></div>' +
       '</div>' +
       '<div class="share-section-title"><i class="fa-solid fa-user-group"></i><span>Friends</span></div>' +
       '<div class="profile-list" id="sidebar-linked-profiles-list"></div>';
@@ -1142,14 +1135,14 @@ function renderSidebarPage(view, filter = currentSidebarSearchFilter()) {
       const sub = days > 1 ? 'Deletes in ' + days + ' days' : days === 1 ? 'Deletes tomorrow' : 'Deletes soon';
       return '<div class="trash-row" data-trash-note-id="' + esc(id) + '">' +
         '<button class="trash-main" data-open-trash-note="' + esc(id) + '" type="button">' +
-          '<div class="trash-title">' + esc(note.title || 'Untitled Note') + '</div>' +
-          '<div class="trash-sub">' + esc(sub) + '</div>' +
+        '<div class="trash-title">' + esc(note.title || 'Untitled Note') + '</div>' +
+        '<div class="trash-sub">' + esc(sub) + '</div>' +
         '</button>' +
         '<div class="trash-actions">' +
-          '<button class="trash-action-btn" data-restore-note="' + esc(id) + '" type="button" title="Restore" aria-label="Restore"><i class="fa-solid fa-rotate-left"></i></button>' +
-          '<button class="trash-action-btn danger" data-delete-trash-note="' + esc(id) + '" type="button" title="Delete Forever" aria-label="Delete Forever"><i class="fa-solid fa-trash"></i></button>' +
+        '<button class="trash-action-btn" data-restore-note="' + esc(id) + '" type="button" title="Restore" aria-label="Restore"><i class="fa-solid fa-rotate-left"></i></button>' +
+        '<button class="trash-action-btn danger" data-delete-trash-note="' + esc(id) + '" type="button" title="Delete Forever" aria-label="Delete Forever"><i class="fa-solid fa-trash"></i></button>' +
         '</div>' +
-      '</div>';
+        '</div>';
     }).join('');
     trashList.querySelectorAll('[data-open-trash-note]').forEach(btn => {
       btn.addEventListener('click', () => openNote(btn.dataset.openTrashNote));
@@ -1221,32 +1214,30 @@ function renderSidebar(filter) {
     list.appendChild(pinnedWrap);
   }
 
-  sortedFolderList.forEach(folder => {
+  const buildFolderEl = folder => {
     const folderNotes = folderNotesById.get(folder.id) || [];
-    if (filter && !folder.title.toLowerCase().includes(filter) && !folderNotes.length) return;
-    hasContent = true;
+    const parentId = folderParentId(folder);
+    const isSubfolder = !!parentId;
+    const subfolderEls = isSubfolder ? [] : childFolders(folder.id).map(buildFolderEl).filter(Boolean);
+    if (filter && !folder.title.toLowerCase().includes(filter) && !folderNotes.length && !subfolderEls.length) return null;
 
-    const isExpanded = expandedFolders.has(folder.id);
-    const folderEl   = document.createElement('div');
-    folderEl.className = 'folder-item';
+    const isExpanded = expandedFolders.has(folder.id) || (!!filter && subfolderEls.length > 0);
+    const folderEl = document.createElement('div');
+    folderEl.className = 'folder-item' + (isSubfolder ? ' subfolder-item' : '');
 
     const folderAccessProfiles = accessProfilesForFolder(folder);
-    const sharedBadge = folder.public
-      ? '<span class="folder-shared-badge" title="Link sharing is on"><i class="fa-solid fa-link"></i></span>'
-      : '';
     const folderAccessAvatars = renderAccessAvatars(folderAccessProfiles, isOwnedFolder(folder) ? 'Folder shared with' : 'Shared by');
     const folderColor = resolveFolderIconColor(folder.iconColor, folder.iconColorMode);
     const toggleLabel = isExpanded ? 'Collapse Folder' : 'Expand Folder';
     folderEl.innerHTML =
       '<div class="folder-row" data-fid="' + folder.id + '" style="--folder-color:' + esc(folderColor) + ';">' +
-        '<button class="folder-toggle-btn" type="button" title="' + toggleLabel + '" aria-label="' + toggleLabel + '">' +
-          '<span class="folder-chevron' + (isExpanded ? ' expanded' : '') + '"><i class="fa-solid fa-chevron-right"></i></span>' +
-          '<span class="item-icon folder-icon"><i class="fa-solid fa-folder' + (isExpanded ? '-open' : '') + '"></i></span>' +
-        '</button>' +
-        '<div class="item-info"><div class="item-name">' + esc(folder.title) + '</div></div>' +
-        folderAccessAvatars +
-        sharedBadge +
-        '<button class="item-menu-btn" title="More Options"><i class="fa-solid fa-ellipsis"></i></button>' +
+      '<button class="folder-toggle-btn" type="button" title="' + toggleLabel + '" aria-label="' + toggleLabel + '">' +
+      '<span class="folder-chevron' + (isExpanded ? ' expanded' : '') + '"><i class="fa-solid fa-chevron-right"></i></span>' +
+      '<span class="item-icon folder-icon"><i class="fa-solid fa-folder' + (isExpanded ? '-open' : '') + '"></i></span>' +
+      '</button>' +
+      '<div class="item-info"><div class="item-name">' + esc(folder.title) + '</div></div>' +
+      folderAccessAvatars +
+      '<button class="item-menu-btn" title="More Options"><i class="fa-solid fa-ellipsis"></i></button>' +
       '</div>';
 
     const row = folderEl.querySelector('.folder-row');
@@ -1255,6 +1246,7 @@ function renderSidebar(filter) {
     notesWrap.className = 'folder-notes' + (isExpanded ? ' expanded' : '');
     const notesInner = document.createElement('div');
     notesInner.className = 'folder-notes-inner';
+    subfolderEls.forEach(el => notesInner.appendChild(el));
     if (folderNotes.length) {
       folderNotes.forEach(n => {
         const el = makeSidebarNoteEl(n, { inFolder: true });
@@ -1264,7 +1256,7 @@ function renderSidebar(filter) {
         }
         notesInner.appendChild(el);
       });
-    } else {
+    } else if (!subfolderEls.length) {
       const empty = document.createElement('div');
       empty.style.cssText = 'padding:7px 8px 7px 28px;color:var(--muted);font-size:11.5px;font-style:italic;';
       empty.textContent = 'No notes - click + to add one';
@@ -1273,8 +1265,9 @@ function renderSidebar(filter) {
     notesWrap.appendChild(notesInner);
     folderEl.appendChild(notesWrap);
 
+    const canAcceptFolderDrop = () => !isSubfolder && notesWrap.classList.contains('expanded') && canNestFolder(_draggingFolderId, folder.id);
     notesWrap.addEventListener('dragover', e => {
-      if (!notesWrap.classList.contains('expanded') || _draggingFolderId || !_draggingNoteId || !notes[_draggingNoteId]) return;
+      if (_draggingFolderId ? !canAcceptFolderDrop() : (!notesWrap.classList.contains('expanded') || !_draggingNoteId || !notes[_draggingNoteId])) return;
       e.preventDefault();
       e.stopPropagation();
       e.dataTransfer.dropEffect = 'move';
@@ -1284,7 +1277,15 @@ function renderSidebar(filter) {
       if (!notesWrap.contains(e.relatedTarget)) notesWrap.classList.remove('drag-over');
     });
     notesWrap.addEventListener('drop', e => {
-      if (!notesWrap.classList.contains('expanded') || _draggingFolderId || !_draggingNoteId) return;
+      if (_draggingFolderId) {
+        if (!canAcceptFolderDrop()) return;
+        e.preventDefault();
+        e.stopPropagation();
+        notesWrap.classList.remove('drag-over');
+        moveFolder(_draggingFolderId, { parentId: folder.id });
+        return;
+      }
+      if (!notesWrap.classList.contains('expanded') || !_draggingNoteId) return;
       e.preventDefault();
       e.stopPropagation();
       notesWrap.classList.remove('drag-over');
@@ -1307,20 +1308,29 @@ function renderSidebar(filter) {
       }
       notesWrap.classList.toggle('expanded', nextExpanded);
     });
+    const folderDropPosition = e => {
+      if (_draggingFolderId === folder.id) return null;
+      if (isSubfolder && !canNestFolder(_draggingFolderId, parentId)) return null;
+      const rect = row.getBoundingClientRect();
+      const offset = (e.clientY - rect.top) / rect.height;
+      if (!isSubfolder && offset > .3 && offset < .7 && canNestFolder(_draggingFolderId, folder.id)) return 'inside';
+      return offset < .5 ? 'before' : 'after';
+    };
     row.addEventListener('dragover', e => {
       if (_draggingFolderId) {
-        if (_draggingFolderId === folder.id) return;
+        const position = folderDropPosition(e);
+        if (!position) return;
         e.preventDefault();
         e.stopPropagation();
         e.dataTransfer.dropEffect = 'move';
-        const rect = row.getBoundingClientRect();
-        const before = e.clientY < rect.top + rect.height / 2;
-        row.classList.toggle('folder-drop-before', before);
-        row.classList.toggle('folder-drop-after', !before);
+        row.classList.toggle('drag-over', position === 'inside');
+        row.classList.toggle('folder-drop-before', position === 'before');
+        row.classList.toggle('folder-drop-after', position === 'after');
         return;
       }
       if (!_draggingNoteId) return;
       e.preventDefault();
+      e.stopPropagation();
       e.dataTransfer.dropEffect = 'move';
       row.classList.add('drag-over');
     });
@@ -1329,15 +1339,18 @@ function renderSidebar(filter) {
     });
     row.addEventListener('drop', e => {
       if (_draggingFolderId) {
+        const position = folderDropPosition(e);
+        if (!position) return;
         e.preventDefault();
         e.stopPropagation();
-        const rect = row.getBoundingClientRect();
-        const position = e.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
-        row.classList.remove('folder-drop-before', 'folder-drop-after');
-        reorderFolder(e.dataTransfer.getData('application/x-notas-folder') || _draggingFolderId, folder.id, position);
+        row.classList.remove('drag-over', 'folder-drop-before', 'folder-drop-after');
+        const draggedId = e.dataTransfer.getData('application/x-notas-folder') || _draggingFolderId;
+        if (position === 'inside') moveFolder(draggedId, { parentId: folder.id });
+        else reorderFolder(draggedId, folder.id, position);
         return;
       }
       e.preventDefault();
+      e.stopPropagation();
       row.classList.remove('drag-over');
       moveDroppedNoteToFolder(e, folder.id);
     });
@@ -1350,20 +1363,29 @@ function renderSidebar(filter) {
       };
       const folderItems = isOwnedFolder(folder)
         ? [
-            { icon: 'fa-solid fa-plus',                  label: 'New Note in Folder', action: () => { activeFolderId = folder.id; expandedFolders.add(folder.id); openModal(); } },
-            { icon: 'fa-solid fa-pen',                   label: 'Rename Folder',      action: () => openFolderRenameModal(folder.id) },
-            { icon: 'fa-solid fa-arrow-up-from-bracket', label: 'Share Folder',       action: () => openShareModal('folder', folder.id) },
-            colourItem,
-            'sep',
-            { icon: 'fa-solid fa-trash', label: 'Delete Folder', danger: true,        action: () => deleteFolder(folder.id) }
-          ]
+          { icon: 'fa-solid fa-plus', label: 'New Note in Folder', action: () => { activeFolderId = folder.id; expandedFolders.add(folder.id); openModal(); } },
+          ...(isSubfolder ? [] : [{ icon: 'fa-solid fa-folder-plus', label: 'New Subfolder', action: () => openModal('folder', { parentId: folder.id }) }]),
+          { icon: 'fa-solid fa-pen', label: 'Rename Folder', action: () => openFolderRenameModal(folder.id) },
+          ...(childFolders(folder.id).length ? [] : [{ icon: 'fa-solid fa-folder-open', label: 'Move Folder', action: () => openFolderMoveModal(folder.id) }]),
+          { icon: 'fa-solid fa-arrow-up-from-bracket', label: 'Share Folder', action: () => openShareModal('folder', folder.id) },
+          colourItem,
+          'sep',
+          { icon: 'fa-solid fa-trash', label: 'Delete Folder', danger: true, action: () => deleteFolder(folder.id) }
+        ]
         : [
-            colourItem,
-            'sep',
-            { icon: 'fa-solid fa-xmark', label: 'Remove from Library', danger: true,  action: () => deleteFolder(folder.id) }
-          ];
+          colourItem,
+          'sep',
+          { icon: 'fa-solid fa-xmark', label: 'Remove from Library', danger: true, action: () => deleteFolder(folder.id) }
+        ];
       openCtxMenu(e.currentTarget, folderItems);
     });
+    return folderEl;
+  };
+
+  sortedFolderList.filter(folder => !folderParentId(folder)).forEach(folder => {
+    const folderEl = buildFolderEl(folder);
+    if (!folderEl) return;
+    hasContent = true;
     list.appendChild(folderEl);
   });
 
@@ -1542,8 +1564,20 @@ function toggleSidebarFromLogo(e) {
 
 /* Modal */
 let createModalType = 'note';
+let createModalParentId = null;
 function normalizeCreateModalType(type) {
   return type === 'folder' ? 'folder' : 'note';
+}
+function renderCreateModalParentOptions() {
+  const field = document.getElementById('modal-parent-field');
+  const select = document.getElementById('modal-parent-select');
+  if (!field || !select) return;
+  const parents = sortedFolders().filter(folder => isOwnedFolder(folder) && !folderParentId(folder));
+  field.hidden = createModalType !== 'folder' || !parents.length;
+  if (!folders[createModalParentId]) createModalParentId = null;
+  select.innerHTML = '<option value="">Top Level</option>' +
+    parents.map(folder => '<option value="' + esc(folder.id) + '">' + esc(folder.title) + '</option>').join('');
+  select.value = createModalParentId || '';
 }
 function setCreateModalType(type) {
   createModalType = normalizeCreateModalType(type);
@@ -1559,10 +1593,12 @@ function setCreateModalType(type) {
     btn.classList.toggle('active', active);
     btn.setAttribute('aria-pressed', active ? 'true' : 'false');
   });
+  renderCreateModalParentOptions();
 }
-function openModal(type = 'note') {
+function openModal(type = 'note', { parentId = null } = {}) {
   if (typeof isGuestReadOnly === 'function' && isGuestReadOnly()) return;
   if (type && typeof type === 'object') type = 'note';
+  createModalParentId = parentId;
   setCreateModalType(type);
   document.getElementById('modal').classList.add('open');
   document.getElementById('modal-input').value = '';
@@ -1574,9 +1610,10 @@ function confirmCreate() {
   if (!t) { document.getElementById('modal-input').focus(); return; }
   const type = createModalType;
   const fid = activeFolderId;
+  const parentId = document.getElementById('modal-parent-select')?.value || null;
   closeModal();
   if (type === 'folder') {
-    createFolder(t);
+    createFolder(t, parentId);
     return;
   }
   createNote(t, fid);
@@ -1639,30 +1676,46 @@ let _themeTransitionTimer = 0;
 const systemThemeQuery = window.matchMedia ? window.matchMedia('(prefers-color-scheme: light)') : null;
 
 const ACCENT_PALETTES = {
-  notas:  { r:205, g:155, b:80,  r2:154, g2:102, b2:48,  accent:'#bb893e', accentH:'#e3b86a',
-            muted:'#71717a', text2:'#d4d4d8', border:'#2b4d73',
-            lightMuted:'#6b7280', lightText2:'#1e3a5f', lightBorder:'#98b6d4' },
-  bg:     { r:205, g:155, b:80,  r2:154, g2:102, b2:48,  accent:'#bb893e', accentH:'#e3b86a',
-            muted:'#737373', text2:'#d4d4d8', border:'#2a2a2a',
-            lightMuted:'#6b6b6b', lightText2:'#1a1a1a', lightBorder:'#b5b5b5' },
-  blue:   { r:0,   g:180, b:255, r2:0,   g2:80,  b2:180, accent:'#00b4ff', accentH:'#40d0ff',
-            muted:'#4a6a8a', text2:'#b8cce8', border:'#1a2e48',
-            lightMuted:'#2a6090', lightText2:'#1a3050', lightBorder:'#78a8cc' },
-  purple: { r:130, g:70,  b:255, r2:70,  g2:20,  b2:180, accent:'#8246ff', accentH:'#b080ff',
-            muted:'#5a4a88', text2:'#c8b8e8', border:'#221848',
-            lightMuted:'#5a3090', lightText2:'#3a1870', lightBorder:'#9870c8' },
-  green:  { r:0,   g:210, b:120, r2:0,   g2:110, b2:60,  accent:'#00d278', accentH:'#30f09a',
-            muted:'#3a6a58', text2:'#b8e4d0', border:'#182e22',
-            lightMuted:'#2a7050', lightText2:'#184030', lightBorder:'#60b888' },
-  rose:   { r:255, g:55,  b:110, r2:180, g2:15,  b2:60,  accent:'#ff3770', accentH:'#ff7aa0',
-            muted:'#7a4a5a', text2:'#e8b8c8', border:'#381828',
-            lightMuted:'#903060', lightText2:'#601838', lightBorder:'#cc7890' },
-  amber:  { r:255, g:160, b:0,   r2:180, g2:80,  b2:0,   accent:'#ffa000', accentH:'#ffbf40',
-            muted:'#7a6040', text2:'#e8d8b8', border:'#382818',
-            lightMuted:'#906028', lightText2:'#603010', lightBorder:'#c8a048' },
-  teal:   { r:0,   g:195, b:175, r2:0,   g2:95,  b2:115, accent:'#00c3af', accentH:'#30e3cf',
-            muted:'#3a6868', text2:'#b8e4e0', border:'#183030',
-            lightMuted:'#2a7070', lightText2:'#184040', lightBorder:'#60b4b0' },
+  notas: {
+    r: 205, g: 155, b: 80, r2: 154, g2: 102, b2: 48, accent: '#bb893e', accentH: '#e3b86a',
+    muted: '#71717a', text2: '#d4d4d8', border: '#1f3854',
+    lightMuted: '#6b7280', lightText2: '#1e3a5f', lightBorder: '#98b6d4'
+  },
+  bg: {
+    r: 205, g: 155, b: 80, r2: 154, g2: 102, b2: 48, accent: '#bb893e', accentH: '#e3b86a',
+    muted: '#737373', text2: '#d4d4d8', border: '#2a2a2a',
+    lightMuted: '#6b6b6b', lightText2: '#1a1a1a', lightBorder: '#b5b5b5'
+  },
+  blue: {
+    r: 0, g: 180, b: 255, r2: 0, g2: 80, b2: 180, accent: '#00b4ff', accentH: '#40d0ff',
+    muted: '#4a6a8a', text2: '#b8cce8', border: '#1a2e48',
+    lightMuted: '#2a6090', lightText2: '#1a3050', lightBorder: '#78a8cc'
+  },
+  purple: {
+    r: 130, g: 70, b: 255, r2: 70, g2: 20, b2: 180, accent: '#8246ff', accentH: '#b080ff',
+    muted: '#5a4a88', text2: '#c8b8e8', border: '#221848',
+    lightMuted: '#5a3090', lightText2: '#3a1870', lightBorder: '#9870c8'
+  },
+  green: {
+    r: 0, g: 210, b: 120, r2: 0, g2: 110, b2: 60, accent: '#00d278', accentH: '#30f09a',
+    muted: '#3a6a58', text2: '#b8e4d0', border: '#182e22',
+    lightMuted: '#2a7050', lightText2: '#184030', lightBorder: '#60b888'
+  },
+  rose: {
+    r: 255, g: 55, b: 110, r2: 180, g2: 15, b2: 60, accent: '#ff3770', accentH: '#ff7aa0',
+    muted: '#7a4a5a', text2: '#e8b8c8', border: '#381828',
+    lightMuted: '#903060', lightText2: '#601838', lightBorder: '#cc7890'
+  },
+  amber: {
+    r: 255, g: 160, b: 0, r2: 180, g2: 80, b2: 0, accent: '#ffa000', accentH: '#ffbf40',
+    muted: '#7a6040', text2: '#e8d8b8', border: '#382818',
+    lightMuted: '#906028', lightText2: '#603010', lightBorder: '#c8a048'
+  },
+  teal: {
+    r: 0, g: 195, b: 175, r2: 0, g2: 95, b2: 115, accent: '#00c3af', accentH: '#30e3cf',
+    muted: '#3a6868', text2: '#b8e4e0', border: '#183030',
+    lightMuted: '#2a7070', lightText2: '#184040', lightBorder: '#60b4b0'
+  },
 };
 const DEFAULT_ACCENT = ACCENT_PALETTES.notas.accent;
 const DEFAULT_CUSTOM_ACCENT = ACCENT_PALETTES.blue.accent;
@@ -1943,44 +1996,44 @@ function applyAccentColor(value, { refreshPicker = true } = {}) {
   body.classList.toggle('notas-branding', accentMode === 'notas');
   body.classList.toggle('bg-branding', accentMode === 'bg');
   body.classList.toggle('custom-accent-mode', accentMode === 'custom');
-  s.setProperty('--orb-r',    p.r);
-  s.setProperty('--orb-g',    p.g);
-  s.setProperty('--orb-b',    p.b);
-  s.setProperty('--orb2-r',   p.r2);
-  s.setProperty('--orb2-g',   p.g2);
-  s.setProperty('--orb2-b',   p.b2);
-  b.setProperty('--orb-r',    p.r);
-  b.setProperty('--orb-g',    p.g);
-  b.setProperty('--orb-b',    p.b);
-  b.setProperty('--orb2-r',   p.r2);
-  b.setProperty('--orb2-g',   p.g2);
-  b.setProperty('--orb2-b',   p.b2);
+  s.setProperty('--orb-r', p.r);
+  s.setProperty('--orb-g', p.g);
+  s.setProperty('--orb-b', p.b);
+  s.setProperty('--orb2-r', p.r2);
+  s.setProperty('--orb2-g', p.g2);
+  s.setProperty('--orb2-b', p.b2);
+  b.setProperty('--orb-r', p.r);
+  b.setProperty('--orb-g', p.g);
+  b.setProperty('--orb-b', p.b);
+  b.setProperty('--orb2-r', p.r2);
+  b.setProperty('--orb2-g', p.g2);
+  b.setProperty('--orb2-b', p.b2);
   const glassBorder = isBrandAccentMode()
     ? 'rgba(205, 155, 80, .24)'
-    : `rgba(${Math.min(p.r+80,255)},${Math.min(p.g+30,255)},${Math.min(p.b+10,255)},.16)`;
+    : `rgba(${Math.min(p.r + 80, 255)},${Math.min(p.g + 30, 255)},${Math.min(p.b + 10, 255)},.16)`;
   const glassHighlight = isBrandAccentMode()
     ? 'rgba(245, 202, 124, .16)'
-    : `rgba(${Math.min(p.r+80,255)},${Math.min(p.g+30,255)},${Math.min(p.b+10,255)},.12)`;
+    : `rgba(${Math.min(p.r + 80, 255)},${Math.min(p.g + 30, 255)},${Math.min(p.b + 10, 255)},.12)`;
   s.setProperty('--glass-border', glassBorder);
   s.setProperty('--glass-highlight', glassHighlight);
   b.setProperty('--glass-border', glassBorder);
   b.setProperty('--glass-highlight', glassHighlight);
 
   // Accent on both <html> and <body> — body inline style beats body.light-mode CSS rule
-  s.setProperty('--accent',   p.accent);
+  s.setProperty('--accent', p.accent);
   s.setProperty('--accent-h', p.accentH);
   s.setProperty('--accent-ink', accentInk);
   s.setProperty('--accent-caret', accentInk);
   s.setProperty('--accent-text', accentText);
-  b.setProperty('--accent',   p.accent);
+  b.setProperty('--accent', p.accent);
   b.setProperty('--accent-h', p.accentH);
   b.setProperty('--accent-ink', accentInk);
   b.setProperty('--accent-caret', accentInk);
   b.setProperty('--accent-text', accentText);
 
   // Mode-dependent vars — set on <body> so they override body.light-mode CSS in both modes
-  b.setProperty('--muted',  lm ? p.lightMuted  : brightenDarkUiColor(p.muted, .16));
-  b.setProperty('--text2',  lm ? p.lightText2  : brightenDarkUiColor(p.text2, .08));
+  b.setProperty('--muted', lm ? p.lightMuted : brightenDarkUiColor(p.muted, .16));
+  b.setProperty('--text2', lm ? p.lightText2 : brightenDarkUiColor(p.text2, .08));
   b.setProperty('--border', lm ? p.lightBorder : brightenDarkUiColor(p.border, .18));
   b.setProperty('--note-subtext', accentMode === 'bg'
     ? (lm ? 'rgba(17, 17, 17, .66)' : 'rgba(237, 237, 237, .76)')
@@ -1988,7 +2041,7 @@ function applyAccentColor(value, { refreshPicker = true } = {}) {
   // Ambient glows adapt in both modes
   b.setProperty('--ambient-a', `rgba(${p.r},${p.g},${p.b},${lm ? '.2' : '.18'})`);
   b.setProperty('--ambient-b', `rgba(${p.r2},${p.g2},${p.b2},${lm ? '.16' : '.12'})`);
-  b.setProperty('--ambient-c', `rgba(${Math.min(p.r+90,255)},${Math.min(p.g+30,255)},${Math.min(p.b+10,255)},${lm ? '.14' : '.08'})`);
+  b.setProperty('--ambient-c', `rgba(${Math.min(p.r + 90, 255)},${Math.min(p.g + 30, 255)},${Math.min(p.b + 10, 255)},${lm ? '.14' : '.08'})`);
 
   if (refreshPicker) updateColorPickerUI(normalized);
 }
@@ -2075,6 +2128,8 @@ function resolveLightMode() {
 }
 
 function setThemeTransitioning(active) {
+  if (active && document.documentElement.classList.contains('desktop-occluded')) return;
+  if (active && document.documentElement.classList.contains('desktop-resuming')) return;
   clearTimeout(_themeTransitionTimer);
   document.documentElement.classList.toggle('theme-changing', !!active);
   document.body.classList.toggle('theme-changing', !!active);
@@ -2402,7 +2457,7 @@ function setSidebarMinimized(val) {
     // Restore previously-saved resize width
     const saved = parseInt(localStorage.getItem('notas_sidebar_w') || '256');
     const w = (saved >= SIDEBAR_ICON_SAFE_WIDTH && saved <= 520) ? saved : 256;
-    sidebar.style.width    = w + 'px';
+    sidebar.style.width = w + 'px';
     sidebar.style.minWidth = w + 'px';
     updateSidebarWidthState(w);
   }

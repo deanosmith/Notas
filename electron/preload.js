@@ -1,7 +1,7 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 function on(channel, callback) {
-  if (typeof callback !== 'function') return () => {};
+  if (typeof callback !== 'function') return () => { };
   const listener = (_event, payload) => callback(payload);
   ipcRenderer.on(channel, listener);
   return () => ipcRenderer.removeListener(channel, listener);
@@ -12,7 +12,6 @@ contextBridge.exposeInMainWorld('desktop', {
   rendererReady: () => ipcRenderer.send('desktop:renderer-ready'),
   getWindowContext: () => ipcRenderer.invoke('desktop:get-window-context'),
   openNoteWindow: (noteId, initialNote) => ipcRenderer.invoke('desktop:open-note-window', noteId, initialNote || null),
-  prewarmNoteWindow: () => ipcRenderer.send('desktop:prewarm-note-window'),
   showEditorImageContextMenu: payload => ipcRenderer.send('desktop:editor-image-context-menu', payload || {}),
   writeEditorImageToClipboard: payload => ipcRenderer.invoke('desktop:write-editor-image-to-clipboard', payload || {}),
   updateNoteState: noteState => ipcRenderer.send('desktop:note-state-changed', noteState || null),

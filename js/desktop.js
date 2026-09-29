@@ -25,8 +25,25 @@
   let applyingRemoteNoteState = false;
   let applyingRemoteThemeState = false;
   let foregroundRefreshFrame = 0;
+  let foregroundResumeTimer = 0;
+
+  function setDesktopSurfaceLock(active) {
+    document.documentElement.classList.toggle('desktop-occluded', !!active);
+    if (active) document.documentElement.classList.remove('desktop-resuming');
+  }
+
+  function markDesktopResuming() {
+    setDesktopSurfaceLock(false);
+    document.documentElement.classList.add('desktop-resuming');
+    clearTimeout(foregroundResumeTimer);
+    foregroundResumeTimer = setTimeout(() => {
+      foregroundResumeTimer = 0;
+      document.documentElement.classList.remove('desktop-resuming');
+    }, 180);
+  }
 
   document.body.classList.add('desktop-app');
+  document.documentElement.classList.add('desktop-app');
   if (desktopContext.type === 'note') document.body.classList.add('desktop-note-window');
 
   function activeNote() {
@@ -374,11 +391,6 @@
     }
   }
 
-  function requestNoteWindowPrewarm() {
-    if (desktopContext.type !== 'main') return;
-    window.desktop.prewarmNoteWindow?.();
-  }
-
   function canPopOutActiveNote() {
     const note = activeNote();
     return !!(note && !(typeof isTrashedNote === 'function' && isTrashedNote(note)));
@@ -428,17 +440,11 @@
 
   function refreshForegroundPresentation() {
     if (document.visibilityState === 'hidden' || foregroundRefreshFrame) return;
+    markDesktopResuming();
     foregroundRefreshFrame = requestAnimationFrame(() => {
       foregroundRefreshFrame = 0;
       if (document.visibilityState === 'hidden') return;
       refreshDesktopControls();
-      if (desktopContext.type === 'main' && typeof updateSidebarWidthState === 'function') {
-        updateSidebarWidthState();
-      }
-      if (typeof refreshTableResizeHandles === 'function') {
-        refreshTableResizeHandles(document.getElementById('editor'));
-      }
-      if (typeof updateCounts === 'function') updateCounts();
       scheduleDockNotificationBadgeSync();
       scheduleMenuBarNoteSync();
     });
@@ -648,7 +654,6 @@
       const result = originalOpenNote.apply(this, arguments);
       refreshDesktopControls();
       scheduleDesktopNoteStateBroadcast();
-      requestNoteWindowPrewarm();
       return result;
     };
     openNote.desktopWrapped = true;
@@ -698,16 +703,16 @@
     });
     window.addEventListener('focus', () => {
       refreshForegroundPresentation();
-      requestNoteWindowPrewarm();
       scheduleMenuBarNoteSync();
     });
     window.addEventListener('pageshow', refreshForegroundPresentation);
+    window.addEventListener('blur', () => setDesktopSurfaceLock(true));
     document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'visible') refreshForegroundPresentation();
+      if (document.visibilityState === 'hidden') setDesktopSurfaceLock(true);
+      else refreshForegroundPresentation();
     });
     window.addEventListener('notas:home-prepared', () => {
       menuBarNotesReady = false;
-      requestNoteWindowPrewarm();
       openRequestedDesktopNote();
     });
     window.addEventListener('notas:notes-updated', () => {

@@ -17,10 +17,31 @@ function sortedFolders() {
   return Object.values(folders).sort(compareFolders);
 }
 
+// Nesting is limited to one level: a valid parent must itself be top-level.
+function folderParentId(folder) {
+  const parentId = folder?.parentId || '';
+  const parent = parentId && parentId !== folder.id ? folders[parentId] : null;
+  if (!parent || parent.parentId || !isOwnedFolder(folder) || !isOwnedFolder(parent)) return null;
+  return parentId;
+}
+
+function childFolders(parentId) {
+  return sortedFolders().filter(folder => folderParentId(folder) === parentId);
+}
+
+function canNestFolder(folderId, parentId) {
+  const folder = folders[folderId];
+  const parent = folders[parentId];
+  if (!folder || !parent || folderId === parentId) return false;
+  if (!isOwnedFolder(folder) || !isOwnedFolder(parent) || folderParentId(parent)) return false;
+  return !childFolders(folderId).length;
+}
+
 function folderOrderHistorySnapshot(list = sortedFolders()) {
   return list.map(folder => ({
     id: folder.id,
-    order: Number.isFinite(Number(folder.order)) ? Number(folder.order) : null
+    order: Number.isFinite(Number(folder.order)) ? Number(folder.order) : null,
+    parentId: folderParentId(folder)
   }));
 }
 
@@ -32,13 +53,16 @@ function nextFolderOrderValue() {
   return Number.isFinite(lastOrder) && lastOrder < Number.MAX_SAFE_INTEGER ? lastOrder + 1 : ordered.length + 1;
 }
 
-function createFolder(title) {
+function createFolder(title, parentId = null) {
   if (typeof isGuestReadOnly === 'function' && isGuestReadOnly()) return;
+  const parent = parentId ? folders[parentId] : null;
+  if (!parent || !isOwnedFolder(parent) || folderParentId(parent)) parentId = null;
   const id  = 'folder_' + Date.now();
   const now = new Date().toISOString();
-  const folder = { id, title: title.trim() || 'Untitled Folder', public: false, iconColor: DEFAULT_FOLDER_ICON_COLOR, iconColorMode: 'manual', sharedWith: {}, sharedAccessKeys: [], order: nextFolderOrderValue(), created: now, modified: now };
+  const folder = { id, title: title.trim() || 'Untitled Folder', public: false, iconColor: DEFAULT_FOLDER_ICON_COLOR, iconColorMode: 'manual', sharedWith: {}, sharedAccessKeys: [], parentId, order: nextFolderOrderValue(), created: now, modified: now };
   folders[id] = folder;
   expandedFolders.add(id);
+  if (parentId) expandedFolders.add(parentId);
   activeFolderId = id;
   renderSidebar();
   saveFolderDoc(folder);
@@ -74,24 +98,45 @@ async function renameFolder(folderId, title) {
 
 async function reorderFolder(draggedId, targetId, position) {
   if (!draggedId || !targetId || draggedId === targetId || !folders[draggedId] || !folders[targetId]) return;
+  await moveFolder(draggedId, { parentId: folderParentId(folders[targetId]), targetId, position });
+}
+
+async function moveFolder(draggedId, { parentId = null, targetId = null, position = 'after' } = {}) {
+  const dragged = folders[draggedId];
+  if (!dragged || targetId === draggedId) return;
+  parentId = parentId || null;
+  if (parentId && !canNestFolder(draggedId, parentId)) {
+    showToast('Subfolders Cannot Contain Folders', 'error');
+    return;
+  }
+  const previousParentId = folderParentId(dragged);
+  const parentChanged = previousParentId !== parentId;
   const ordered = sortedFolders();
   const beforeOrder = folderOrderHistorySnapshot(ordered);
-  const withoutDragged = ordered.filter(folder => folder.id !== draggedId);
-  const targetIndex = withoutDragged.findIndex(folder => folder.id === targetId);
-  if (targetIndex < 0) return;
-  withoutDragged.splice(position === 'after' ? targetIndex + 1 : targetIndex, 0, folders[draggedId]);
-  if (withoutDragged.every((folder, index) => ordered[index]?.id === folder.id)) return;
+  const currentSiblings = ordered.filter(folder => folderParentId(folder) === parentId);
+  const siblings = currentSiblings.filter(folder => folder.id !== draggedId);
+  let insertIndex = siblings.length;
+  if (targetId) {
+    const targetIndex = siblings.findIndex(folder => folder.id === targetId);
+    if (targetIndex < 0) return;
+    insertIndex = position === 'after' ? targetIndex + 1 : targetIndex;
+  }
+  siblings.splice(insertIndex, 0, dragged);
+  if (!parentChanged && siblings.every((folder, index) => currentSiblings[index]?.id === folder.id)) return;
 
-  const previousOrders = new Map(withoutDragged.map(folder => [folder.id, folder.order]));
-  withoutDragged.forEach((folder, index) => {
+  const previous = new Map(siblings.map(folder => [folder.id, { order: folder.order, parentId: folder.parentId || null }]));
+  siblings.forEach((folder, index) => {
     folder.order = index + 1;
     folder.modified = new Date().toISOString();
   });
+  dragged.parentId = parentId;
+  if (parentId) expandedFolders.add(parentId);
   renderSidebar();
 
   try {
-    await Promise.all(withoutDragged.map(folder => setDoc(doc(fsDb, 'folders', folder.id), {
+    await Promise.all(siblings.map(folder => setDoc(doc(fsDb, 'folders', folder.id), {
       order: folder.order,
+      ...(folder.id === draggedId && parentChanged ? { parentId: parentId || deleteField() } : {}),
       modified: serverTimestamp()
     }, { merge: true })));
     recordAppHistoryAction({
@@ -99,14 +144,16 @@ async function reorderFolder(draggedId, targetId, position) {
       beforeOrder,
       afterOrder: folderOrderHistorySnapshot()
     });
-    showToast('Folders Reordered', 'success');
+    showToast(parentChanged ? 'Folder Moved' : 'Folders Reordered', 'success');
   } catch (err) {
-    console.error('reorder folders:', err);
-    previousOrders.forEach((order, id) => {
-      if (folders[id]) folders[id].order = order;
+    console.error('move folder:', err);
+    previous.forEach((entry, id) => {
+      if (!folders[id]) return;
+      folders[id].order = entry.order;
+      folders[id].parentId = entry.parentId;
     });
     renderSidebar();
-    showToast('Could Not Reorder Folders', 'error');
+    showToast(parentChanged ? 'Could Not Move Folder' : 'Could Not Reorder Folders', 'error');
   }
 }
 
@@ -188,6 +235,11 @@ async function _execDeleteFolder(id) {
       sharedToMove.push(n.id);
     }
   });
+  const orphanedChildren = Object.values(folders).filter(child => child.parentId === id);
+  orphanedChildren.forEach(child => {
+    child.parentId = null;
+    batch.update(doc(fsDb, 'folders', child.id), { parentId: deleteField() });
+  });
   batch.delete(doc(fsDb, 'folders', id));
   delete folders[id];
   expandedFolders.delete(id);
@@ -257,6 +309,7 @@ function openMoveModal(noteId) {
   if (!notes[noteId]) return;
   _moveNoteId = noteId;
   const note  = notes[noteId];
+  document.getElementById('move-modal-title').textContent = 'Move Note';
   document.getElementById('move-modal-note-name').textContent = note.title;
   const list  = document.getElementById('move-modal-list');
   list.innerHTML = '';
@@ -275,10 +328,13 @@ function openMoveModal(noteId) {
     .sort(compareFolders);
 
   moveFolders
+    .filter(folder => !folderParentId(folder))
+    .flatMap(folder => [folder, ...childFolders(folder.id).filter(child => moveFolders.includes(child))])
     .forEach(folder => {
       const isCurrent = note.folderId === folder.id;
+      const isSubfolder = !!folderParentId(folder);
       const item = document.createElement('div');
-      item.className = 'move-folder-item' + (isCurrent ? ' is-current' : '');
+      item.className = 'move-folder-item' + (isSubfolder ? ' is-subfolder' : '') + (isCurrent ? ' is-current' : '');
       item.innerHTML =
         '<i class="mfi fa-solid fa-folder"></i><span>' + esc(folder.title) + (isCurrent ? ' (current)' : '') + '</span>';
       if (!isCurrent) item.addEventListener('click', () => { closeMoveModal(); moveNoteToFolder(noteId, folder.id); });
@@ -291,6 +347,34 @@ function openMoveModal(noteId) {
     empty.textContent = 'No folders yet — create one first';
     list.appendChild(empty);
   }
+
+  document.getElementById('move-modal').classList.add('open');
+}
+
+function openFolderMoveModal(folderId) {
+  const folder = folders[folderId];
+  if (!folder || !isOwnedFolder(folder) || childFolders(folderId).length) return;
+  _moveNoteId = null;
+  document.getElementById('move-modal-title').textContent = 'Move Folder';
+  document.getElementById('move-modal-note-name').textContent = folder.title;
+  const list = document.getElementById('move-modal-list');
+  list.innerHTML = '';
+  const currentParentId = folderParentId(folder);
+
+  const addItem = (parentId, label) => {
+    const isCurrent = currentParentId === parentId;
+    const item = document.createElement('div');
+    item.className = 'move-folder-item' + (isCurrent ? ' is-current' : '');
+    item.innerHTML =
+      '<i class="mfi fa-solid ' + (parentId ? 'fa-folder' : 'fa-layer-group') + '"></i><span>' + esc(label) + (isCurrent ? ' (current)' : '') + '</span>';
+    if (!isCurrent) item.addEventListener('click', () => { closeMoveModal(); moveFolder(folderId, { parentId }); });
+    list.appendChild(item);
+  };
+
+  addItem(null, 'Top Level');
+  sortedFolders()
+    .filter(parent => parent.id !== folderId && isOwnedFolder(parent) && !folderParentId(parent))
+    .forEach(parent => addItem(parent.id, parent.title));
 
   document.getElementById('move-modal').classList.add('open');
 }

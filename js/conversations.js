@@ -890,6 +890,7 @@ function setupConversationPanelChrome() {
   });
   window.addEventListener('resize', () => {
     if (!conversationsOpen) return;
+    if (typeof isTransientViewport === 'function' && isTransientViewport()) return;
     if (isMobile()) resetConversationPanelPlacement();
     else clampConversationPanelToViewport();
   });

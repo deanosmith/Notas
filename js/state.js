@@ -79,6 +79,7 @@ const FOLDER_ICON_THEME = 'theme';
 const FOLDER_ICON_GREY = '#8e8e93';
 const DEFAULT_FOLDER_ICON_COLOR = FOLDER_ICON_GREY;
 let _capitalizeNext = false;
+let _pendingLineStartCapitalize = 0;
 let _draggingNoteId = null;
 let _draggingFolderId = null;
 let _ctxAnchor      = null;

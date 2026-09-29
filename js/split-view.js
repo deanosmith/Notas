@@ -104,7 +104,7 @@ function readPersistedNoteSplitState() {
 }
 
 function persistNoteSplitState() {
-  if (_noteSplitRestorePending) return;
+  if (_noteSplitRestorePending || noteSplitInPopOutWindow()) return;
   try {
     if (!noteSplitHasPane()) {
       localStorage.removeItem(NOTE_SPLIT_STORAGE_KEY);
@@ -119,13 +119,17 @@ function persistNoteSplitState() {
       dividerRatio: Number.isFinite(Number(state.dividerRatio)) ? Number(state.dividerRatio) : .5,
       liveId: String(activeId || '').trim()
     }));
-  } catch (_) {}
+  } catch (_) { }
+}
+
+function noteSplitInPopOutWindow() {
+  return document.body?.classList.contains('desktop-note-window') ||
+    new URLSearchParams(location.search).get('desktopWindow') === 'note';
 }
 
 function beginInitialNoteSplitRestore() {
   if (_noteSplitRestorePending || _noteSplitRestoreState) return;
-  if (document.body?.classList.contains('desktop-note-window')) return;
-  if (new URLSearchParams(location.search).get('desktopWindow') === 'note') return;
+  if (noteSplitInPopOutWindow()) return;
   _noteSplitRestoreState = readPersistedNoteSplitState();
   _noteSplitRestorePending = !!_noteSplitRestoreState && (!!_noteSplitRestoreState.peerId || _noteSplitRestoreState.awaiting);
 }
@@ -180,6 +184,8 @@ function noteSplitElements() {
     peerTitle: document.getElementById('note-split-peer-title'),
     peerArea: document.getElementById('note-split-peer-area'),
     peerBody: document.getElementById('note-split-peer-body'),
+    liveToolbarRow: document.getElementById('main-toolbar-row'),
+    peerToolbarRow: document.getElementById('note-split-peer-toolbar-row'),
     closeButton: document.getElementById('note-split-close-btn'),
     peerFocusButton: document.getElementById('note-split-peer-focus-btn'),
     toggleButton: document.getElementById('note-split-toggle-btn'),
@@ -232,10 +238,9 @@ function applyNoteSplitRatio(value = noteSplitState().dividerRatio) {
 
 function noteSplitBlockedReason() {
   if (typeof isGuestReadOnly === 'function' && isGuestReadOnly()) return 'Split View Is Not Available For Read Only Notes';
-  if (window.innerWidth < NOTE_SPLIT_MIN_WIDTH) return 'Split View Requires A Wider Window';
+  if (layoutViewportWidth() < NOTE_SPLIT_MIN_WIDTH) return 'Split View Requires A Wider Window';
   if (typeof isNoteFocusMode === 'function' && isNoteFocusMode()) return 'Exit Focus Mode To Use Split View';
-  if (document.body?.classList.contains('desktop-note-window')) return 'Split View Is Not Available In Pop Out Notes';
-  if (new URLSearchParams(location.search).get('desktopWindow') === 'note') return 'Split View Is Not Available In Pop Out Notes';
+  if (noteSplitInPopOutWindow()) return 'Split View Is Not Available In Pop Out Notes';
   return '';
 }
 
@@ -269,11 +274,18 @@ function updateNoteSplitToggleButton() {
 }
 
 function setSplitPaneVisible(visible, side = 'right') {
-  const { editorView, peerPane, divider } = noteSplitElements();
+  const { editorView, peerPane, divider, liveToolbarRow, peerToolbarRow } = noteSplitElements();
   if (!editorView || !peerPane) return;
   editorView.classList.toggle('split-active', visible);
   editorView.classList.toggle('split-left', visible && side === 'left');
   editorView.classList.toggle('split-right', visible && side !== 'left');
+  // The shared text styling controls always sit on the left-hand note.
+  const toolbarRow = visible && side === 'left' ? peerToolbarRow : liveToolbarRow;
+  const textStylingToggleGroup = document.getElementById('text-styling-toggle-group');
+  const toolbar = document.getElementById('toolbar');
+  if (toolbarRow && textStylingToggleGroup && toolbar && textStylingToggleGroup.parentElement !== toolbarRow) {
+    toolbarRow.prepend(textStylingToggleGroup, toolbar);
+  }
   peerPane.hidden = false;
   peerPane.classList.toggle('is-visible', visible);
   peerPane.setAttribute('aria-hidden', String(!visible));
@@ -306,19 +318,19 @@ function clearSplitPeerBody() {
 
 function cleanSplitPeerHTML(root) {
   const clone = root.cloneNode(true);
-  try { clone.querySelectorAll('[data-collapsed]').forEach(el => el.removeAttribute('data-collapsed')); } catch (_) {}
-  try { clone.querySelectorAll('[' + HEADER_DOMAIN_END_ATTR + ']').forEach(el => el.removeAttribute(HEADER_DOMAIN_END_ATTR)); } catch (_) {}
-  try { clone.querySelectorAll('.note-alarm').forEach(el => { el.classList.remove('alarm-due'); if (!el.classList.length) el.removeAttribute('class'); }); } catch (_) {}
-  try { clone.querySelectorAll('.note-conversation-anchor').forEach(el => el.classList.remove('conversation-anchor-focused')); } catch (_) {}
-  try { if (typeof cleanupInlineCodePlaceholders === 'function') cleanupInlineCodePlaceholders(clone); } catch (_) {}
-  try { if (typeof stripZeroWidthText === 'function') stripZeroWidthText(clone); } catch (_) {}
-  try { if (typeof normalizeThemeTextStyles === 'function') normalizeThemeTextStyles(clone); } catch (_) {}
-  try { if (typeof normalizeCodeThemeStyles === 'function') normalizeCodeThemeStyles(clone); } catch (_) {}
-  try { if (typeof normalizeChecklistStructure === 'function') normalizeChecklistStructure(clone); } catch (_) {}
-  try { if (typeof stripTableEditorChrome === 'function') stripTableEditorChrome(clone); } catch (_) {}
-  try { if (typeof stripNoteImageEditorChrome === 'function') stripNoteImageEditorChrome(clone); } catch (_) {}
-  try { if (typeof sanitizeEditorTables === 'function') sanitizeEditorTables(clone); } catch (_) {}
-  try { clone.querySelectorAll('[style]').forEach(el => { el.style.display = ''; if (!el.getAttribute('style')) el.removeAttribute('style'); }); } catch (_) {}
+  try { clone.querySelectorAll('[data-collapsed]').forEach(el => el.removeAttribute('data-collapsed')); } catch (_) { }
+  try { clone.querySelectorAll('[' + HEADER_DOMAIN_END_ATTR + ']').forEach(el => el.removeAttribute(HEADER_DOMAIN_END_ATTR)); } catch (_) { }
+  try { clone.querySelectorAll('.note-alarm').forEach(el => { el.classList.remove('alarm-due'); if (!el.classList.length) el.removeAttribute('class'); }); } catch (_) { }
+  try { clone.querySelectorAll('.note-conversation-anchor').forEach(el => el.classList.remove('conversation-anchor-focused')); } catch (_) { }
+  try { if (typeof cleanupInlineCodePlaceholders === 'function') cleanupInlineCodePlaceholders(clone); } catch (_) { }
+  try { if (typeof stripZeroWidthText === 'function') stripZeroWidthText(clone); } catch (_) { }
+  try { if (typeof normalizeThemeTextStyles === 'function') normalizeThemeTextStyles(clone); } catch (_) { }
+  try { if (typeof normalizeCodeThemeStyles === 'function') normalizeCodeThemeStyles(clone); } catch (_) { }
+  try { if (typeof normalizeChecklistStructure === 'function') normalizeChecklistStructure(clone); } catch (_) { }
+  try { if (typeof stripTableEditorChrome === 'function') stripTableEditorChrome(clone); } catch (_) { }
+  try { if (typeof stripNoteImageEditorChrome === 'function') stripNoteImageEditorChrome(clone); } catch (_) { }
+  try { if (typeof sanitizeEditorTables === 'function') sanitizeEditorTables(clone); } catch (_) { }
+  try { clone.querySelectorAll('[style]').forEach(el => { el.style.display = ''; if (!el.getAttribute('style')) el.removeAttribute('style'); }); } catch (_) { }
   return clone.innerHTML;
 }
 
@@ -371,7 +383,7 @@ function restoreNoteSplitPeerSelection() {
     try {
       restoreEditorSelection(peerBody, _noteSplitPeerSelection);
       return true;
-    } catch (_) {}
+    } catch (_) { }
   }
   peerBody.focus({ preventScroll: true });
   return false;
@@ -415,8 +427,8 @@ function applyNoteSplitToolbarAction(action) {
   restoreNoteSplitPeerSelection();
   if (typeof runEditorActionOnRoot !== 'function' || !runEditorActionOnRoot(peerBody, action)) return false;
   rememberNoteSplitPeerSelection();
-  try { if (typeof decorateTables === 'function') decorateTables(peerBody); } catch (_) {}
-  try { if (typeof decorateNoteImages === 'function') decorateNoteImages(peerBody); } catch (_) {}
+  try { if (typeof decorateTables === 'function') decorateTables(peerBody); } catch (_) { }
+  try { if (typeof decorateNoteImages === 'function') decorateNoteImages(peerBody); } catch (_) { }
   if (typeof refreshEmpty === 'function') refreshEmpty(peerBody);
   if (syncSplitPeerNote()) scheduleSplitPeerSave();
   return true;
@@ -442,23 +454,23 @@ function renderSplitPeerBody(root, content) {
   const peerId = typeof getNoteSplitPeerId === 'function' ? getNoteSplitPeerId() : '';
   if (typeof renderMarkdownContent === 'function') root.innerHTML = renderMarkdownContent(content || '');
   else root.textContent = String(content || '');
-  try { if (typeof normalizeThemeTextStyles === 'function') normalizeThemeTextStyles(root); } catch (_) {}
-  try { if (typeof normalizeCodeThemeStyles === 'function') normalizeCodeThemeStyles(root); } catch (_) {}
-  try { if (typeof linkifyTextNodes === 'function') linkifyTextNodes(root); } catch (_) {}
-  try { if (typeof ensureLinkAttrs === 'function') ensureLinkAttrs(root); } catch (_) {}
-  try { if (typeof restoreChecklistState === 'function') restoreChecklistState(root); } catch (_) {}
-  try { if (typeof restoreAlarmMarks === 'function') restoreAlarmMarks(root); } catch (_) {}
-  try { if (typeof restoreConversationAnchorMarks === 'function') restoreConversationAnchorMarks(root); } catch (_) {}
-  try { if (typeof decorateTables === 'function') decorateTables(root); } catch (_) {}
-  try { if (typeof decorateNoteImages === 'function') decorateNoteImages(root); } catch (_) {}
+  try { if (typeof normalizeThemeTextStyles === 'function') normalizeThemeTextStyles(root); } catch (_) { }
+  try { if (typeof normalizeCodeThemeStyles === 'function') normalizeCodeThemeStyles(root); } catch (_) { }
+  try { if (typeof linkifyTextNodes === 'function') linkifyTextNodes(root); } catch (_) { }
+  try { if (typeof ensureLinkAttrs === 'function') ensureLinkAttrs(root); } catch (_) { }
+  try { if (typeof restoreChecklistState === 'function') restoreChecklistState(root); } catch (_) { }
+  try { if (typeof restoreAlarmMarks === 'function') restoreAlarmMarks(root); } catch (_) { }
+  try { if (typeof restoreConversationAnchorMarks === 'function') restoreConversationAnchorMarks(root); } catch (_) { }
+  try { if (typeof decorateTables === 'function') decorateTables(root); } catch (_) { }
+  try { if (typeof decorateNoteImages === 'function') decorateNoteImages(root); } catch (_) { }
   try {
     if (typeof restoreCollapsedState === 'function' && peerId) {
       if (typeof runEditorOperationOnRoot === 'function') runEditorOperationOnRoot(root, () => restoreCollapsedState(peerId, root));
       else restoreCollapsedState(peerId, root);
     }
-  } catch (_) {}
-  try { if (typeof refreshEmpty === 'function') refreshEmpty(root); } catch (_) {}
-  try { if (typeof initPeerUndoSnapshot === 'function') initPeerUndoSnapshot(root); } catch (_) {}
+  } catch (_) { }
+  try { if (typeof refreshEmpty === 'function') refreshEmpty(root); } catch (_) { }
+  try { if (typeof initPeerUndoSnapshot === 'function') initPeerUndoSnapshot(root); } catch (_) { }
 }
 
 async function readSplitPeerBody(note, peerId) {
@@ -730,7 +742,7 @@ function beginNoteSplitResize(event) {
   event.preventDefault();
   _noteSplitResize = { pointerId: event.pointerId };
   editorView.classList.add('split-resizing');
-  try { divider.setPointerCapture(event.pointerId); } catch (_) {}
+  try { divider.setPointerCapture(event.pointerId); } catch (_) { }
 }
 
 function moveNoteSplitResize(event) {
@@ -750,7 +762,7 @@ function finishNoteSplitResize(event) {
   editorView?.classList.remove('split-resizing');
   try {
     if (divider?.hasPointerCapture(pointerId)) divider.releasePointerCapture(pointerId);
-  } catch (_) {}
+  } catch (_) { }
 }
 
 function handleNoteSplitDividerKeydown(event) {
@@ -871,6 +883,7 @@ function initNoteSplitView() {
   document.addEventListener('dragend', finishNoteSplitDrag);
   window.addEventListener('blur', finishNoteSplitDrag);
   window.addEventListener('resize', () => {
+    if (typeof isTransientViewport === 'function' && isTransientViewport()) return;
     if (noteSplitHasPane() && !canUseNoteSplit(false)) clearNoteSplitView();
     else if (noteSplitHasPane()) applyNoteSplitRatio();
     else tryRestorePersistedNoteSplit();

@@ -41,7 +41,7 @@ function rememberLastOpenNote(id) {
   if (typeof isGuestReadOnly === 'function' && isGuestReadOnly()) return;
   try {
     localStorage.setItem(LAST_OPEN_NOTE_STORAGE_KEY, id);
-  } catch {}
+  } catch { }
 }
 
 function beginInitialNoteRestore() {
@@ -88,7 +88,7 @@ function openInitialNoteOrFirst() {
 async function createNote(title, folderId) {
   if (typeof isGuestReadOnly === 'function' && isGuestReadOnly()) return;
   if (folderId && !isOwnedFolder(folders[folderId])) folderId = null;
-  const id  = 'note_' + Date.now();
+  const id = 'note_' + Date.now();
   const now = new Date().toISOString();
   const folder = folderId ? folders[folderId] : null;
   const publicFolderIds = folder?.public ? [folderId] : [];
@@ -224,9 +224,9 @@ function applyNoteEditorChrome(note) {
   const isOwned = !note.owner || note.owner === userId;
   const isEditable = canEditNote(note);
   const titleEl = document.getElementById('doc-title');
-  titleEl.value    = note.title;
+  titleEl.value = note.title;
   titleEl.readOnly = !isEditable;
-  document.getElementById('toolbar').style.display   = isEditable ? '' : 'none';
+  document.getElementById('toolbar').style.display = isEditable ? '' : 'none';
   const textStylingToggleGroup = document.getElementById('text-styling-toggle-group');
   if (textStylingToggleGroup) textStylingToggleGroup.style.display = isEditable ? '' : 'none';
   const undoRedo = document.getElementById('mob-undo-redo');
@@ -280,7 +280,7 @@ function applyRemoteNoteBodyContent(noteId, content) {
   if (!note) return;
   const ed = getEd();
   const titleEl = document.getElementById('doc-title');
-  if (activeId === noteId && (document.activeElement === ed || document.activeElement === titleEl)) return;
+  if (activeId === noteId && document.hasFocus() && (document.activeElement === ed || document.activeElement === titleEl)) return;
   applyNoteBodyContent(noteId, content);
   if (activeId !== noteId) return;
   applyNoteEditorChrome(note);
@@ -344,7 +344,8 @@ async function openNote(id, options = {}) {
     listenToConversationsForNote(canUseConversations ? id : null);
   }
   listenToActiveNoteBody(id);
-  _capitalizeNext = false;
+  _capitalizeNext = !!(isEditable && ed && !ed.innerText.trim());
+  _pendingLineStartCapitalize = 0;
   if (isEditable && !isMobile()) setTimeout(() => placeCursorAtEnd(ed), 40);
   if (!preserveSidebarState && isMobile()) closeDrawer();
   rememberLastOpenNote(id);

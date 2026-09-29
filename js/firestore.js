@@ -39,7 +39,7 @@ async function writeNoteBodyDoc(note, content = note?.content || '') {
 
 function clearActiveNoteBodyListener() {
   if (activeNoteBodyUnsub) {
-    try { activeNoteBodyUnsub(); } catch (_) {}
+    try { activeNoteBodyUnsub(); } catch (_) { }
   }
   activeNoteBodyUnsub = null;
   activeNoteBodyListeningId = null;
@@ -100,7 +100,7 @@ function listenToActiveNoteBody(noteId) {
     const previous = note?.content || '';
     const ed = getEd();
     const titleEl = document.getElementById('doc-title');
-    if (activeId === noteId && (document.activeElement === ed || document.activeElement === titleEl)) return;
+    if (activeId === noteId && document.hasFocus() && (document.activeElement === ed || document.activeElement === titleEl)) return;
     const modified = normalizeNoteTimestamp(snap.data()?.modified);
     applyNoteBodyContent(noteId, content, modified ? { modified } : {});
     if (activeId === noteId && previous !== content && typeof applyRemoteNoteBodyContent === 'function') {
@@ -183,7 +183,7 @@ function listenToNotes() {
       } else {
         const ids = sortedIds();
         if (ids.length) openNote(ids[0]);
-        else            showEditorView(false);
+        else showEditorView(false);
       }
     }
     setSaveState('saved');
@@ -222,9 +222,9 @@ function listenToFolders() {
       const iconColorMode = iconColor === FOLDER_ICON_THEME ? 'theme' : 'manual';
       folders[id] = {
         id,
-        title:    d.title   || 'Untitled Folder',
-        public:   d.public  || false,
-        shared:   !!d.shared,
+        title: d.title || 'Untitled Folder',
+        public: d.public || false,
+        shared: !!d.shared,
         sharedWith: normalizeSharedWith(d.sharedWith),
         sharedAccessKeys: normalizeSharedAccessKeys(d.sharedAccessKeys),
         iconColor,
@@ -234,8 +234,9 @@ function listenToFolders() {
         sourceOwnerName: d.sourceOwnerName || '',
         sourceOwnerPhotoURL: d.sourceOwnerPhotoURL || '',
         sourceOwnerPhotoURLCandidates: Array.isArray(d.sourceOwnerPhotoURLCandidates) ? d.sourceOwnerPhotoURLCandidates : [],
-        order:    Number.isFinite(Number(d.order)) ? Number(d.order) : null,
-        created:  d.created?.toDate?.()?.toISOString()  || new Date().toISOString(),
+        parentId: typeof d.parentId === 'string' && d.parentId ? d.parentId : null,
+        order: Number.isFinite(Number(d.order)) ? Number(d.order) : null,
+        created: d.created?.toDate?.()?.toISOString() || new Date().toISOString(),
         modified: d.modified?.toDate?.()?.toISOString() || new Date().toISOString()
       };
       if (d.iconColor !== iconColor || d.iconColorMode !== iconColorMode) {
@@ -272,7 +273,7 @@ async function saveDoc(note) {
     const bodyStored = contentLoaded ? await writeNoteBodyDoc(snapshot, content) : true;
     // Shared users only update title/content; owner fields stay untouched (merge preserves sharedWith)
     const payload = {
-      title:    snapshot.title,
+      title: snapshot.title,
       modified: serverTimestamp()
     };
     if (contentLoaded) {
@@ -281,8 +282,8 @@ async function saveDoc(note) {
       if (!bodyStored) payload.bodyStorage = 'notes';
     }
     if (isOwner) {
-      payload.owner   = userId;
-      payload.public  = computeEffectiveNotePublic(snapshot);
+      payload.owner = userId;
+      payload.public = computeEffectiveNotePublic(snapshot);
       payload.linkPublic = !!snapshot.linkPublic;
       payload.publicFolderIds = normalizePublicFolderIds(snapshot.publicFolderIds);
       payload.created = Timestamp.fromDate(new Date(snapshot.created));
@@ -308,15 +309,16 @@ async function saveFolderDoc(folder) {
   if (!userId) return;
   try {
     await setDoc(doc(fsDb, 'folders', folder.id), {
-      owner:    userId,
-      public:   folder.public || false,
-      title:    folder.title,
+      owner: userId,
+      public: folder.public || false,
+      title: folder.title,
       iconColor: normalizeFolderIconColor(folder.iconColor, folder.iconColorMode) || DEFAULT_FOLDER_ICON_COLOR,
       iconColorMode: (normalizeFolderIconColor(folder.iconColor, folder.iconColorMode) || DEFAULT_FOLDER_ICON_COLOR) === FOLDER_ICON_THEME ? 'theme' : 'manual',
       sharedWith: normalizeSharedWith(folder.sharedWith),
       sharedAccessKeys: normalizeSharedAccessKeys(folder.sharedAccessKeys),
       order: Number.isFinite(Number(folder.order)) ? Number(folder.order) : nextFolderOrderValue(),
-      created:  Timestamp.fromDate(new Date(folder.created)),
+      ...(folder.parentId ? { parentId: folder.parentId } : {}),
+      created: Timestamp.fromDate(new Date(folder.created)),
       modified: serverTimestamp()
     });
   } catch (err) {
@@ -366,7 +368,7 @@ async function migrateFromLocalStorage() {
   if (!raw) { localStorage.setItem('notas_migrated_v2', '1'); return; }
   try {
     const parsed = JSON.parse(raw);
-    const list   = Object.values(parsed.lists || {});
+    const list = Object.values(parsed.lists || {});
     if (!list.length) { localStorage.setItem('notas_migrated_v2', '1'); return; }
     const batch = writeBatch(fsDb);
     list.forEach(n => {
@@ -374,8 +376,8 @@ async function migrateFromLocalStorage() {
       const created = Timestamp.fromDate(new Date(n.created));
       const modified = Timestamp.fromDate(new Date(n.modified));
       batch.set(doc(fsDb, 'notes', n.id), {
-        owner:    userId,
-        title:    n.title,
+        owner: userId,
+        title: n.title,
         ...noteContentMetadataPayload(html),
         created,
         modified
@@ -435,7 +437,7 @@ function _flushOfflineEdits() {
       if (notes[id]) {
         // Only apply if offline edit is newer
         if (new Date(edit.modified) > new Date(notes[id].modified)) {
-          notes[id].title   = edit.title;
+          notes[id].title = edit.title;
           applyNoteBodyContent(id, edit.content || '');
           notes[id].modified = edit.modified;
           saveDoc(notes[id]);

@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
@@ -9,6 +10,7 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" />
   <link rel="stylesheet" href="./styles.css" />
 </head>
+
 <body>
   <script>
     (() => {
@@ -17,26 +19,33 @@
         const accentMode = localStorage.getItem('notas_accent_mode') || 'notas';
         const systemLight = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches;
         const isLight = mode === 'light' || (mode === 'system' && systemLight);
+        const isDesktopApp = /Electron/i.test(navigator.userAgent || '');
         document.documentElement.classList.toggle('light-mode', isLight);
+        document.documentElement.classList.toggle('desktop-app', isDesktopApp);
         document.documentElement.style.colorScheme = isLight ? 'light' : 'dark';
         document.body.classList.toggle('light-mode', isLight);
+        document.body.classList.toggle('desktop-app', isDesktopApp);
         document.body.classList.toggle('notas-branding', accentMode === 'notas');
         document.body.classList.toggle('bg-branding', accentMode === 'bg');
         document.body.classList.toggle('custom-accent-mode', accentMode === 'custom');
         document.body.classList.toggle('text-styling-hidden', localStorage.getItem('notas_text_styling_visible') === 'false');
-      } catch {}
+      } catch { }
     })();
   </script>
 
-  <div id="loading-overlay"><div class="loading-spinner"></div></div>
+  <div id="loading-overlay">
+    <div class="loading-spinner"></div>
+  </div>
 
   <header id="mob-header">
-    <button class="mob-btn" id="drawer-btn" type="button" title="Open Sidebar" aria-label="Open Sidebar"><i class="fa-solid fa-bars"></i></button>
+    <button class="mob-btn" id="drawer-btn" type="button" title="Open Sidebar" aria-label="Open Sidebar"><i
+        class="fa-solid fa-bars"></i></button>
     <button class="mob-logo" id="mob-logo-btn" type="button" title="Home" aria-label="Home">
       <img class="brand-icon" src="notas-icon.png" alt="" />
       <img class="brand-wordmark" src="notas.png" alt="Notas" />
     </button>
-    <button class="mob-btn accent" id="mob-new-btn" type="button" title="New Note" aria-label="New Note"><i class="fa-solid fa-plus"></i></button>
+    <button class="mob-btn accent" id="mob-new-btn" type="button" title="New Note" aria-label="New Note"><i
+        class="fa-solid fa-plus"></i></button>
   </header>
 
   <div id="drawer-overlay"></div>
@@ -44,35 +53,43 @@
   <div id="app">
     <nav id="app-rail" aria-label="App navigation">
       <div class="rail-stack">
-        <button class="rail-logo active" id="rail-notes-btn" data-sidebar-view="notes" type="button" title="Home" aria-label="Home" aria-pressed="true">
+        <button class="rail-logo active" id="rail-notes-btn" data-sidebar-view="notes" type="button" title="Home"
+          aria-label="Home" aria-pressed="true">
           <img src="notas-icon.png" alt="" />
         </button>
         <button class="rail-btn rail-primary" id="rail-create-btn" type="button" title="Create" aria-label="Create">
           <i class="fa-solid fa-plus"></i>
         </button>
         <div class="rail-divider" aria-hidden="true"></div>
-        <button class="rail-btn notification-btn" id="notifications-btn" data-sidebar-view="notifications" type="button" title="Toggle Notifications" aria-label="Toggle Notifications" aria-pressed="false">
+        <button class="rail-btn notification-btn" id="notifications-btn" data-sidebar-view="notifications" type="button"
+          title="Toggle Notifications" aria-label="Toggle Notifications" aria-pressed="false">
           <i class="fa-solid fa-bell"></i>
           <span class="notification-badge" id="notification-badge" hidden>0</span>
         </button>
-        <button class="rail-btn" id="alarm-btn" data-sidebar-view="alarms" type="button" title="Toggle Reminders" aria-label="Toggle Reminders" aria-pressed="false">
+        <button class="rail-btn" id="alarm-btn" data-sidebar-view="alarms" type="button" title="Toggle Reminders"
+          aria-label="Toggle Reminders" aria-pressed="false">
           <i class="fa-solid fa-clock"></i>
           <span class="notification-badge" id="alarm-badge" hidden>0</span>
         </button>
-        <button class="rail-btn" id="conversation-toggle-btn" data-sidebar-view="conversations" type="button" title="Toggle Conversations" aria-label="Toggle Conversations" aria-pressed="false">
+        <button class="rail-btn" id="conversation-toggle-btn" data-sidebar-view="conversations" type="button"
+          title="Toggle Conversations" aria-label="Toggle Conversations" aria-pressed="false">
           <i class="fa-solid fa-comments"></i>
-          <span class="notification-badge conversation-notification-icon" id="conversation-badge" hidden><i class="fa-solid fa-bell"></i></span>
+          <span class="notification-badge conversation-notification-icon" id="conversation-badge" hidden><i
+              class="fa-solid fa-bell"></i></span>
         </button>
-        <button class="rail-btn" id="rail-friends-btn" data-sidebar-view="friends" type="button" title="Toggle Friends" aria-label="Toggle Friends" aria-pressed="false">
+        <button class="rail-btn" id="rail-friends-btn" data-sidebar-view="friends" type="button" title="Toggle Friends"
+          aria-label="Toggle Friends" aria-pressed="false">
           <i class="fa-solid fa-user-group"></i>
         </button>
-        <button class="rail-btn" id="rail-trash-btn" data-sidebar-view="trash" type="button" title="Toggle Trash" aria-label="Toggle Trash" aria-pressed="false">
+        <button class="rail-btn" id="rail-trash-btn" data-sidebar-view="trash" type="button" title="Toggle Trash"
+          aria-label="Toggle Trash" aria-pressed="false">
           <i class="fa-solid fa-trash"></i>
         </button>
       </div>
       <div class="rail-stack rail-account-stack">
         <img id="user-avatar" class="rail-avatar" alt="" />
-        <button class="rail-btn" id="shortcuts-btn" type="button" title="Keyboard Shortcuts" aria-label="Keyboard Shortcuts">
+        <button class="rail-btn" id="shortcuts-btn" type="button" title="Keyboard Shortcuts"
+          aria-label="Keyboard Shortcuts">
           <i class="fa-solid fa-keyboard"></i>
         </button>
         <button class="rail-btn" id="profile-settings-btn" type="button" title="Settings" aria-label="Settings">
@@ -88,37 +105,44 @@
         </button>
         <div class="sidebar-mobile-heading" id="sidebar-mobile-heading">Notes</div>
         <div class="app-history-controls" role="group" aria-label="Note Navigation">
-          <button class="app-history-btn" id="app-back-btn" type="button" title="Previous Note" aria-label="Previous Note" disabled>
+          <button class="app-history-btn" id="app-back-btn" type="button" title="Previous Note"
+            aria-label="Previous Note" disabled>
             <i class="fa-solid fa-chevron-left"></i>
           </button>
-          <button class="app-history-btn" id="app-forward-btn" type="button" title="Next Note" aria-label="Next Note" disabled>
+          <button class="app-history-btn" id="app-forward-btn" type="button" title="Next Note" aria-label="Next Note"
+            disabled>
             <i class="fa-solid fa-chevron-right"></i>
           </button>
         </div>
       </div>
       <nav class="sidebar-mobile-nav" aria-label="Library">
-        <button class="sidebar-mobile-nav-btn" data-sidebar-view="alarms" type="button" title="Reminders" aria-label="Reminders" aria-pressed="false">
+        <button class="sidebar-mobile-nav-btn" data-sidebar-view="alarms" type="button" title="Reminders"
+          aria-label="Reminders" aria-pressed="false">
           <i class="fa-solid fa-clock"></i>
           <span>Reminders</span>
           <span class="notification-badge" id="mob-alarm-badge" hidden>0</span>
         </button>
-        <button class="sidebar-mobile-nav-btn" data-sidebar-view="conversations" type="button" title="Conversations" aria-label="Conversations" aria-pressed="false">
+        <button class="sidebar-mobile-nav-btn" data-sidebar-view="conversations" type="button" title="Conversations"
+          aria-label="Conversations" aria-pressed="false">
           <i class="fa-solid fa-comments"></i>
           <span>Conversations</span>
           <span class="notification-badge" id="mob-conversation-badge" hidden>0</span>
         </button>
-        <button class="sidebar-mobile-nav-btn" data-sidebar-view="friends" type="button" title="Friends" aria-label="Friends" aria-pressed="false">
+        <button class="sidebar-mobile-nav-btn" data-sidebar-view="friends" type="button" title="Friends"
+          aria-label="Friends" aria-pressed="false">
           <i class="fa-solid fa-user-group"></i>
           <span>Friends</span>
         </button>
-        <button class="sidebar-mobile-nav-btn" data-sidebar-view="trash" type="button" title="Trash" aria-label="Trash" aria-pressed="false">
+        <button class="sidebar-mobile-nav-btn" data-sidebar-view="trash" type="button" title="Trash" aria-label="Trash"
+          aria-pressed="false">
           <i class="fa-solid fa-trash"></i>
           <span>Trash</span>
         </button>
       </nav>
       <div class="sidebar-search">
         <input type="text" id="search-input" placeholder="Search Notes" autocomplete="off" />
-        <button class="sidebar-search-clear" id="search-clear-btn" type="button" title="Clear Search" aria-label="Clear Search" hidden><i class="fa-solid fa-xmark"></i></button>
+        <button class="sidebar-search-clear" id="search-clear-btn" type="button" title="Clear Search"
+          aria-label="Clear Search" hidden><i class="fa-solid fa-xmark"></i></button>
       </div>
       <div class="sidebar-list" id="sidebar-list"></div>
     </aside>
@@ -145,52 +169,67 @@
             </div>
             <div class="main-header">
               <div class="main-title-row">
-                <input class="doc-title-input" id="doc-title" type="text" placeholder="Untitled Note" autocomplete="off" />
+                <input class="doc-title-input" id="doc-title" type="text" placeholder="Untitled Note"
+                  autocomplete="off" />
                 <div id="doc-access-avatars" aria-hidden="true"></div>
               </div>
-              <div class="main-toolbar-row">
+              <div class="main-toolbar-row" id="main-toolbar-row">
                 <div class="toolbar-group text-styling-toggle-group" id="text-styling-toggle-group">
-                  <button class="tb-btn text-styling-toggle-btn" id="text-styling-toggle-btn" type="button" title="Hide Text Styling" aria-label="Hide Text Styling" aria-pressed="true">T</button>
+                  <button class="tb-btn text-styling-toggle-btn" id="text-styling-toggle-btn" type="button"
+                    title="Hide Text Styling" aria-label="Hide Text Styling" aria-pressed="true">T</button>
                 </div>
                 <div class="toolbar" id="toolbar">
                   <div class="toolbar-group">
-                    <button class="tb-btn" data-action="h1"            title="Heading 1">H1</button>
-                    <button class="tb-btn" data-action="bold"          title="Bold (Cmd+B)"><b>B</b></button>
-                    <button class="tb-btn" data-action="italic"        title="Italic (Cmd+I)"><i>I</i></button>
-                    <button class="tb-btn" data-action="strikethrough" title="Strikethrough (Cmd+Shift+S)"><s>S</s></button>
+                    <button class="tb-btn" data-action="h1" title="Heading 1">H1</button>
+                    <button class="tb-btn" data-action="bold" title="Bold (Cmd+B)"><b>B</b></button>
+                    <button class="tb-btn" data-action="italic" title="Italic (Cmd+I)"><i>I</i></button>
+                    <button class="tb-btn" data-action="strikethrough"
+                      title="Strikethrough (Cmd+Shift+S)"><s>S</s></button>
                   </div>
                   <div class="toolbar-sep"></div>
                   <div class="toolbar-group">
-                    <button class="tb-btn" data-action="ul"        title="Bullet List"><i class="fa-solid fa-list-ul"></i></button>
-                    <button class="tb-btn" data-action="checklist" title="Checklist"><i class="fa-solid fa-list-check"></i></button>
-                    <button class="tb-btn" data-action="ol"        title="Numbered List"><i class="fa-solid fa-list-ol"></i></button>
+                    <button class="tb-btn" data-action="ul" title="Bullet List"><i
+                        class="fa-solid fa-list-ul"></i></button>
+                    <button class="tb-btn" data-action="checklist" title="Checklist"><i
+                        class="fa-solid fa-list-check"></i></button>
+                    <button class="tb-btn" data-action="ol" title="Numbered List"><i
+                        class="fa-solid fa-list-ol"></i></button>
                   </div>
                   <div class="toolbar-sep"></div>
                   <div class="toolbar-group">
-                    <button class="tb-btn" data-action="indentLeft"  title="Outdent (Shift+Tab)"><i class="fa-solid fa-outdent"></i></button>
-                    <button class="tb-btn" data-action="indentRight" title="Indent (Tab)"><i class="fa-solid fa-indent"></i></button>
+                    <button class="tb-btn" data-action="indentLeft" title="Outdent (Shift+Tab)"><i
+                        class="fa-solid fa-outdent"></i></button>
+                    <button class="tb-btn" data-action="indentRight" title="Indent (Tab)"><i
+                        class="fa-solid fa-indent"></i></button>
                   </div>
                   <div class="toolbar-sep"></div>
                   <div class="toolbar-group">
-                    <button class="tb-btn" data-action="table"     title="Table"><i class="fa-solid fa-table"></i></button>
-                    <button class="tb-btn" data-action="code"      title="Inline Code (Cmd+E)"><i class="fa-solid fa-code"></i></button>
-                    <button class="tb-btn" data-action="codeblock" title="Code Block"><i class="fa-solid fa-terminal"></i></button>
+                    <button class="tb-btn" data-action="table" title="Table"><i class="fa-solid fa-table"></i></button>
+                    <button class="tb-btn" data-action="code" title="Inline Code (Cmd+E)"><i
+                        class="fa-solid fa-code"></i></button>
+                    <button class="tb-btn" data-action="codeblock" title="Code Block"><i
+                        class="fa-solid fa-terminal"></i></button>
                   </div>
                   <div class="toolbar-sep"></div>
                   <div class="toolbar-group">
-                    <button class="tb-btn" data-action="alarm" title="Set Reminder"><i class="fa-solid fa-clock"></i></button>
-                    <button class="tb-btn" data-action="conversation" title="Start Conversation"><i class="fa-solid fa-comments"></i></button>
+                    <button class="tb-btn" data-action="alarm" title="Set Reminder"><i
+                        class="fa-solid fa-clock"></i></button>
+                    <button class="tb-btn" data-action="conversation" title="Start Conversation"><i
+                        class="fa-solid fa-comments"></i></button>
                   </div>
                 </div>
                 <div class="header-actions" id="header-actions">
-                  <button class="new-note-btn header-action-btn" id="share-btn" type="button" title="Share Note"><i class="fa-solid fa-arrow-up-from-bracket"></i></button>
+                  <button class="new-note-btn header-action-btn" id="share-btn" type="button" title="Share Note"><i
+                      class="fa-solid fa-arrow-up-from-bracket"></i></button>
                 </div>
                 <div class="mob-undo-redo" id="mob-undo-redo">
-                  <button class="mob-history-btn" id="mob-undo-btn" type="button" title="Undo" aria-label="Undo" disabled>
+                  <button class="mob-history-btn" id="mob-undo-btn" type="button" title="Undo" aria-label="Undo"
+                    disabled>
                     <i class="fa-solid fa-rotate-left"></i>
                     <span>Undo</span>
                   </button>
-                  <button class="mob-history-btn" id="mob-redo-btn" type="button" title="Redo" aria-label="Redo" disabled>
+                  <button class="mob-history-btn" id="mob-redo-btn" type="button" title="Redo" aria-label="Redo"
+                    disabled>
                     <i class="fa-solid fa-rotate-right"></i>
                     <span>Redo</span>
                   </button>
@@ -200,17 +239,17 @@
 
             <div class="editor-area">
               <div class="editor-corner-actions">
-                <button class="note-split-toggle-btn" id="note-split-toggle-btn" type="button" title="Open Split View" aria-label="Open Split View" aria-pressed="false" disabled>
+                <button class="note-split-toggle-btn" id="note-split-toggle-btn" type="button" title="Open Split View"
+                  aria-label="Open Split View" aria-pressed="false" disabled>
                   <i class="fa-solid fa-table-columns"></i>
                 </button>
-                <button class="note-focus-entry-btn" id="note-focus-btn" type="button" title="Toggle Full Screen Note" aria-label="Toggle Full Screen Note"><i class="fa-solid fa-expand"></i></button>
+                <button class="note-focus-entry-btn" id="note-focus-btn" type="button" title="Toggle Full Screen Note"
+                  aria-label="Toggle Full Screen Note"><i class="fa-solid fa-expand"></i></button>
               </div>
-              <button class="note-focus-exit-btn" id="note-focus-exit-btn" type="button" title="Exit Full Screen Note" aria-label="Exit Full Screen Note"><i class="fa-solid fa-compress"></i></button>
-              <div id="editor"
-                   class="editor is-empty"
-                   contenteditable="true"
-                   spellcheck="true"
-                   data-placeholder="Start Writing..."></div>
+              <button class="note-focus-exit-btn" id="note-focus-exit-btn" type="button" title="Exit Full Screen Note"
+                aria-label="Exit Full Screen Note"><i class="fa-solid fa-compress"></i></button>
+              <div id="editor" class="editor is-empty" contenteditable="true" spellcheck="true"
+                autocapitalize="sentences" data-placeholder="Start Writing..."></div>
             </div>
 
             <div class="status-bar">
@@ -225,29 +264,39 @@
             </div>
           </section>
 
-          <div class="note-split-divider" id="note-split-divider" role="separator" aria-orientation="vertical" aria-label="Resize Split View" aria-valuemin="20" aria-valuemax="80" aria-valuenow="50" tabindex="0"></div>
+          <div class="note-split-divider" id="note-split-divider" role="separator" aria-orientation="vertical"
+            aria-label="Resize Split View" aria-valuemin="20" aria-valuemax="80" aria-valuenow="50" tabindex="0"></div>
 
           <section class="note-split-peer-pane" id="note-split-peer-pane" aria-label="Split Note" aria-hidden="true">
             <div class="note-split-peer-header">
-              <input class="note-split-peer-title" id="note-split-peer-title" type="text" placeholder="Untitled Note" autocomplete="off" />
+              <div class="main-title-row">
+                <input class="doc-title-input note-split-peer-title" id="note-split-peer-title" type="text"
+                  placeholder="Untitled Note" autocomplete="off" />
+              </div>
+              <div class="main-toolbar-row" id="note-split-peer-toolbar-row"></div>
             </div>
             <div class="note-split-peer-area" id="note-split-peer-area">
               <div class="editor-corner-actions">
-                <button class="note-split-toggle-btn" id="note-split-close-btn" type="button" title="Close Note" aria-label="Close Note">
+                <button class="note-split-toggle-btn" id="note-split-close-btn" type="button" title="Close Note"
+                  aria-label="Close Note">
                   <i class="fa-solid fa-xmark"></i>
                 </button>
-                <button class="note-focus-entry-btn" id="note-split-peer-focus-btn" type="button" title="Toggle Full Screen Note" aria-label="Toggle Full Screen Note">
+                <button class="note-focus-entry-btn" id="note-split-peer-focus-btn" type="button"
+                  title="Toggle Full Screen Note" aria-label="Toggle Full Screen Note">
                   <i class="fa-solid fa-expand"></i>
                 </button>
               </div>
-              <div class="note-split-peer-body editor" id="note-split-peer-body" contenteditable="false" spellcheck="true" data-placeholder="Start Writing..."></div>
+              <div class="note-split-peer-body editor" id="note-split-peer-body" contenteditable="false"
+                spellcheck="true" autocapitalize="sentences" data-placeholder="Start Writing..."></div>
             </div>
           </section>
         </div>
 
         <div class="note-split-drop-overlay" id="note-split-drop-overlay" aria-hidden="true">
-          <div class="note-split-drop-zone split-left"><i class="fa-solid fa-table-columns"></i><span>Split Left</span></div>
-          <div class="note-split-drop-zone split-right"><i class="fa-solid fa-table-columns"></i><span>Split Right</span></div>
+          <div class="note-split-drop-zone split-left"><i class="fa-solid fa-table-columns"></i><span>Split Left</span>
+          </div>
+          <div class="note-split-drop-zone split-right"><i class="fa-solid fa-table-columns"></i><span>Split
+              Right</span></div>
         </div>
       </div>
     </main>
@@ -255,28 +304,36 @@
     <aside id="conversation-sidebar" aria-label="Conversations" aria-hidden="true">
       <div class="conversation-panel-header">
         <div class="conversation-title-wrap">
-          <div class="conversation-panel-title"><i class="fa-solid fa-comments"></i><span id="conversation-panel-title-text">Conversations</span></div>
+          <div class="conversation-panel-title"><i class="fa-solid fa-comments"></i><span
+              id="conversation-panel-title-text">Conversations</span></div>
           <div class="conversation-note-title" id="conversation-note-title"></div>
         </div>
         <div class="conversation-header-actions">
-          <button class="conversation-icon-btn" id="conversation-close-btn" type="button" title="Close Conversations" aria-label="Close Conversations">
+          <button class="conversation-icon-btn" id="conversation-close-btn" type="button" title="Close Conversations"
+            aria-label="Close Conversations">
             <i class="fa-solid fa-xmark"></i>
           </button>
         </div>
       </div>
       <div class="conversation-sidebar-body" id="conversation-sidebar-body"></div>
-      <button class="conversation-resize-handle conversation-resize-handle-left" id="conversation-resize-left" type="button" title="Resize Conversations" aria-label="Resize Conversations" data-conversation-resize-edge="left"></button>
-      <button class="conversation-resize-handle conversation-resize-handle-right" id="conversation-resize-right" type="button" title="Resize Conversations" aria-label="Resize Conversations" data-conversation-resize-edge="right"></button>
+      <button class="conversation-resize-handle conversation-resize-handle-left" id="conversation-resize-left"
+        type="button" title="Resize Conversations" aria-label="Resize Conversations"
+        data-conversation-resize-edge="left"></button>
+      <button class="conversation-resize-handle conversation-resize-handle-right" id="conversation-resize-right"
+        type="button" title="Resize Conversations" aria-label="Resize Conversations"
+        data-conversation-resize-edge="right"></button>
     </aside>
   </div>
 
   <nav id="mob-tabbar" aria-label="Mobile Navigation">
-    <button class="mob-tab" id="mob-tab-notifications" data-mob-tab="notifications" type="button" aria-label="Notifications">
+    <button class="mob-tab" id="mob-tab-notifications" data-mob-tab="notifications" type="button"
+      aria-label="Notifications">
       <i class="fa-solid fa-bell"></i>
       <span>Notifications</span>
       <span class="notification-badge" id="mob-notification-badge" hidden>0</span>
     </button>
-    <button class="mob-tab active" id="mob-tab-notes" data-mob-tab="notes" type="button" aria-label="Notes" aria-current="page">
+    <button class="mob-tab active" id="mob-tab-notes" data-mob-tab="notes" type="button" aria-label="Notes"
+      aria-current="page">
       <i class="fa-regular fa-note-sticky"></i>
       <span>Notes</span>
     </button>
@@ -287,7 +344,8 @@
   </nav>
 
   <div id="conversation-selection-popover" class="conversation-selection-popover" hidden>
-    <button id="conversation-selection-start-btn" type="button" title="Start Conversation" aria-label="Start Conversation">
+    <button id="conversation-selection-start-btn" type="button" title="Start Conversation"
+      aria-label="Start Conversation">
       <i class="fa-solid fa-comment-dots"></i>
     </button>
     <button id="conversation-selection-reminder-btn" type="button" title="Set Reminder" aria-label="Set Reminder">
@@ -306,6 +364,10 @@
           <i class="fa-solid fa-folder-plus"></i><span>Folder</span>
         </button>
       </div>
+      <label class="modal-field" id="modal-parent-field" hidden>
+        <span class="modal-field-label">Location</span>
+        <select class="settings-select modal-select" id="modal-parent-select" aria-label="Folder Location"></select>
+      </label>
       <input class="modal-input" id="modal-input" type="text" placeholder="Name" maxlength="80" autocomplete="off" />
       <div class="modal-actions">
         <button class="modal-btn" id="modal-cancel">Cancel</button>
@@ -318,24 +380,36 @@
 
   <div class="modal-overlay" id="shortcuts-modal">
     <div class="modal wide shortcuts-modal" role="dialog" aria-modal="true" aria-labelledby="shortcuts-title">
-      <div class="modal-title shortcuts-title" id="shortcuts-title"><i class="fa-solid fa-keyboard" style="opacity:.7;"></i>Keyboard Shortcuts</div>
+      <div class="modal-title shortcuts-title" id="shortcuts-title"><i class="fa-solid fa-keyboard"
+          style="opacity:.7;"></i>Keyboard Shortcuts</div>
       <div class="shortcut-list" aria-label="Keyboard Shortcuts">
         <section class="shortcut-section" aria-labelledby="shortcuts-general-title">
           <div class="shortcut-section-title" id="shortcuts-general-title">macOS</div>
-          <div class="shortcut-row"><span class="shortcut-label">Toggle Pop Out Note</span><span class="shortcut-keys"><kbd>Command + P</kbd></span></div>
-          <div class="shortcut-row"><span class="shortcut-label">Focus Note</span><span class="shortcut-keys"><kbd>Command + Shift + F</kbd></span></div>
-          <div class="shortcut-row"><span class="shortcut-label">Close Pop-Ups Or Toggle Notes</span><span class="shortcut-keys"><kbd>Escape</kbd></span></div>
-          <div class="shortcut-row"><span class="shortcut-label">Always On Top</span><span class="shortcut-keys"><kbd>Command + Shift + T</kbd></span></div>
+          <div class="shortcut-row"><span class="shortcut-label">Toggle Pop Out Note</span><span
+              class="shortcut-keys"><kbd>Command + P</kbd></span></div>
+          <div class="shortcut-row"><span class="shortcut-label">Focus Note</span><span
+              class="shortcut-keys"><kbd>Command + Shift + F</kbd></span></div>
+          <div class="shortcut-row"><span class="shortcut-label">Close Pop-Ups Or Toggle Notes</span><span
+              class="shortcut-keys"><kbd>Escape</kbd></span></div>
+          <div class="shortcut-row"><span class="shortcut-label">Always On Top</span><span
+              class="shortcut-keys"><kbd>Command + Shift + T</kbd></span></div>
         </section>
         <section class="shortcut-section" aria-labelledby="shortcuts-editor-title">
           <div class="shortcut-section-title" id="shortcuts-editor-title">Editor</div>
-          <div class="shortcut-row"><span class="shortcut-label">Bold</span><span class="shortcut-keys"><kbd>Command + B</kbd></span></div>
-          <div class="shortcut-row"><span class="shortcut-label">Italic</span><span class="shortcut-keys"><kbd>Command + I</kbd></span></div>
-          <div class="shortcut-row"><span class="shortcut-label">Inline Code</span><span class="shortcut-keys"><kbd>Command + E</kbd></span></div>
-          <div class="shortcut-row"><span class="shortcut-label">Strikethrough</span><span class="shortcut-keys"><kbd>Command + Shift + S</kbd></span></div>
-          <div class="shortcut-row"><span class="shortcut-label">Paste Matching Formatting</span><span class="shortcut-keys"><kbd>Command + Shift + V</kbd></span></div>
-          <div class="shortcut-row"><span class="shortcut-label">Indent Or Next Table Cell</span><span class="shortcut-keys"><kbd>Tab</kbd></span></div>
-          <div class="shortcut-row"><span class="shortcut-label">Outdent Or Previous Table Cell</span><span class="shortcut-keys"><kbd>Shift + Tab</kbd></span></div>
+          <div class="shortcut-row"><span class="shortcut-label">Bold</span><span class="shortcut-keys"><kbd>Command +
+                B</kbd></span></div>
+          <div class="shortcut-row"><span class="shortcut-label">Italic</span><span class="shortcut-keys"><kbd>Command +
+                I</kbd></span></div>
+          <div class="shortcut-row"><span class="shortcut-label">Inline Code</span><span
+              class="shortcut-keys"><kbd>Command + E</kbd></span></div>
+          <div class="shortcut-row"><span class="shortcut-label">Strikethrough</span><span
+              class="shortcut-keys"><kbd>Command + Shift + S</kbd></span></div>
+          <div class="shortcut-row"><span class="shortcut-label">Paste Matching Formatting</span><span
+              class="shortcut-keys"><kbd>Command + Shift + V</kbd></span></div>
+          <div class="shortcut-row"><span class="shortcut-label">Indent Or Next Table Cell</span><span
+              class="shortcut-keys"><kbd>Tab</kbd></span></div>
+          <div class="shortcut-row"><span class="shortcut-label">Outdent Or Previous Table Cell</span><span
+              class="shortcut-keys"><kbd>Shift + Tab</kbd></span></div>
         </section>
       </div>
       <div class="modal-actions">
@@ -360,11 +434,14 @@
           <span class="settings-label"><i class="fa-solid fa-palette"></i>Colour</span>
           <div class="color-control" id="color-control">
             <div class="color-mode-toggle" role="group" aria-label="Colour palette">
-              <button class="color-mode-option" type="button" data-accent-mode="notas" aria-pressed="false">Notas</button>
+              <button class="color-mode-option" type="button" data-accent-mode="notas"
+                aria-pressed="false">Notas</button>
               <button class="color-mode-option" type="button" data-accent-mode="bg" aria-pressed="false">B & G</button>
-              <button class="color-mode-option" type="button" data-accent-mode="custom" aria-pressed="false">Custom</button>
+              <button class="color-mode-option" type="button" data-accent-mode="custom"
+                aria-pressed="false">Custom</button>
             </div>
-            <button class="accent-picker" id="accent-picker-btn" type="button" title="Choose colour" aria-label="Choose colour" aria-expanded="false"></button>
+            <button class="accent-picker" id="accent-picker-btn" type="button" title="Choose colour"
+              aria-label="Choose colour" aria-expanded="false"></button>
             <div class="color-popover" id="color-popover" hidden>
               <div class="custom-color-picker" id="custom-color-picker" hidden>
                 <div class="color-sv" id="color-sv"><span class="color-sv-cursor" id="color-sv-cursor"></span></div>
@@ -376,17 +453,21 @@
         <div class="settings-row">
           <span class="settings-label"><i class="fa-solid fa-font"></i>Text Size</span>
           <div class="font-size-controls">
-            <button class="fs-btn" id="fs-dec" type="button" title="Decrease Text Size" aria-label="Decrease Text Size"><i class="fa-solid fa-minus"></i></button>
+            <button class="fs-btn" id="fs-dec" type="button" title="Decrease Text Size"
+              aria-label="Decrease Text Size"><i class="fa-solid fa-minus"></i></button>
             <span class="fs-val" id="fs-val">15</span>
-            <button class="fs-btn" id="fs-inc" type="button" title="Increase Text Size" aria-label="Increase Text Size"><i class="fa-solid fa-plus"></i></button>
+            <button class="fs-btn" id="fs-inc" type="button" title="Increase Text Size"
+              aria-label="Increase Text Size"><i class="fa-solid fa-plus"></i></button>
           </div>
         </div>
         <div class="settings-row">
           <span class="settings-label"><i class="fa-solid fa-align-left"></i>Line Spacing</span>
           <div class="line-spacing-controls">
-            <button class="fs-btn" id="ls-dec" type="button" title="Decrease Line Spacing" aria-label="Decrease Line Spacing"><i class="fa-solid fa-minus"></i></button>
+            <button class="fs-btn" id="ls-dec" type="button" title="Decrease Line Spacing"
+              aria-label="Decrease Line Spacing"><i class="fa-solid fa-minus"></i></button>
             <span class="fs-val" id="ls-val">1.66</span>
-            <button class="fs-btn" id="ls-inc" type="button" title="Increase Line Spacing" aria-label="Increase Line Spacing"><i class="fa-solid fa-plus"></i></button>
+            <button class="fs-btn" id="ls-inc" type="button" title="Increase Line Spacing"
+              aria-label="Increase Line Spacing"><i class="fa-solid fa-plus"></i></button>
           </div>
         </div>
         <div class="settings-row">
@@ -423,9 +504,11 @@
 
   <div class="modal-overlay" id="profile-link-modal">
     <div class="modal">
-      <div class="modal-title"><i class="fa-solid fa-user-check" style="margin-right:8px;opacity:.7;"></i>Link Profile?</div>
+      <div class="modal-title"><i class="fa-solid fa-user-check" style="margin-right:8px;opacity:.7;"></i>Link Profile?
+      </div>
       <div class="profile-approval-card" id="profile-link-preview"></div>
-      <p class="profile-approval-note" id="profile-link-note">Approve to add this profile for direct shares and @mentions. Deny cancels the link.</p>
+      <p class="profile-approval-note" id="profile-link-note">Approve to add this profile for direct shares and
+        @mentions. Deny cancels the link.</p>
       <div class="modal-actions">
         <button class="modal-btn" id="profile-link-deny" type="button">Deny</button>
         <button class="modal-btn primary" id="profile-link-approve" type="button">Approve</button>
@@ -454,16 +537,21 @@
       <form id="early-access-form" class="early-access-form">
         <label class="auth-field" for="early-access-code">
           <span>Early Access Code</span>
-          <input id="early-access-code" type="text" autocomplete="off" spellcheck="false" autocapitalize="characters" placeholder="Enter code" />
+          <input id="early-access-code" type="text" autocomplete="off" spellcheck="false" autocapitalize="characters"
+            placeholder="Enter code" />
         </label>
         <button id="early-access-btn" type="submit">Continue</button>
       </form>
       <button id="google-signin-btn" type="button" hidden>
         <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true">
-          <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.06 17.74 9.5 24 9.5z"/>
-          <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
-          <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
-          <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.35-8.16 2.35-6.26 0-11.57-3.56-13.47-8.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+          <path fill="#EA4335"
+            d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.06 17.74 9.5 24 9.5z" />
+          <path fill="#4285F4"
+            d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" />
+          <path fill="#FBBC05"
+            d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
+          <path fill="#34A853"
+            d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.35-8.16 2.35-6.26 0-11.57-3.56-13.47-8.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
         </svg>
         <span id="google-signin-label">Continue with Google</span>
       </button>
@@ -486,11 +574,14 @@
 
   <div class="modal-overlay" id="share-modal">
     <div class="modal">
-      <div class="modal-title"><i class="fa-solid fa-arrow-up-from-bracket" style="margin-right:8px;opacity:.7;"></i><span id="share-modal-title">Share Note</span></div>
+      <div class="modal-title"><i class="fa-solid fa-arrow-up-from-bracket"
+          style="margin-right:8px;opacity:.7;"></i><span id="share-modal-title">Share Note</span></div>
       <div class="share-link-panel" id="share-link-panel">
-        <button class="modal-btn primary" id="copy-link-btn" type="button"><i class="fa-solid fa-copy"></i> Copy Link</button>
+        <button class="modal-btn primary" id="copy-link-btn" type="button"><i class="fa-solid fa-copy"></i> Copy
+          Link</button>
       </div>
-      <p style="font-size:12px;color:var(--muted);margin-bottom:20px;line-height:1.5;" id="share-modal-desc">Friends receive this note directly.</p>
+      <p style="font-size:12px;color:var(--muted);margin-bottom:20px;line-height:1.5;" id="share-modal-desc">Friends
+        receive this note directly.</p>
       <div class="share-profile-panel" id="share-profile-panel">
         <div class="share-section-title"><i class="fa-solid fa-user-group"></i><span>Share With Friends</span></div>
         <div class="profile-list" id="share-profiles-list"></div>
@@ -506,22 +597,30 @@
       <div class="modal-title notification-modal-title">
         <span><i class="fa-solid fa-bell" style="margin-right:8px;opacity:.7;"></i>Notifications</span>
         <div class="notification-modal-actions">
-          <button class="modal-btn compact" id="notifications-mark-read" type="button"><i class="fa-solid fa-check-double"></i>Read All</button>
-          <button class="modal-btn compact" id="notifications-delete-read" type="button"><i class="fa-solid fa-trash"></i>Delete Read</button>
-          <button class="modal-btn compact sidebar-selection-toggle" data-selection-toggle-for="notifications-list" type="button" title="Select items" aria-label="Select items" aria-pressed="false"><i class="fa-solid fa-list-check"></i></button>
+          <button class="modal-btn compact" id="notifications-mark-read" type="button"><i
+              class="fa-solid fa-check-double"></i>Read All</button>
+          <button class="modal-btn compact" id="notifications-delete-read" type="button"><i
+              class="fa-solid fa-trash"></i>Delete Read</button>
+          <button class="modal-btn compact sidebar-selection-toggle" data-selection-toggle-for="notifications-list"
+            type="button" title="Select items" aria-label="Select items" aria-pressed="false"><i
+              class="fa-solid fa-list-check"></i></button>
         </div>
       </div>
       <div class="sidebar-selection-bar modal-selection-bar" data-selection-tools-for="notifications-list">
         <div class="sidebar-selection-tools-left">
           <label class="sidebar-selection-master" title="Select all" aria-label="Select all">
             <input type="checkbox" data-selection-master-for="notifications-list" />
-            <span class="sidebar-selection-master-label"><i class="fa-solid fa-check-double"></i><span>Select All</span></span>
+            <span class="sidebar-selection-master-label"><i class="fa-solid fa-check-double"></i><span>Select
+                All</span></span>
           </label>
-          <span class="sidebar-selection-count" data-selection-count-for="notifications-list" aria-live="polite" hidden></span>
+          <span class="sidebar-selection-count" data-selection-count-for="notifications-list" aria-live="polite"
+            hidden></span>
         </div>
         <div class="sidebar-selection-actions">
-          <button class="sidebar-selection-action" data-selection-unread-for="notifications-list" type="button" disabled><i class="fa-solid fa-envelope"></i><span>Unread</span></button>
-          <button class="sidebar-selection-action danger" data-selection-delete-for="notifications-list" type="button" disabled><i class="fa-solid fa-trash"></i><span>Delete</span></button>
+          <button class="sidebar-selection-action" data-selection-unread-for="notifications-list" type="button"
+            disabled><i class="fa-solid fa-envelope"></i><span>Unread</span></button>
+          <button class="sidebar-selection-action danger" data-selection-delete-for="notifications-list" type="button"
+            disabled><i class="fa-solid fa-trash"></i><span>Delete</span></button>
         </div>
       </div>
       <div class="notifications-list" id="notifications-list"></div>
@@ -536,22 +635,29 @@
       <div class="modal-title notification-modal-title">
         <span><i class="fa-solid fa-clock" style="margin-right:8px;opacity:.7;"></i>Reminders</span>
         <div class="notification-modal-actions">
-          <button class="modal-btn compact" id="alarms-mark-read" type="button"><i class="fa-solid fa-check-double"></i>Read All</button>
-          <button class="modal-btn compact" id="alarms-delete-read" type="button"><i class="fa-solid fa-trash"></i>Delete Read</button>
-          <button class="modal-btn compact sidebar-selection-toggle" data-selection-toggle-for="alarms-list" type="button" title="Select items" aria-label="Select items" aria-pressed="false"><i class="fa-solid fa-list-check"></i></button>
+          <button class="modal-btn compact" id="alarms-mark-read" type="button"><i
+              class="fa-solid fa-check-double"></i>Read All</button>
+          <button class="modal-btn compact" id="alarms-delete-read" type="button"><i
+              class="fa-solid fa-trash"></i>Delete Read</button>
+          <button class="modal-btn compact sidebar-selection-toggle" data-selection-toggle-for="alarms-list"
+            type="button" title="Select items" aria-label="Select items" aria-pressed="false"><i
+              class="fa-solid fa-list-check"></i></button>
         </div>
       </div>
       <div class="sidebar-selection-bar modal-selection-bar" data-selection-tools-for="alarms-list">
         <div class="sidebar-selection-tools-left">
           <label class="sidebar-selection-master" title="Select all" aria-label="Select all">
             <input type="checkbox" data-selection-master-for="alarms-list" />
-            <span class="sidebar-selection-master-label"><i class="fa-solid fa-check-double"></i><span>Select All</span></span>
+            <span class="sidebar-selection-master-label"><i class="fa-solid fa-check-double"></i><span>Select
+                All</span></span>
           </label>
           <span class="sidebar-selection-count" data-selection-count-for="alarms-list" aria-live="polite" hidden></span>
         </div>
         <div class="sidebar-selection-actions">
-          <button class="sidebar-selection-action" data-selection-unread-for="alarms-list" type="button" disabled><i class="fa-solid fa-envelope"></i><span>Unread</span></button>
-          <button class="sidebar-selection-action danger" data-selection-delete-for="alarms-list" type="button" disabled><i class="fa-solid fa-trash"></i><span>Delete</span></button>
+          <button class="sidebar-selection-action" data-selection-unread-for="alarms-list" type="button" disabled><i
+              class="fa-solid fa-envelope"></i><span>Unread</span></button>
+          <button class="sidebar-selection-action danger" data-selection-delete-for="alarms-list" type="button"
+            disabled><i class="fa-solid fa-trash"></i><span>Delete</span></button>
         </div>
       </div>
       <div class="notifications-list" id="alarms-list"></div>
@@ -574,7 +680,8 @@
           <select class="settings-select visually-hidden" id="alarm-recipient-select" aria-label="Reminder recipient">
             <option value="me">Me</option>
           </select>
-          <div class="alarm-recipient-options" id="alarm-recipient-options" role="radiogroup" aria-label="Reminder recipient"></div>
+          <div class="alarm-recipient-options" id="alarm-recipient-options" role="radiogroup"
+            aria-label="Reminder recipient"></div>
         </div>
         <div class="alarm-presets" id="alarm-date-presets">
           <button class="alarm-preset" type="button" data-alarm-date-preset="today">Today</button>
@@ -582,8 +689,10 @@
           <button class="alarm-preset" type="button" data-alarm-date-preset="next-week">Next Week</button>
         </div>
         <div class="alarm-fields">
-          <label class="alarm-field">Date<input class="modal-input" id="alarm-date-input" type="date" aria-label="Reminder date" /></label>
-          <label class="alarm-field">Time<input class="modal-input" id="alarm-time-input" type="time" aria-label="Reminder time" /></label>
+          <label class="alarm-field">Date<input class="modal-input" id="alarm-date-input" type="date"
+              aria-label="Reminder date" /></label>
+          <label class="alarm-field">Time<input class="modal-input" id="alarm-time-input" type="time"
+              aria-label="Reminder time" /></label>
         </div>
         <div class="alarm-presets" id="alarm-time-presets">
           <button class="alarm-preset" type="button" data-alarm-time-preset="09:00">Morning</button>
@@ -602,7 +711,8 @@
 
   <div class="modal-overlay" id="mention-share-modal">
     <div class="modal">
-      <div class="modal-title" id="mention-share-title"><i class="fa-solid fa-arrow-up-from-bracket" style="margin-right:8px;opacity:.7;"></i><span>Share Note?</span></div>
+      <div class="modal-title" id="mention-share-title"><i class="fa-solid fa-arrow-up-from-bracket"
+          style="margin-right:8px;opacity:.7;"></i><span>Share Note?</span></div>
       <p class="modal-note-info" id="mention-share-body"></p>
       <div class="modal-actions">
         <button class="modal-btn" id="mention-share-cancel">Not Now</button>
@@ -613,8 +723,10 @@
 
   <div class="modal-overlay" id="folder-modal">
     <div class="modal">
-      <div class="modal-title"><i class="fa-solid fa-folder-plus" style="margin-right:8px;opacity:.7;"></i>New Folder</div>
-      <input class="modal-input" id="folder-modal-input" type="text" placeholder="Folder Name" maxlength="80" autocomplete="off" />
+      <div class="modal-title"><i class="fa-solid fa-folder-plus" style="margin-right:8px;opacity:.7;"></i>New Folder
+      </div>
+      <input class="modal-input" id="folder-modal-input" type="text" placeholder="Folder Name" maxlength="80"
+        autocomplete="off" />
       <div class="modal-actions">
         <button class="modal-btn" id="folder-modal-cancel">Cancel</button>
         <button class="modal-btn primary" id="folder-modal-create">Create Folder</button>
@@ -628,16 +740,19 @@
       <div class="delete-message" id="delete-modal-body"></div>
       <div class="modal-actions">
         <button class="modal-btn" id="delete-modal-cancel">Cancel</button>
-        <button class="modal-btn danger" id="delete-modal-confirm"><i class="fa-solid fa-trash" style="margin-right:6px;"></i>Delete</button>
+        <button class="modal-btn danger" id="delete-modal-confirm"><i class="fa-solid fa-trash"
+            style="margin-right:6px;"></i>Delete</button>
       </div>
     </div>
   </div>
 
   <div class="modal-overlay" id="move-modal">
     <div class="modal">
-      <div class="modal-title"><i class="fa-solid fa-folder-open" style="margin-right:8px;opacity:.7;"></i>Move Note</div>
+      <div class="modal-title"><i class="fa-solid fa-folder-open" style="margin-right:8px;opacity:.7;"></i><span
+          id="move-modal-title">Move Note</span></div>
       <p class="modal-note-info" id="move-modal-note-name"></p>
-      <div id="move-modal-list" style="max-height:220px;overflow-y:auto;margin-bottom:16px;display:flex;flex-direction:column;gap:3px;"></div>
+      <div id="move-modal-list"
+        style="max-height:220px;overflow-y:auto;margin-bottom:16px;display:flex;flex-direction:column;gap:3px;"></div>
       <div class="modal-actions">
         <button class="modal-btn" id="move-modal-cancel">Cancel</button>
       </div>
@@ -649,7 +764,8 @@
 
   <div class="modal-overlay" id="folder-color-modal">
     <div class="modal folder-color-modal">
-      <div class="modal-title"><i class="fa-solid fa-palette" style="margin-right:8px;opacity:.7;"></i>Folder Colour</div>
+      <div class="modal-title"><i class="fa-solid fa-palette" style="margin-right:8px;opacity:.7;"></i>Folder Colour
+      </div>
       <div class="folder-color-header">
         <span class="folder-color-preview" id="folder-color-preview"></span>
         <span class="folder-color-title" id="folder-color-title">Folder</span>
@@ -669,12 +785,17 @@
         </button>
       </div>
       <div class="folder-color-picker-panel" id="folder-color-picker-panel">
-        <div class="color-sv" id="folder-color-sv"><span class="color-sv-cursor" id="folder-color-sv-cursor"></span></div>
-        <input class="color-hue" id="folder-color-hue" type="range" min="0" max="360" step="1" aria-label="Folder colour hue" />
+        <div class="color-sv" id="folder-color-sv"><span class="color-sv-cursor" id="folder-color-sv-cursor"></span>
+        </div>
+        <input class="color-hue" id="folder-color-hue" type="range" min="0" max="360" step="1"
+          aria-label="Folder colour hue" />
         <div class="color-fields">
-          <label class="color-field">R<input id="folder-color-r" type="number" min="0" max="255" inputmode="numeric" /></label>
-          <label class="color-field">G<input id="folder-color-g" type="number" min="0" max="255" inputmode="numeric" /></label>
-          <label class="color-field">B<input id="folder-color-b" type="number" min="0" max="255" inputmode="numeric" /></label>
+          <label class="color-field">R<input id="folder-color-r" type="number" min="0" max="255"
+              inputmode="numeric" /></label>
+          <label class="color-field">G<input id="folder-color-g" type="number" min="0" max="255"
+              inputmode="numeric" /></label>
+          <label class="color-field">B<input id="folder-color-b" type="number" min="0" max="255"
+              inputmode="numeric" /></label>
         </div>
       </div>
       <div class="modal-actions">
@@ -701,4 +822,5 @@
   <script type="module" src="./js/app.js"></script>
 
 </body>
+
 </html>
