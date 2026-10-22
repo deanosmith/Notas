@@ -267,6 +267,12 @@ function bindEditorRootListeners(root) {
       e.stopPropagation();
       return;
     }
+    if (e.altKey && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.isComposing
+      && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+      e.preventDefault();
+      moveEditorLines(e.key === 'ArrowUp' ? -1 : 1);
+      return;
+    }
     if (handleMentionKeydown(e)) return;
     const inTable = isSelectionInTable();
     const plainArrowKey = !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey && !e.isComposing;

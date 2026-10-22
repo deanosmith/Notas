@@ -2870,6 +2870,74 @@ function currentBlockFromSelection() {
   return edEl;
 }
 
+function moveEditorLines(direction) {
+  const root = getEd();
+  const sel = window.getSelection();
+  if (!canEditEditorRoot(root) || !sel?.rangeCount) return false;
+  const range = sel.getRangeAt(0).cloneRange();
+  if (!root.contains(range.startContainer) || !root.contains(range.endContainer)) return false;
+  const backward = !range.collapsed && sel.anchorNode === range.endContainer && sel.anchorOffset === range.endOffset;
+  const blockSelector = 'p, div, li, h1, h2, h3, h4, h5, h6, blockquote, pre';
+  const owner = node => node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
+  const lineBlock = node => owner(node)?.closest('li') || owner(node)?.closest(blockSelector);
+  if (owner(range.startContainer)?.closest('td, th') || owner(range.endContainer)?.closest('td, th')) return false;
+
+  if (!range.collapsed) {
+    const endBlock = lineBlock(range.endContainer);
+    const end = range.cloneRange();
+    end.collapse(false);
+    // A selection ending at the next row's start does not include that row.
+    if (endBlock && endBlock !== root && !endBlock.contains(range.startContainer) && isCaretAtStartOfElement(endBlock, end)) {
+      range.setEndBefore(endBlock);
+    }
+  }
+
+  let container = owner(range.commonAncestorContainer);
+  const block = lineBlock(container);
+  if (block && block !== root && !container.matches('ul, ol')) container = block.parentElement;
+  if (!container || !root.contains(container)) return false;
+  if (range.collapsed && range.startContainer === container) {
+    const atEnd = range.startOffset === container.childNodes.length;
+    const child = container.childNodes[range.startOffset] || container.lastChild;
+    if (!child) return false;
+    range.selectNodeContents(child);
+    range.collapse(!atEnd);
+  }
+
+  const rows = [];
+  for (const child of container.children) {
+    // Browser-indented lists can be siblings of the item they belong to.
+    if (/^(UL|OL)$/.test(container.tagName) && /^(UL|OL)$/.test(child.tagName) && rows.length) {
+      rows[rows.length - 1].push(child);
+    } else {
+      rows.push([child]);
+    }
+  }
+  const selected = rows.filter(row => row.some(node => range.intersectsNode(node)));
+  if (!selected.length) return false;
+  const first = selected[0][0];
+  const lastRow = selected[selected.length - 1];
+  const last = lastRow[lastRow.length - 1];
+  const adjacent = rows[rows.indexOf(direction < 0 ? selected[0] : lastRow) + direction];
+  if (!adjacent) return false;
+
+  if (range.startContainer === container) range.setStart(first, 0);
+  if (range.endContainer === container) range.setEnd(last, last.childNodes.length);
+  const { startContainer, startOffset, endContainer, endOffset } = range;
+  pushUndo();
+  const before = direction < 0 ? last.nextSibling : first;
+  adjacent.forEach(node => container.insertBefore(node, before));
+  sel.setBaseAndExtent(
+    backward ? endContainer : startContainer, backward ? endOffset : startOffset,
+    backward ? startContainer : endContainer, backward ? startOffset : endOffset
+  );
+  recomputeCollapsedSections(root);
+  refreshEmpty(root);
+  afterEditorRootContentChange(root);
+  flushUndoSnapshot();
+  return true;
+}
+
 function swapBlock(block, nodes, caretTarget) {
   const replacements = Array.isArray(nodes) ? nodes : [nodes];
   if (block === getEd()) {
@@ -3336,6 +3404,7 @@ function splitInlineCodeAtCaret() {
     const exitBefore = nextCode.nextSibling;
     nextCode.remove();
     placeCaretAtInlineCodeExit(exitParent, exitBefore);
+    resetInlineFormattingOnNewLine();
   };
 
   // List/table cells keep a soft line break inside the same block.
@@ -3381,14 +3450,22 @@ function splitInlineCodeAtCaret() {
   return true;
 }
 
-/* Enter onto an empty line drops inline formats (bold, italic, marks) carried over from the line above. */
+/* Enter onto an empty line drops quote styling and inline formats (bold, italic, marks) carried over from the line above. */
 function resetInlineFormattingOnNewLine(root = getEd()) {
   const sel = window.getSelection();
   if (!root || !sel?.rangeCount || !sel.isCollapsed || !root.contains(sel.anchorNode)) return false;
   const anchor = sel.anchorNode.nodeType === Node.ELEMENT_NODE ? sel.anchorNode : sel.anchorNode.parentElement;
-  const block = anchor?.closest('p, div, li, h1, h2, h3, h4, blockquote');
+  let block = anchor?.closest('p, div, li, h1, h2, h3, h4, blockquote');
   if (!block || block === root || !root.contains(block) || block.closest('pre, table')) return false;
   if ((block.textContent || '').replace(/[\s\u200b]/g, '') || block.querySelector('img, ul, ol, table')) return false;
+  const quote = block.closest('blockquote');
+  if (quote && block.tagName !== 'LI' && isCaretAtEndOfElement(quote, sel.getRangeAt(0))) {
+    const paragraph = createEmptyBlock('p');
+    quote.after(paragraph);
+    block.remove();
+    if (!fragmentHasMeaningfulContent(quote)) quote.remove();
+    block = paragraph;
+  }
   block.replaceChildren(document.createElement('br'));
   const range = document.createRange();
   range.setStart(block, 0);
