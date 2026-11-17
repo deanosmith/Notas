@@ -2226,8 +2226,13 @@ function updateCounts() {
   const txt = (document.getElementById('editor').innerText || '').replace(/\u200b/g, '');
   const words = txt.trim() ? txt.trim().split(/\s+/).length : 0;
   const chars = txt.length;
+  const contentBytes = new TextEncoder().encode(notes[activeId]?.content || '').byteLength;
+  const limitBytes = 1024 * 1024 - 89;
+  const usageLabel = document.getElementById('note-size-usage');
   document.getElementById('word-count').textContent = words + (words === 1 ? ' Word' : ' Words');
   document.getElementById('char-count').textContent = chars + (chars === 1 ? ' Character' : ' Characters');
+  usageLabel.textContent = (contentBytes / limitBytes * 100).toFixed(1) + '%';
+  usageLabel.title = 'Note Limit Used: ' + contentBytes.toLocaleString() + ' / ' + limitBytes.toLocaleString() + ' Bytes';
 }
 
 function showEditorView(show) {
