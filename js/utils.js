@@ -825,6 +825,7 @@ function noteContentMetadataFromData(data, fallback = {}) {
 
 function noteFromFirestoreData(id, data = {}, overrides = {}) {
   const existing = notes?.[id] || {};
+  const lastSaved = normalizeNoteTimestamp(data.modified);
   const hasOverrideContent = Object.prototype.hasOwnProperty.call(overrides || {}, 'content');
   const metadata = hasOverrideContent
     ? buildNoteContentMetadata(overrides.content || '')
@@ -837,6 +838,8 @@ function noteFromFirestoreData(id, data = {}, overrides = {}) {
     content: bodyLoaded ? (hasOverrideContent ? String(overrides.content || '') : String(existing.content || '')) : '',
     _bodyLoaded: bodyLoaded,
     _bodyError: !!existing._bodyError,
+    _saveStatus: existing._saveStatus,
+    _lastSaved: lastSaved > (existing._lastSaved || '') ? lastSaved : (existing._lastSaved || ''),
     previewText: metadata.previewText,
     searchText: metadata.searchText,
     inlineAlarms: metadata.inlineAlarms,

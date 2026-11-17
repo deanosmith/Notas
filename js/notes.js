@@ -327,7 +327,7 @@ async function openNote(id, options = {}) {
     showEditorView(true);
     renderSidebar();
     updateActiveNoteAccessAvatars();
-    setSaveState('error');
+    setSaveState('loaderror');
     if (typeof afterOpenNoteSplit === 'function') afterOpenNoteSplit(id);
     return;
   }

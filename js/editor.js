@@ -2200,12 +2200,26 @@ function hasLinkifiableTextNodes(root) {
   return !!walker.nextNode();
 }
 
-function setSaveState(s) {
+function setSaveState(s, noteId = activeId) {
+  if (noteId !== activeId) return;
+  const note = notes[noteId];
+  // Loading or listener updates cannot acknowledge a local save.
+  if (s === 'saved' && note?._saveStatus) s = note._saveStatus.state;
   const dot = document.getElementById('save-dot');
   const lbl = document.getElementById('save-label');
-  const cfg = { saved: ['saved', 'Saved'], unsaved: ['unsaved', 'Saving'], saving: ['saving', 'Saving...'], loading: ['saving', 'Loading...'], error: ['error', 'Error'], local: ['local', 'Local'], readonly: ['local', 'Read Only'] };
+  const cfg = { saved: ['saved', 'Saved'], unsaved: ['unsaved', 'Saving'], saving: ['saving', 'Saving...'], loading: ['saving', 'Loading...'], error: ['error', 'Save Failed'], loaderror: ['error', 'Load Failed'], local: ['local', 'Local'], readonly: ['local', 'Read Only'] };
   const [cls, txt] = cfg[s] || cfg.local;
-  dot.className = 'save-dot ' + cls; lbl.textContent = txt;
+  const savedAt = normalizeNoteTimestamp(note?._lastSaved);
+  let timestamp = '';
+  if (savedAt) {
+    const date = new Date(savedAt);
+    const pad = value => String(value).padStart(2, '0');
+    timestamp = pad(date.getHours()) + ':' + pad(date.getMinutes()) + ' ' + pad(date.getDate()) + '.' + pad(date.getMonth() + 1) + '.' + date.getFullYear();
+  }
+  dot.className = 'save-dot ' + cls;
+  lbl.textContent = txt + (s === 'error' && timestamp ? ' - ' + timestamp : '');
+  lbl.title = timestamp ? 'Last Saved: ' + timestamp : 'No Confirmed Save Time';
+  dot.title = lbl.title;
 }
 
 function updateCounts() {

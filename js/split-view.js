@@ -365,6 +365,7 @@ function flushSplitPeerSave() {
 }
 
 function scheduleSplitPeerSave() {
+  markNoteUnsaved(getNoteSplitPeerId());
   clearTimeout(_noteSplitSaveTimer);
   _noteSplitSaveTimer = setTimeout(flushSplitPeerSave, NOTE_SPLIT_SAVE_DELAY);
 }

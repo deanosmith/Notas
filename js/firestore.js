@@ -195,7 +195,7 @@ function listenToNotes() {
     renderSidebar();
     if (typeof renderConversationsSidebar === 'function') renderConversationsSidebar();
     if (!activeId || !notes[activeId]) showEditorView(false);
-    setSaveState('error');
+    setSaveState('loaderror');
     settleInitial();
   });
   return initialLoad;
@@ -257,6 +257,20 @@ function listenToFolders() {
 }
 
 /* Write / Delete */
+function getNoteSaveStatus(note) {
+  const current = notes[note.id] || note;
+  return current._saveStatus ||= { state: 'saved', revision: 0, attempt: 0 };
+}
+
+function markNoteUnsaved(noteId = activeId) {
+  const note = notes[noteId];
+  if (!note) return;
+  const status = getNoteSaveStatus(note);
+  status.state = 'unsaved';
+  status.revision += 1;
+  setSaveState('unsaved', noteId);
+}
+
 async function saveDoc(note) {
   if (!userId) return false;
   const isActiveNote = () => activeId === note?.id;
@@ -264,7 +278,11 @@ async function saveDoc(note) {
     if (isActiveNote()) setSaveState('readonly');
     return false;
   }
-  if (isActiveNote()) setSaveState('saving');
+  const status = getNoteSaveStatus(note);
+  const revision = status.revision;
+  const attempt = ++status.attempt;
+  status.state = 'saving';
+  setSaveState('saving', note.id);
   const contentLoaded = !!note._bodyLoaded;
   const content = contentLoaded ? String(note.content || '') : '';
   const snapshot = { ...note, content, _bodyLoaded: contentLoaded };
@@ -293,12 +311,23 @@ async function saveDoc(note) {
       if (snapshot.folderId) payload.folderId = snapshot.folderId;
     }
     await setDoc(doc(fsDb, 'notes', snapshot.id), payload, { merge: true });
-    if (contentLoaded && isActiveNote()) applyNoteBodyContent(snapshot.id, content);
-    if (isActiveNote()) setSaveState('saved');
+    if (notes[snapshot.id]?._saveStatus === status) {
+      notes[snapshot.id]._lastSaved = new Date().toISOString();
+      if (status.attempt === attempt) {
+        const current = notes[snapshot.id];
+        const matches = current.title === snapshot.title && (!contentLoaded || !current._bodyLoaded || current.content === content);
+        status.state = status.revision === revision && matches ? 'saved' : 'unsaved';
+        if (contentLoaded && isActiveNote() && status.state === 'saved') applyNoteBodyContent(snapshot.id, content);
+      }
+      setSaveState('saved', snapshot.id);
+    }
     return true;
   } catch (err) {
     console.error('setDoc:', err);
-    if (isActiveNote()) setSaveState('error');
+    if (status.attempt === attempt) {
+      status.state = 'error';
+      if (notes[snapshot.id]?._saveStatus === status) setSaveState('error', snapshot.id);
+    }
     showToast('Failed To Save — Check Connection', 'error');
     _persistOffline(snapshot);
     return false;
@@ -399,7 +428,7 @@ async function migrateFromLocalStorage() {
 
 /* Scheduled save */
 function scheduleSave() {
-  setSaveState('unsaved');
+  markNoteUnsaved();
   clearTimeout(saveTimer);
   const noteId = activeId;
   saveTimer = setTimeout(() => {
