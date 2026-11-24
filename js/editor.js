@@ -1099,7 +1099,7 @@ function pngDataUrlToBlob(dataUrl) {
 
 function writeNoteImageBinaryToClipboard(dataUrl, html, text) {
   if (!dataUrl) return;
-  if (window.desktop?.isElectron && typeof window.desktop.writeEditorImageToClipboard === 'function') {
+  if (window.desktop?.isDesktop && typeof window.desktop.writeEditorImageToClipboard === 'function') {
     window.desktop.writeEditorImageToClipboard({ dataUrl, html, text }).catch(err => {
       console.error('copy note image:', err);
     });

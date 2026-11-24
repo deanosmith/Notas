@@ -1199,6 +1199,63 @@ body.desktop-note-window #main {
 
 body.desktop-note-window .main-header {
   padding-top: 52px;
+  gap: 0;
+}
+
+body.desktop-note-window .main-title-row {
+  --note-header-action-size: 36px;
+  align-items: center;
+  gap: 8px;
+}
+
+body.desktop-note-window .main-title-row .text-styling-toggle-group {
+  display: contents;
+}
+
+body.desktop-note-window .main-title-row .header-actions {
+  margin-left: 0;
+}
+
+body.desktop-note-window .main-title-row .text-styling-toggle-btn,
+body.desktop-note-window .main-title-row #share-btn {
+  width: var(--note-header-action-size);
+  min-width: var(--note-header-action-size);
+  height: var(--note-header-action-size);
+  min-height: var(--note-header-action-size);
+  padding: 0;
+  border-radius: var(--radius-sm);
+}
+
+body.desktop-note-window #main-toolbar-row {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) !important;
+  grid-template-rows: minmax(0, 1fr);
+  overflow: hidden;
+  transition: grid-template-rows .16s ease;
+}
+
+body.desktop-note-window #toolbar {
+  grid-area: auto;
+  min-height: 0;
+  margin-top: 10px;
+  transition: visibility 0s;
+}
+
+body.desktop-note-window.text-styling-hidden #main-toolbar-row {
+  grid-template-rows: minmax(0, 0fr);
+}
+
+body.desktop-note-window.text-styling-hidden #toolbar {
+  visibility: hidden;
+  pointer-events: none;
+  transition-delay: .16s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body.desktop-note-window #main-toolbar-row,
+  body.desktop-note-window.text-styling-hidden #toolbar {
+    transition: none;
+  }
 }
 
 body.desktop-note-window .editor-area {
@@ -3377,7 +3434,7 @@ body.note-focus-mode .note-split-drop-overlay {
   display: none;
 }
 
-body.text-styling-hidden #toolbar {
+body.text-styling-hidden:not(.desktop-note-window) #toolbar {
   display: none !important;
 }
 
@@ -8763,7 +8820,7 @@ body.light-mode .folder-color-swatch {
     grid-template-columns: auto 1fr auto;
   }
 
-  body.text-styling-hidden .toolbar {
+  body.text-styling-hidden:not(.desktop-note-window) .toolbar {
     display: none !important;
   }
 

@@ -1,5 +1,5 @@
 (function initDesktopBridge() {
-  if (!window.desktop?.isElectron) return;
+  if (!window.desktop?.isDesktop) return;
 
   const params = new URLSearchParams(location.search);
   let desktopContext = {
@@ -217,7 +217,9 @@
 
   function scheduleDockNotificationBadgeSync() {
     if (dockNotificationFrame) return;
-    dockNotificationFrame = requestAnimationFrame(() => {
+    // A native WebKit workspace can be hidden while its Dock badge and menu bar catalog are in use.
+    const schedule = window.desktop.isMacNative ? setTimeout : requestAnimationFrame;
+    dockNotificationFrame = schedule(() => {
       dockNotificationFrame = 0;
       syncDockNotificationBadge();
     });
@@ -278,7 +280,8 @@
 
   function scheduleMenuBarNoteSync() {
     if (desktopContext.type !== 'main' || menuBarCatalogFrame || !window.desktop?.updateMenuBarNotes) return;
-    menuBarCatalogFrame = requestAnimationFrame(() => {
+    const schedule = window.desktop.isMacNative ? setTimeout : requestAnimationFrame;
+    menuBarCatalogFrame = schedule(() => {
       menuBarCatalogFrame = 0;
       window.desktop.updateMenuBarNotes(availableMenuBarNotes().map(note =>
         desktopNoteSnapshot(note, note.id === menuBarSettings.noteId && !!note._bodyLoaded)
@@ -409,8 +412,10 @@
 
   function ensureDesktopControls() {
     const actions = document.getElementById('header-actions');
-    const shareBtn = document.getElementById('share-btn');
-    if (!actions || !shareBtn) return;
+    const styling = document.getElementById('text-styling-toggle-group');
+    const titleRow = document.getElementById('doc-title')?.parentElement;
+    const toolbarRow = document.getElementById('main-toolbar-row');
+    if (!actions || !styling || !titleRow || !toolbarRow) return;
 
     if (!popoutButton) {
       popoutButton = createDesktopButton('desktop-popout-note-btn', 'Toggle Pop Out Note', 'fa-solid fa-up-right-from-square');
@@ -418,6 +423,12 @@
       actions.appendChild(popoutButton);
     }
 
+    if (desktopContext.type === 'note' && actions.parentElement !== titleRow) {
+      titleRow.append(styling, actions);
+    } else if (desktopContext.type === 'main' && actions.parentElement !== toolbarRow) {
+      toolbarRow.prepend(styling);
+      toolbarRow.insertBefore(actions, document.getElementById('mob-undo-redo'));
+    }
   }
 
   function refreshWindowTitle() {
@@ -510,6 +521,7 @@
 
   async function openRequestedDesktopNote(attempt = 0) {
     if (desktopContext.type !== 'note' || !desktopContext.noteId) return;
+    if (window.desktop.isMacNative && (!userId || auth.currentUser?.uid !== userId)) return;
     if (requestedNoteOpened && requestedNoteIsVisible()) return;
 
     seedInitialNoteSnapshot();
@@ -678,6 +690,9 @@
     window.desktop.onOpenActiveNote(openActiveNoteWindow);
     window.desktop.onNewNote(() => {
       if (typeof openModal === 'function') openModal('note');
+    });
+    window.desktop.onOpenSettings?.(() => {
+      if (typeof openSettingsModal === 'function') openSettingsModal();
     });
     window.desktop.onMenuBarSettingsChanged?.(applyMenuBarSettings);
     window.desktop.onMenuBarOpenNewNote?.(() => queueMenuBarAction({ type: 'new' }));

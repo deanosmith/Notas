@@ -133,7 +133,7 @@ function hideLoadingOverlay() {
 }
 
 function isDesktopNoteWindow() {
-  if (!window.desktop?.isElectron) return false;
+  if (!window.desktop?.isDesktop) return false;
   return new URLSearchParams(location.search).get('desktopWindow') === 'note';
 }
 
@@ -156,7 +156,7 @@ function configuredBooleanEnv(key) {
 }
 
 function isLocalTestAuthHost() {
-  if (window.desktop?.isElectron) return false;
+  if (window.desktop?.isDesktop) return false;
   const host = location.hostname;
   return location.protocol === 'file:' ||
     host === 'localhost' ||
@@ -360,6 +360,7 @@ async function authenticateTestPasswordUser(email, password) {
 let _authStartupSequence = 0;
 
 onAuthStateChanged(auth, async user => {
+  window.desktop?.setAccount?.(user?.uid || null);
   const startupSequence = ++_authStartupSequence;
   const isCurrentStartup = () => startupSequence === _authStartupSequence && (!user || userId === user.uid);
   const overlay = document.getElementById('auth-overlay');
@@ -494,12 +495,17 @@ async function signInWithGoogle() {
   setAuthControlsDisabled(true);
   setAuthError('');
   try {
-    const provider = new GoogleAuthProvider();
-    provider.setCustomParameters({ prompt: 'select_account' });
-    await signInWithPopup(auth, provider);
+    if (window.desktop?.isMacNative) {
+      const { idToken, accessToken } = await window.desktop.signInWithGoogle(firebaseConfig.projectId);
+      await signInWithCredential(auth, GoogleAuthProvider.credential(idToken, accessToken));
+    } else {
+      const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({ prompt: 'select_account' });
+      await signInWithPopup(auth, provider);
+    }
   } catch (e) {
-    console.error('signInWithPopup:', e);
-    setAuthError(e.message || e.code);
+    console.error('Google sign-in:', e);
+    setAuthError(e.message || e.code || String(e));
     setAuthControlsDisabled(false);
   }
 }

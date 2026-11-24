@@ -2,6 +2,7 @@ import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.13.0/fireba
 import {
   getAuth,
   GoogleAuthProvider,
+  signInWithCredential,
   signInWithPopup,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
@@ -28,7 +29,7 @@ export const firebaseConfig = {
 };
 
 export const fbApp = initializeApp(firebaseConfig);
-if (!window.desktop?.isElectron) {
+if (!window.desktop?.isDesktop) {
   import('https://www.gstatic.com/firebasejs/12.13.0/firebase-analytics.js')
     .then(({ getAnalytics }) => getAnalytics(fbApp))
     .catch(err => console.warn('Firebase Analytics:', err));
@@ -40,6 +41,7 @@ export {
   initializeApp,
   getAuth,
   GoogleAuthProvider,
+  signInWithCredential,
   signInWithPopup,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,

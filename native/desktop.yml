@@ -1,0 +1,51 @@
+name: Notas
+options:
+  deploymentTarget:
+    macOS: "26.0"
+targets:
+  Notas:
+    type: application
+    platform: macOS
+    sources:
+      - path: Desktop
+        excludes: [Bridge.js, BrowserSignIn.html, BrowserSignIn.js]
+      - path: Desktop/Bridge.js
+        buildPhase: resources
+      - path: Desktop/BrowserSignIn.html
+        buildPhase: resources
+      - path: Desktop/BrowserSignIn.js
+        buildPhase: resources
+      - path: ../js
+        type: folder
+        buildPhase: resources
+      - path: ../index.html
+        buildPhase: resources
+      - path: ../styles.css
+        buildPhase: resources
+      - path: ../firebase-config.local.js
+        optional: true
+        buildPhase: resources
+      - path: ../notas.png
+        buildPhase: resources
+      - path: ../notas-icon.png
+        buildPhase: resources
+      - path: ../notas.icns
+        buildPhase: resources
+      - path: ../notas-menubar-iconTemplate@2x.png
+        buildPhase: resources
+    info:
+      path: .build/Desktop-Info.plist
+      properties:
+        CFBundleIconFile: notas.icns
+        LSApplicationCategoryType: public.app-category.productivity
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+    settings:
+      base:
+        ARCHS: arm64
+        PRODUCT_BUNDLE_IDENTIFIER: com.deanmsmith.notas.native
+        SWIFT_VERSION: "6.0"
+        SWIFT_TREAT_WARNINGS_AS_ERRORS: YES
+        MARKETING_VERSION: "1.6.3"
+        CURRENT_PROJECT_VERSION: "1"
+        ENABLE_HARDENED_RUNTIME: YES

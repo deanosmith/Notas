@@ -139,7 +139,7 @@ function bindEditorRootListeners(root) {
     e.preventDefault();
     e.stopPropagation();
     const editable = !!noteId() && canEditNote(notes[noteId()]);
-    if (window.desktop?.isElectron && typeof window.desktop.showEditorImageContextMenu === 'function') {
+    if (window.desktop?.isDesktop && typeof window.desktop.showEditorImageContextMenu === 'function') {
       window.desktop.showEditorImageContextMenu({ x: e.clientX, y: e.clientY, editable });
       return;
     }

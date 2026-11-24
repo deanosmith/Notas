@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="referrer" content="no-referrer" />
+  <title>Sign In to Notas</title>
+  <link rel="icon" type="image/png" href="/notas-icon.png" />
+  <style>
+    :root { color-scheme: light dark; font: 16px -apple-system, system-ui, sans-serif; }
+    main { max-width: 28rem; margin: 12vh auto 0; padding: 1.5rem; }
+    button { font: inherit; margin: .25rem .4rem .25rem 0; padding: .5rem .75rem; }
+  </style>
+</head>
+<body>
+  <main>
+    <img src="/notas-icon.png" width="56" height="56" alt="" />
+    <h1>Sign In to Notas</h1>
+    <p id="status" role="status">Continue with Google, then return to the Notas app.</p>
+    <button id="continue" type="button" disabled>Continue With Google</button>
+    <button id="cancel" type="button" disabled>Cancel</button>
+    <noscript>JavaScript must be enabled to sign in.</noscript>
+  </main>
+  <script src="/firebase-config.local.js"></script>
+  <script type="module" src="/BrowserSignIn.js"></script>
+</body>
+</html>

@@ -5,3 +5,5 @@ firebase-config.local.js
 .DS_Store
 node_modules/
 release/
+/native/.build/
+/native/*.xcodeproj/

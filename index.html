@@ -19,7 +19,7 @@
         const accentMode = localStorage.getItem('notas_accent_mode') || 'notas';
         const systemLight = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches;
         const isLight = mode === 'light' || (mode === 'system' && systemLight);
-        const isDesktopApp = /Electron/i.test(navigator.userAgent || '');
+        const isDesktopApp = !!window.desktop?.isDesktop;
         document.documentElement.classList.toggle('light-mode', isLight);
         document.documentElement.classList.toggle('desktop-app', isDesktopApp);
         document.documentElement.style.colorScheme = isLight ? 'light' : 'dark';

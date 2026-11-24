@@ -8,6 +8,7 @@ function on(channel, callback) {
 }
 
 contextBridge.exposeInMainWorld('desktop', {
+  isDesktop: true,
   isElectron: true,
   rendererReady: () => ipcRenderer.send('desktop:renderer-ready'),
   getWindowContext: () => ipcRenderer.invoke('desktop:get-window-context'),

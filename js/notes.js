@@ -51,7 +51,7 @@ function beginInitialNoteRestore() {
 
 function shouldDeferInitialNoteFallback() {
   const params = new URLSearchParams(location.search);
-  const isDesktopNoteWindow = !!window.desktop?.isElectron && params.get('desktopWindow') === 'note';
+  const isDesktopNoteWindow = !!window.desktop?.isDesktop && params.get('desktopWindow') === 'note';
   return isDesktopNoteWindow || !!(initialNoteRestorePending && initialNoteRestoreId && !notes[initialNoteRestoreId]);
 }
 

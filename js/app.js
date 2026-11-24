@@ -50,7 +50,7 @@ for (const src of sectionScripts) {
   await loadSectionScript(src);
 }
 
-if (window.desktop?.isElectron) {
+if (window.desktop?.isDesktop) {
   await loadSectionScript('./desktop.js');
 }
 
@@ -588,7 +588,7 @@ document.addEventListener('keydown', e => {
     pasteTextMatchingFormatting();
     return;
   }
-  if (key === 'p' && !e.shiftKey && window.desktop?.isElectron && typeof window.openActiveDesktopNoteWindow === 'function') {
+  if (key === 'p' && !e.shiftKey && window.desktop?.isDesktop && typeof window.openActiveDesktopNoteWindow === 'function') {
     e.preventDefault();
     window.openActiveDesktopNoteWindow();
     return;
