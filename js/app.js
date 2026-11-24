@@ -16,6 +16,7 @@ const sectionScripts = [
   './ui.js',
   './sharing.js',
   './conversations.js',
+  ...(window.desktop?.isMacNative ? ['./desktop-drafts.js'] : []),
   './auth.js'
 ];
 
@@ -188,7 +189,14 @@ document.getElementById('test-password-signin-form')?.addEventListener('submit',
 document.getElementById('guest-view-note-btn')?.addEventListener('click', () => enterGuestReadOnlyMode());
 document.getElementById('guest-back-to-note-btn')?.addEventListener('click', returnToGuestNote);
 document.getElementById('guest-sign-in-btn')?.addEventListener('click', showAuthOverlayFromGuest);
-document.getElementById('signout-btn').addEventListener('click', () => {
+document.getElementById('signout-btn').addEventListener('click', async () => {
+  try {
+    if (window.desktopDrafts) await window.desktopDrafts.checkpoint();
+  } catch (error) {
+    console.error('Save local drafts before sign-out:', error);
+    showToast('Could Not Save Local Drafts', 'error');
+    return;
+  }
   closeTransientSurfaces();
   signOut(auth);
 });

@@ -476,10 +476,9 @@ function renderSplitPeerBody(root, content) {
 
 async function readSplitPeerBody(note, peerId) {
   if (note?._bodyLoaded) return String(note.content || '');
-  const content = typeof readNoteBodyContent === 'function'
-    ? await readNoteBodyContent(peerId)
-    : String(note?.content || '');
+  const { content, version } = await readNoteBody(peerId);
   applyNoteBodyContent(peerId, content);
+  if (window.desktopDrafts && notes[peerId]) notes[peerId]._draftBodyVersion = version;
   return String(content || '');
 }
 

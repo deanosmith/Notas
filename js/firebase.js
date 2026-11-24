@@ -12,7 +12,7 @@ import {
 } from 'https://www.gstatic.com/firebasejs/12.13.0/firebase-auth.js';
 import {
   getFirestore, collection, doc, setDoc, deleteDoc, getDocs, getDoc,
-  onSnapshot, query, where, Timestamp, writeBatch, serverTimestamp, deleteField, updateDoc,
+  onSnapshot, query, where, Timestamp, writeBatch, runTransaction, serverTimestamp, deleteField, updateDoc,
   arrayUnion, arrayRemove, limit, FieldPath
 } from 'https://www.gstatic.com/firebasejs/12.13.0/firebase-firestore.js';
 
@@ -60,6 +60,7 @@ export {
   where,
   Timestamp,
   writeBatch,
+  runTransaction,
   serverTimestamp,
   deleteField,
   updateDoc,

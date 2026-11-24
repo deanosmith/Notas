@@ -10,6 +10,7 @@ final class DesktopWindow: NSObject, NSWindowDelegate, WKNavigationDelegate, WKU
     let isNote: Bool
     private unowned let desktop: DesktopApplication
     private let origin: URL
+    private let launchID: String
     private let logger = Logger(subsystem: "com.deanmsmith.notas.native", category: "Window")
     private var waitingEvents: [(String, Any)] = []
     private var startupWatch: Task<Void, Never>?
@@ -28,9 +29,10 @@ final class DesktopWindow: NSObject, NSWindowDelegate, WKNavigationDelegate, WKU
 
     var isVisible: Bool { window.isVisible && !window.isMiniaturized }
 
-    init(id: Int, note: Bool, origin: URL, bridge: String, desktop: DesktopApplication) {
+    init(id: Int, note: Bool, origin: URL, bridge: String, launchID: String, desktop: DesktopApplication) {
         self.id = id
         self.origin = origin
+        self.launchID = launchID
         self.desktop = desktop
         isNote = note
 
@@ -71,9 +73,34 @@ final class DesktopWindow: NSObject, NSWindowDelegate, WKNavigationDelegate, WKU
     func load() {
         var target = URLComponents(url: origin, resolvingAgainstBaseURL: false)!
         target.queryItems = [URLQueryItem(name: "desktop", value: "1"),
-                             URLQueryItem(name: "desktopWindow", value: isNote ? "note" : "main")]
+                             URLQueryItem(name: "desktopWindow", value: isNote ? "note" : "main"),
+                             URLQueryItem(name: "desktopLaunch", value: launchID)]
         if let noteID { target.queryItems?.append(URLQueryItem(name: "desktopNote", value: noteID)) }
         webView.load(URLRequest(url: target.url!))
+    }
+
+    func checkpointDrafts(freeze: Bool = false) async throws {
+        guard rendererReady else { return }
+        let result = try await webView.callAsyncJavaScript(
+            """
+            if (freeze) {
+                document.activeElement?.blur();
+                document.documentElement.inert = true;
+            }
+            const checkpointed = await window.desktopDrafts.checkpoint();
+            if (!freeze && checkpointed) {
+                if (saveTimer) flushActiveNoteBeforeSwitch();
+                if (_noteSplitSaveTimer) flushSplitPeerSave();
+            }
+            return checkpointed;
+            """, arguments: ["freeze": freeze], in: nil, contentWorld: .page
+        )
+        guard result as? Bool == true else { throw CocoaError(.fileWriteUnknown) }
+    }
+
+    func resumeEditing() {
+        guard rendererReady else { return }
+        webView.evaluateJavaScript("document.documentElement.inert = false")
     }
 
     func show() {

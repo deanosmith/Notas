@@ -67,6 +67,10 @@
       title: note.title || 'Untitled Note',
       content: includeContent && typeof note.content === 'string' ? note.content : '',
       bodyLoaded: includeContent && !!note._bodyLoaded,
+      ...(window.desktopDrafts && {
+        _draftMetadataVersion: note._draftMetadataVersion ?? null,
+        ...(note._draftBodyVersion !== undefined && { _draftBodyVersion: note._draftBodyVersion })
+      }),
       owner: note.owner || '',
       folderId: note.folderId || null,
       public: !!note.public,
@@ -318,13 +322,13 @@
       return;
     }
 
-    if (typeof readNoteBodyContent !== 'function') return;
+    if (typeof readNoteBody !== 'function') return;
     menuBarNotePreloadInFlightKey = preloadKey;
-    readNoteBodyContent(note.id)
-      .then(content => {
+    readNoteBody(note.id)
+      .then(({ content, version }) => {
         const currentNote = notes[note.id];
         if (!currentNote || menuBarSettings.mode !== 'note' || menuBarSettings.noteId !== note.id) return;
-        sendPreloadedNote(desktopNoteSnapshot({ ...currentNote, content, _bodyLoaded: true }, true));
+        sendPreloadedNote(desktopNoteSnapshot({ ...currentNote, content, _bodyLoaded: true, _draftBodyVersion: version }, true));
       })
       .catch(err => console.error('preload menu bar note:', err))
       .finally(() => {
@@ -496,6 +500,7 @@
       content: typeof snapshot.content === 'string' ? snapshot.content : '',
       _bodyLoaded: snapshot.bodyLoaded === true,
       _bodyError: false,
+      _draftBodyVersion: snapshot._draftBodyVersion,
       folderId: snapshot.folderId || null,
       sharedWith: shallowObject(snapshot.sharedWith),
       sharedAccessKeys: shallowArray(snapshot.sharedAccessKeys),
@@ -552,6 +557,7 @@
     if (!state || typeof state !== 'object') return;
     const noteId = String(state.id || state.noteId || '').trim();
     if (!noteId) return;
+    if (window.desktopDrafts?.hasPending(noteId)) return;
     if (desktopContext.type === 'note' && desktopContext.noteId && noteId !== desktopContext.noteId) return;
 
     const now = new Date().toISOString();
@@ -566,6 +572,7 @@
       title: String(state.title || '').trim() || 'Untitled Note',
       content: shouldKeepBody ? incomingContent : '',
       _bodyLoaded: shouldKeepBody,
+      _draftBodyVersion: shouldKeepBody ? state._draftBodyVersion : undefined,
       previewText: bodyMetadata.previewText,
       searchText: bodyMetadata.searchText,
       inlineAlarms: bodyMetadata.inlineAlarms,

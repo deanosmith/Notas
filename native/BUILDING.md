@@ -23,3 +23,5 @@ Choose **Continue With Google** in the default browser when it opens, then selec
 Before switching from Electron, compare both apps against staging: sign in as the same user, edit and reopen a rich note in both clients, then verify split view, the floating note, sharing, conversations, reminders, and the menu bar and Dock behavior.
 
 In a floating note, **Show Text Styling** and **Share Note** sit to the right of the title. The styling toolbar expands below the title when enabled.
+
+Closing a Notas window hides it immediately while pending edits save in the background. Quit waits for local draft storage, not for the network. On relaunch, Notas retries drafts for the same account and Firebase project. If the cloud version changed or the note is no longer available, Notas keeps the draft instead of overwriting or restoring the note. Use **Settings → Local Drafts → Copy Drafts** to recover the title and note HTML.

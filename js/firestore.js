@@ -56,24 +56,28 @@ function releaseInactiveNoteBodies(keepId = '') {
   });
 }
 
-async function readNoteBodyContent(noteId) {
-  if (!noteId) return '';
+async function readNoteBody(noteId) {
+  if (!noteId) return { content: '' };
   let bodyError = null;
   try {
     const bodySnap = await getDoc(noteBodyDocRef(noteId));
-    if (bodySnap.exists()) return String(bodySnap.data()?.content || '');
+    if (bodySnap.exists()) {
+      const data = bodySnap.data();
+      return { content: String(data.content || ''), version: window.desktopDrafts?.version(data.modified) ?? undefined };
+    }
   } catch (err) {
     bodyError = err;
     console.warn('read note body:', err);
   }
 
   const noteSnap = await getDoc(doc(fsDb, 'notes', noteId));
+  const version = bodyError ? undefined : null;
   if (noteSnap.exists()) {
     const legacyContent = noteSnap.data()?.content;
-    if (typeof legacyContent === 'string') return legacyContent;
+    if (typeof legacyContent === 'string') return { content: legacyContent, version };
   }
   if (bodyError) throw bodyError;
-  return '';
+  return { content: '', version };
 }
 
 async function loadNoteBody(noteId, options = {}) {
@@ -81,9 +85,10 @@ async function loadNoteBody(noteId, options = {}) {
   if (!note) return '';
   if (note._bodyLoaded && options.force !== true) return note.content || '';
   const seq = ++activeNoteBodyRequestSeq;
-  const content = await readNoteBodyContent(noteId);
+  const { content, version } = await readNoteBody(noteId);
   if (options.activeOnly && (activeId !== noteId || seq !== activeNoteBodyRequestSeq)) return content;
   applyNoteBodyContent(noteId, content);
+  if (window.desktopDrafts && notes[noteId]) notes[noteId]._draftBodyVersion = version;
   return content;
 }
 
@@ -100,7 +105,14 @@ function listenToActiveNoteBody(noteId) {
     const previous = note?.content || '';
     const ed = getEd();
     const titleEl = document.getElementById('doc-title');
-    if (activeId === noteId && document.hasFocus() && (document.activeElement === ed || document.activeElement === titleEl)) return;
+    const bodyData = snap.data();
+    const keepEditorBody = window.desktopDrafts?.hasPending(noteId) ||
+      (activeId === noteId && document.hasFocus() && (document.activeElement === ed || document.activeElement === titleEl));
+    if (window.desktopDrafts && note && (!keepEditorBody || content === previous)) {
+      const version = window.desktopDrafts.version(bodyData?.modified);
+      if (version) note._draftBodyVersion = version;
+    }
+    if (keepEditorBody) return;
     const modified = normalizeNoteTimestamp(snap.data()?.modified);
     applyNoteBodyContent(noteId, content, modified ? { modified } : {});
     if (activeId === noteId && previous !== content && typeof applyRemoteNoteBodyContent === 'function') {
@@ -160,7 +172,8 @@ function listenToNotes() {
       if (legacyContent !== null) migrateLegacyNoteBody(id, d);
       // If this note is open and the content changed (e.g. a collaborator saved),
       // sync the editor as long as the user isn't actively typing.
-      if (id === activeId && legacyContent !== null && prevContent !== undefined && prevContent !== legacyContent) {
+      if (id === activeId && legacyContent !== null && prevContent !== undefined && prevContent !== legacyContent &&
+          !window.desktopDrafts?.hasPending(id)) {
         const ed = getEd();
         const titleEl = document.getElementById('doc-title');
         if (document.activeElement !== ed && document.activeElement !== titleEl) {
@@ -268,6 +281,7 @@ function markNoteUnsaved(noteId = activeId) {
   const status = getNoteSaveStatus(note);
   status.state = 'unsaved';
   status.revision += 1;
+  window.desktopDrafts?.track(note);
   setSaveState('unsaved', noteId);
 }
 
@@ -286,9 +300,24 @@ async function saveDoc(note) {
   const contentLoaded = !!note._bodyLoaded;
   const content = contentLoaded ? String(note.content || '') : '';
   const snapshot = { ...note, content, _bodyLoaded: contentLoaded };
+  const draft = window.desktopDrafts?.track(snapshot);
   try {
+    // A native save can outlive its window. Keep the draft until the cloud confirms it.
+    if (draft) {
+      try {
+        await window.desktopDrafts.persist(draft);
+      } catch (error) {
+        console.error('Save local draft:', error);
+      }
+      if (auth.currentUser?.uid !== draft.uid || userId !== draft.uid) {
+        throw new Error('The active account changed while saving a local draft.');
+      }
+    }
     const isOwner = !snapshot.owner || snapshot.owner === userId;
     const bodyStored = contentLoaded ? await writeNoteBodyDoc(snapshot, content) : true;
+    if (draft && (auth.currentUser?.uid !== draft.uid || userId !== draft.uid)) {
+      throw new Error('The active account changed while saving a local draft.');
+    }
     // Shared users only update title/content; owner fields stay untouched (merge preserves sharedWith)
     const payload = {
       title: snapshot.title,
@@ -311,6 +340,7 @@ async function saveDoc(note) {
       if (snapshot.folderId) payload.folderId = snapshot.folderId;
     }
     await setDoc(doc(fsDb, 'notes', snapshot.id), payload, { merge: true });
+    void window.desktopDrafts?.saved(draft).catch(error => console.error('Remove saved local draft:', error));
     if (notes[snapshot.id]?._saveStatus === status) {
       notes[snapshot.id]._lastSaved = new Date().toISOString();
       if (status.attempt === attempt) {
@@ -329,7 +359,7 @@ async function saveDoc(note) {
       if (notes[snapshot.id]?._saveStatus === status) setSaveState('error', snapshot.id);
     }
     showToast('Failed To Save — Check Connection', 'error');
-    _persistOffline(snapshot);
+    if (!window.desktopDrafts) _persistOffline(snapshot);
     return false;
   }
 }
@@ -432,6 +462,7 @@ function scheduleSave() {
   clearTimeout(saveTimer);
   const noteId = activeId;
   saveTimer = setTimeout(() => {
+    if (window.desktopDrafts) saveTimer = null;
     if (noteId && notes[noteId]) saveDoc(notes[noteId]);
   }, 900);
 }
@@ -492,6 +523,7 @@ function _flushOfflineEdits() {
 }
 
 window.addEventListener('beforeunload', () => {
+  if (window.desktopDrafts) return;
   // Persist any unsaved active note to localStorage as a safety net
   if (activeId && notes[activeId]) {
     const dot = document.getElementById('save-dot');

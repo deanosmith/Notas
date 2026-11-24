@@ -11,8 +11,10 @@ final class DesktopApplication: NSObject, NSApplicationDelegate {
     private var server: RendererServer?
     private var origin: URL?
     private var bridge = ""
+    private let launchID = UUID().uuidString
     private var nextWindowID = 1
     private var quitting = false
+    private var quitCheckpoint: UUID?
     private struct BrowserSignIn {
         let state: String
         let projectID: String
@@ -111,11 +113,56 @@ final class DesktopApplication: NSObject, NSApplicationDelegate {
         for view in windows where view.isVisible { view.send("windowForegrounded") }
     }
 
-    func applicationWillTerminate(_ notification: Notification) { quitting = true }
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        if quitting || windows.isEmpty { return .terminateNow }
+        if quitCheckpoint != nil { return .terminateLater }
+        let checkpoint = UUID()
+        quitCheckpoint = checkpoint
+        let openWindows = windows
+        let deadline = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(5))
+            if !Task.isCancelled { self?.finishQuit(checkpoint, saved: false) }
+        }
+        Task {
+            defer { deadline.cancel() }
+            do {
+                try await withThrowingTaskGroup(of: Void.self) { group in
+                    for view in openWindows {
+                        group.addTask { try await view.checkpointDrafts(freeze: true) }
+                    }
+                    try await group.waitForAll()
+                }
+                finishQuit(checkpoint, saved: true)
+            } catch {
+                logger.error("Could not checkpoint drafts on quit: \(error.localizedDescription, privacy: .private)")
+                finishQuit(checkpoint, saved: false)
+            }
+        }
+        return .terminateLater
+    }
+
+    private func finishQuit(_ checkpoint: UUID, saved: Bool) {
+        guard quitCheckpoint == checkpoint else { return }
+        quitCheckpoint = nil
+        quitting = saved
+        NSApp.reply(toApplicationShouldTerminate: saved)
+        if !saved {
+            windows.forEach { $0.resumeEditing() }
+            showDraftError("Notas stayed open so you can retry and keep your recent edits.")
+        }
+    }
+
+    private func showDraftError(_ message: String) {
+        let alert = NSAlert()
+        alert.messageText = "Could Not Save Drafts Locally"
+        alert.informativeText = message
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
+    }
 
     private func makeWindow(note: Bool) -> DesktopWindow? {
         guard let origin else { return nil }
-        let view = DesktopWindow(id: nextWindowID, note: note, origin: origin, bridge: bridge, desktop: self)
+        let view = DesktopWindow(id: nextWindowID, note: note, origin: origin, bridge: bridge, launchID: launchID, desktop: self)
         nextWindowID += 1
         applyBackground(to: view)
         return view
@@ -133,14 +180,24 @@ final class DesktopApplication: NSObject, NSApplicationDelegate {
     }
 
     func shouldClose(_ view: DesktopWindow) -> Bool {
-        if !quitting && (view === primary || (view.isNote && menuBarNoteID != nil)) {
-            view.pendingReveal = false
-            view.hide()
-            sendNoteWindowPresence()
-            if view.isNote { warmMenuBarNote() }
-            return false
+        if quitting { return true }
+        guard quitCheckpoint == nil else { return false }
+        view.pendingReveal = false
+        view.hide()
+        sendNoteWindowPresence()
+        // Keep the hidden workspace alive while its existing autosave syncs.
+        Task {
+            do {
+                try await view.checkpointDrafts()
+                if view === floating { warmMenuBarNote() }
+            } catch {
+                logger.error("Could not checkpoint drafts on close: \(error.localizedDescription, privacy: .private)")
+                guard quitCheckpoint == nil, windows.contains(where: { $0 === view }) else { return }
+                view.show()
+                showDraftError("The window stayed open so you can retry and keep your recent edits.")
+            }
         }
-        return true
+        return false
     }
 
     func didClose(_ view: DesktopWindow) {
@@ -165,6 +222,7 @@ final class DesktopApplication: NSObject, NSApplicationDelegate {
         let authorized = view.accountID != nil && view.accountID == libraryAccount
         return [
             "windowId": view.id,
+            "isPrimary": view === primary,
             "type": view.isNote ? "note" : "main",
             "noteId": view.noteID as Any? ?? NSNull(),
             "initialNote": (authorized ? view.initialNote : nil) as Any? ?? NSNull(),
@@ -316,11 +374,6 @@ final class DesktopApplication: NSObject, NSApplicationDelegate {
             ?? ["mode": "new", "noteId": "", "noteTitle": ""]
         UserDefaults.standard.set(menuBarSettings, forKey: "menuBarSettings")
         for view in mains { view.send("menuBarSettingsChanged", menuBarSettings) }
-        if id == nil, let view = floating, !view.window.isVisible, !view.pendingReveal {
-            floating = nil
-            view.dispose()
-            updateDockBadge()
-        }
         warmMenuBarNote()
     }
 
@@ -506,6 +559,7 @@ final class DesktopApplication: NSObject, NSApplicationDelegate {
     }
 
     @objc private func openNewWindow() {
+        guard quitCheckpoint == nil else { return }
         guard let primary, primary.isVisible || primary.window.isMiniaturized else {
             showPrimary()
             return
@@ -537,6 +591,7 @@ final class DesktopApplication: NSObject, NSApplicationDelegate {
     }
 
     @objc private func statusClicked(_ button: NSStatusBarButton) {
+        guard quitCheckpoint == nil else { return }
         if NSApp.currentEvent?.type == .rightMouseUp || NSApp.currentEvent?.modifierFlags.contains(.control) == true {
             statusMenu().popUp(positioning: nil, at: NSPoint(x: 0, y: button.bounds.height + 4), in: button)
         } else if let id = menuBarNoteID {
@@ -544,7 +599,7 @@ final class DesktopApplication: NSObject, NSApplicationDelegate {
             else if let note = menuBarNotes[id] { _ = toggleNote(id: id, note: note, closeIfVisible: false) }
             else { showPrimary()?.send("menuBarOpenNote", ["noteId": id]) }
         } else if let primary, primary.isVisible {
-            primary.hide()
+            primary.window.performClose(nil)
         } else {
             showPrimary()?.send("menuBarOpenNewNote")
         }
@@ -648,7 +703,19 @@ final class DesktopApplication: NSObject, NSApplicationDelegate {
         if let focused, focused.isNote { focused.window.performClose(nil) }
         else { (focused ?? showPrimary())?.send("openActiveNote") }
     }
-    @objc private func reload() { focused?.load() }
+    @objc private func reload() {
+        guard quitCheckpoint == nil, let focused else { return }
+        Task {
+            do {
+                try await focused.checkpointDrafts(freeze: true)
+                focused.load()
+            } catch {
+                logger.error("Could not checkpoint drafts on reload: \(error.localizedDescription, privacy: .private)")
+                focused.resumeEditing()
+                showDraftError("The workspace was not reloaded. You can retry without losing your edits.")
+            }
+        }
+    }
     @objc private func resetZoom() { focused?.webView.pageZoom = 1 }
     @objc private func zoomIn() {
         if let webView = focused?.webView { webView.pageZoom = min(3, webView.pageZoom * 1.1) }

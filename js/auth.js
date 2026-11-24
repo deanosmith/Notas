@@ -370,6 +370,7 @@ onAuthStateChanged(auth, async user => {
       if (typeof exitGuestReadOnlyMode === 'function') exitGuestReadOnlyMode();
       userId = user.uid;
       prepareAuthenticatedHome();
+      void window.desktopDrafts?.recover(user.uid);
       if (typeof beginInitialNoteRestore === 'function') beginInitialNoteRestore();
       if (typeof beginInitialNoteSplitRestore === 'function') beginInitialNoteSplitRestore();
       overlay.style.display = 'none';
