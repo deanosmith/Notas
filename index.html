@@ -14,6 +14,7 @@
 <body>
   <script>
     (() => {
+      document.body.classList.toggle('native-desktop-app', !!window.desktop?.isMacNative);
       try {
         const mode = localStorage.getItem('notas_theme') || 'dark';
         const accentMode = localStorage.getItem('notas_accent_mode') || 'notas';

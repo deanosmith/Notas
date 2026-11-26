@@ -645,15 +645,15 @@ body.light-mode .brand-wordmark {
   z-index: 85;
 }
 
-body.desktop-app #app-rail,
-body.desktop-app .sidebar-header,
-body.desktop-app .main-header {
+body.desktop-app:not(.native-desktop-app) #app-rail,
+body.desktop-app:not(.native-desktop-app) .sidebar-header,
+body.desktop-app:not(.native-desktop-app) .main-header {
   -webkit-app-region: drag;
 }
 
-body.desktop-app #app-rail *,
-body.desktop-app .sidebar-header *,
-body.desktop-app .main-header * {
+body.desktop-app:not(.native-desktop-app) #app-rail *,
+body.desktop-app:not(.native-desktop-app) .sidebar-header *,
+body.desktop-app:not(.native-desktop-app) .main-header * {
   -webkit-app-region: no-drag;
 }
 
@@ -1004,6 +1004,21 @@ body.desktop-app:not(.desktop-note-window) .sidebar-header {
   border-bottom: 1px solid var(--glass-border);
 }
 
+body.native-desktop-app {
+  --native-titlebar-clearance: 24px;
+}
+
+body.native-desktop-app:not(.desktop-note-window) .sidebar-header {
+  padding-top: var(--native-titlebar-clearance);
+  padding-bottom: 0;
+}
+
+body.native-desktop-app:not(.desktop-note-window) .main-header,
+body.native-desktop-app .note-split-peer-header,
+body.native-desktop-app.guest-read-only .guest-read-bar {
+  padding-top: var(--native-titlebar-clearance);
+}
+
 body.desktop-app:not(.desktop-note-window) .sidebar-search {
   padding: 9px 12px 15px;
 }
@@ -1284,6 +1299,10 @@ body.note-focus-mode .editor-area {
   border-radius: var(--radius-sm);
 }
 
+body.native-desktop-app.note-focus-mode .editor-area {
+  margin-top: var(--native-titlebar-clearance);
+}
+
 .note-focus-entry-btn,
 .note-focus-exit-btn {
   display: inline-flex;
@@ -1336,7 +1355,7 @@ body.note-focus-mode .editor-corner-actions {
 
 body.note-focus-mode .note-focus-exit-btn {
   position: fixed;
-  top: max(16px, env(safe-area-inset-top, 0px));
+  top: max(16px, var(--native-titlebar-clearance, 0px), env(safe-area-inset-top, 0px));
   right: 16px;
   z-index: 150;
   display: inline-flex;

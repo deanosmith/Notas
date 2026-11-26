@@ -54,13 +54,13 @@ final class DesktopWindow: NSObject, NSWindowDelegate, WKNavigationDelegate, WKU
         webView.navigationDelegate = self
         webView.uiDelegate = self
         window.delegate = self
-        window.contentView = webView
+        window.contentView = DesktopWindowContentView(webView: webView, size: size)
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
+        window.titlebarSeparatorStyle = .none
         window.title = note ? "Notas Note" : "Notas"
         window.isReleasedWhenClosed = false
         window.minSize = note ? NSSize(width: 400, height: 360) : NSSize(width: 900, height: 620)
-        window.isMovableByWindowBackground = true
         if note {
             window.level = .floating
             window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
@@ -263,5 +263,35 @@ final class DesktopWindow: NSObject, NSWindowDelegate, WKNavigationDelegate, WKU
         alert.beginSheetModal(for: window) { [weak self] result in
             if result == .alertFirstButtonReturn { self?.load() }
         }
+    }
+}
+
+private final class DesktopWindowContentView: NSView {
+    private let webView: WKWebView
+
+    init(webView: WKWebView, size: NSSize) {
+        self.webView = webView
+        super.init(frame: NSRect(origin: .zero, size: size))
+        webView.frame = bounds
+        webView.autoresizingMask = [.width, .height]
+        addSubview(webView)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("Desktop windows are created programmatically") }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard let hit = super.hitTest(point) else { return nil }
+        guard let window, window.isMovable, !window.styleMask.contains(.fullScreen) else { return hit }
+        let location = convert(point, from: superview)
+        // Stay inside the clearance reserved by --native-titlebar-clearance at every page zoom.
+        let dragHeight = 24 * min(1, webView.pageZoom)
+        return location.y >= bounds.maxY - dragHeight ? self : hit
+    }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func mouseDown(with event: NSEvent) {
+        window?.performDrag(with: event)
     }
 }
