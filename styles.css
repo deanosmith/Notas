@@ -1005,7 +1005,7 @@ body.desktop-app:not(.desktop-note-window) .sidebar-header {
 }
 
 body.native-desktop-app {
-  --native-titlebar-clearance: 24px;
+  --native-titlebar-clearance: 28px;
 }
 
 body.native-desktop-app:not(.desktop-note-window) .sidebar-header {
@@ -3325,8 +3325,13 @@ body.note-focus-mode .note-split-drop-overlay {
   color: var(--accent-text);
 }
 
-.doc-title-input {
+.note-title-field {
+  display: flex;
   flex: 1;
+  min-width: 0;
+}
+
+.doc-title-input {
   min-width: 0;
   background: none;
   border: none;
@@ -3337,6 +3342,14 @@ body.note-focus-mode .note-split-drop-overlay {
   font-weight: 700;
   letter-spacing: -.5px;
   width: 100%;
+}
+
+@supports (field-sizing: content) {
+  body.native-desktop-app .doc-title-input {
+    field-sizing: content;
+    width: auto;
+    max-width: 100%;
+  }
 }
 
 .doc-title-input::placeholder {

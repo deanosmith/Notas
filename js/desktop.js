@@ -417,7 +417,7 @@
   function ensureDesktopControls() {
     const actions = document.getElementById('header-actions');
     const styling = document.getElementById('text-styling-toggle-group');
-    const titleRow = document.getElementById('doc-title')?.parentElement;
+    const titleRow = document.getElementById('doc-title')?.closest('.main-title-row');
     const toolbarRow = document.getElementById('main-toolbar-row');
     if (!actions || !styling || !titleRow || !toolbarRow) return;
 

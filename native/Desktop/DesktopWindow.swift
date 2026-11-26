@@ -285,13 +285,29 @@ private final class DesktopWindowContentView: NSView {
         guard let window, window.isMovable, !window.styleMask.contains(.fullScreen) else { return hit }
         let location = convert(point, from: superview)
         // Stay inside the clearance reserved by --native-titlebar-clearance at every page zoom.
-        let dragHeight = 24 * min(1, webView.pageZoom)
+        let dragHeight = 28 * min(1, webView.pageZoom)
         return location.y >= bounds.maxY - dragHeight ? self : hit
     }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     override func mouseDown(with event: NSEvent) {
-        window?.performDrag(with: event)
+        guard let window else { return }
+        guard event.clickCount == 2 else {
+            window.performDrag(with: event)
+            return
+        }
+
+        let defaults = UserDefaults.standard
+        let action = defaults.string(forKey: "AppleActionOnDoubleClick")
+            ?? (defaults.bool(forKey: "AppleMiniaturizeOnDoubleClick") ? "Minimize" : "Maximize")
+        switch action {
+        case "Minimize":
+            window.performMiniaturize(nil)
+        case "None":
+            break
+        default:
+            window.performZoom(nil)
+        }
     }
 }

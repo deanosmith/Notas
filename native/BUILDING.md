@@ -22,7 +22,9 @@ Choose **Continue With Google** in the default browser when it opens, then selec
 
 Before switching from Electron, compare both apps against staging: sign in as the same user, edit and reopen a rich note in both clients, then verify split view, the floating note, sharing, conversations, reminders, and the menu bar and Dock behavior.
 
-To move the workspace or a floating note, drag the empty space along the top edge beside the window buttons. The workspace extends behind the traffic lights, but AppKit handles the drag without sending it to the editor.
+To move the workspace or a floating note, drag the empty space along the top edge beside the window buttons. Double-click that space to maximize or restore the window, or to minimize it if you chose that action in macOS settings. The workspace extends behind the traffic lights, but AppKit handles these gestures without sending them to the editor.
+
+On macOS 26.2 or later, click the note name itself to rename it. Clicking the empty space beside the name does not focus the title.
 
 In a floating note, **Show Text Styling** and **Share Note** sit to the right of the title. The styling toolbar expands below the title when enabled.
 
