@@ -19,6 +19,10 @@ function bindEditorRootListeners(root) {
       e.preventDefault();
       return;
     }
+    if (e.target.closest?.('[data-table-title-input]')) {
+      refreshUndoSnapshotSelection();
+      return;
+    }
     if (e.inputType?.startsWith('insert') && typeof shouldBlockSelectedNoteImageReplacement === 'function' && shouldBlockSelectedNoteImageReplacement()) {
       e.preventDefault();
       return;
@@ -570,6 +574,7 @@ function bindEditorRootListeners(root) {
 
   root.addEventListener('copy', e => runEditorOperationOnRoot(root, () => {
 
+    if (e.target.closest?.('[data-table-title-input]')) return;
     if (typeof copySelectedNoteImage === 'function' && copySelectedNoteImage(e.clipboardData)) {
       e.preventDefault();
       return;
@@ -582,6 +587,7 @@ function bindEditorRootListeners(root) {
 
   root.addEventListener('cut', e => runEditorOperationOnRoot(root, () => {
 
+    if (e.target.closest?.('[data-table-title-input]')) return;
     if (typeof cutSelectedNoteImage === 'function' && cutSelectedNoteImage(e.clipboardData)) {
       e.preventDefault();
       return;
@@ -599,6 +605,7 @@ function bindEditorRootListeners(root) {
       e.preventDefault();
       return;
     }
+    if (e.target.closest?.('[data-table-title-input]')) return;
     if (typeof shouldBlockSelectedNoteImageReplacement === 'function' && shouldBlockSelectedNoteImageReplacement()) {
       e.preventDefault();
       return;

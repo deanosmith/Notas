@@ -417,9 +417,10 @@
   function ensureDesktopControls() {
     const actions = document.getElementById('header-actions');
     const styling = document.getElementById('text-styling-toggle-group');
+    const stylingButton = document.getElementById('text-styling-toggle-btn');
     const titleRow = document.getElementById('doc-title')?.closest('.main-title-row');
     const toolbarRow = document.getElementById('main-toolbar-row');
-    if (!actions || !styling || !titleRow || !toolbarRow) return;
+    if (!actions || !styling || !stylingButton || !titleRow || !toolbarRow) return;
 
     if (!popoutButton) {
       popoutButton = createDesktopButton('desktop-popout-note-btn', 'Toggle Pop Out Note', 'fa-solid fa-up-right-from-square');
@@ -427,9 +428,14 @@
       actions.appendChild(popoutButton);
     }
 
-    if (desktopContext.type === 'note' && actions.parentElement !== titleRow) {
-      titleRow.append(styling, actions);
-    } else if (desktopContext.type === 'main' && actions.parentElement !== toolbarRow) {
+    const isNoteWindow = desktopContext.type === 'note';
+    stylingButton.classList.toggle('new-note-btn', isNoteWindow);
+    stylingButton.classList.toggle('desktop-window-btn', isNoteWindow);
+    stylingButton.classList.toggle('tb-btn', !isNoteWindow);
+    if (isNoteWindow) {
+      if (styling.parentElement !== actions) actions.prepend(styling);
+      if (actions.parentElement !== titleRow) titleRow.appendChild(actions);
+    } else if (actions.parentElement !== toolbarRow) {
       toolbarRow.prepend(styling);
       toolbarRow.insertBefore(actions, document.getElementById('mob-undo-redo'));
     }

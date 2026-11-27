@@ -591,7 +591,7 @@ document.addEventListener('keydown', e => {
       return;
     }
   }
-  if (key === 'v' && e.shiftKey && liveEditorFocused) {
+  if (key === 'v' && e.shiftKey && liveEditorFocused && !window.desktop?.isMacNative) {
     e.preventDefault();
     pasteTextMatchingFormatting();
     return;

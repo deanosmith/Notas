@@ -1,6 +1,6 @@
 {
   "name": "notas-electron",
-  "version": "1.6.3",
+  "version": "2.0.0",
   "description": "Standalone Electron desktop clone of Notas",
   "private": true,
   "main": "electron/main.js",

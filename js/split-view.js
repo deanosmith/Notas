@@ -283,7 +283,8 @@ function setSplitPaneVisible(visible, side = 'right') {
   const toolbarRow = visible && side === 'left' ? peerToolbarRow : liveToolbarRow;
   const textStylingToggleGroup = document.getElementById('text-styling-toggle-group');
   const toolbar = document.getElementById('toolbar');
-  if (toolbarRow && textStylingToggleGroup && toolbar && textStylingToggleGroup.parentElement !== toolbarRow) {
+  if (!noteSplitInPopOutWindow() && toolbarRow && textStylingToggleGroup && toolbar &&
+      textStylingToggleGroup.parentElement !== toolbarRow) {
     toolbarRow.prepend(textStylingToggleGroup, toolbar);
   }
   peerPane.hidden = false;

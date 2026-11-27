@@ -2001,8 +2001,9 @@ function deletePreviousTabAtCaret() {
 }
 
 function isEmptyListItem(li) {
-  if (!li || li.tagName !== 'LI' || li.querySelector(':scope > ul, :scope > ol')) return false;
-  return !li.textContent.replace(/\u00a0/g, ' ').replace(/\u200b/g, '').trim();
+  if (li?.tagName !== 'LI') return false;
+  const own = li.querySelector(':scope > ul, :scope > ol') ? listItemOwnContentFragment(li) : li;
+  return !fragmentHasMeaningfulContent(own);
 }
 
 function removeEmptyListItem(li) {
@@ -2012,9 +2013,12 @@ function removeEmptyListItem(li) {
   const prev = li.previousElementSibling;
   const next = li.nextElementSibling;
   const parentLi = list.parentElement?.tagName === 'LI' ? list.parentElement : null;
-  li.remove();
+  const nestedLists = [...li.querySelectorAll(':scope > ul, :scope > ol')];
+  // Browser indentation can place a sublist beside the item instead of inside it.
+  const firstNestedItem = (nestedLists[0] || (next?.matches('ul, ol') ? next : null))?.querySelector('li');
+  li.replaceWith(...nestedLists);
 
-  if (!list.querySelector(':scope > li')) {
+  if (!list.firstElementChild) {
     if (parentLi) {
       list.remove();
       placeCursorAtEnd(parentLi);
@@ -2023,6 +2027,8 @@ function removeEmptyListItem(li) {
       list.replaceWith(p);
       placeCursorAtStart(p);
     }
+  } else if (firstNestedItem) {
+    placeCursorAtStart(firstNestedItem);
   } else if (prev) {
     placeCursorAtEnd(prev);
   } else if (next) {
@@ -2334,17 +2340,8 @@ function collapsedHeaderClipboardNodes(range = getEditorSelectionRange(), root =
   const startHeading = startOwner?.closest?.('h1, h2, h3, h4');
   const endHeading = endOwner?.closest?.('h1, h2, h3, h4');
 
-  // Selection fully inside one collapsed heading → copy/cut the whole section.
-  if (
-    startHeading
-    && startHeading === endHeading
-    && root.contains(startHeading)
-    && startHeading.hasAttribute('data-collapsed')
-    && startHeading.contains(startOwner)
-    && startHeading.contains(endOwner)
-  ) {
-    return headerDomainNodes(startHeading);
-  }
+  // Selecting text within a heading is different from selecting the heading as a block.
+  if (startHeading && startHeading === endHeading && root.contains(startHeading)) return null;
 
   const intersecting = [...root.children].filter(child => {
     try { return range.intersectsNode(child); }

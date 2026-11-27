@@ -26,6 +26,10 @@ To move the workspace or a floating note, drag the empty space along the top edg
 
 On macOS 26.2 or later, click the note name itself to rename it. Clicking the empty space beside the name does not focus the title.
 
-In a floating note, **Show Text Styling** and **Share Note** sit to the right of the title. The styling toolbar expands below the title when enabled.
+Double-click a word in the Notepad to select and copy just that word, even in a collapsed heading. A selection that spans the collapsed heading and another block still includes the hidden section when copied. Use **Edit → Paste and Match Style** to paste plain text using the destination formatting.
+
+In a floating note, **Show Text Styling** sits immediately to the left of **Share Note**, on the same row as the title. The styling toolbar expands below that row when enabled.
+
+Press Backspace on an empty bullet to remove just that line. Any nested bullets remain at their existing indentation.
 
 Closing a Notas window hides it immediately while pending edits save in the background. Quit waits for local draft storage, not for the network. On relaunch, Notas retries drafts for the same account and Firebase project. If the cloud version changed or the note is no longer available, Notas keeps the draft instead of overwriting or restoring the note. Use **Settings → Local Drafts → Copy Drafts** to recover the title and note HTML.

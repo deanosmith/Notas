@@ -1213,7 +1213,7 @@ body.desktop-note-window #main {
 }
 
 body.desktop-note-window .main-header {
-  padding-top: 52px;
+  padding-top: var(--native-titlebar-clearance, 52px);
   gap: 0;
 }
 
@@ -1231,8 +1231,7 @@ body.desktop-note-window .main-title-row .header-actions {
   margin-left: 0;
 }
 
-body.desktop-note-window .main-title-row .text-styling-toggle-btn,
-body.desktop-note-window .main-title-row #share-btn {
+body.desktop-note-window .main-title-row .header-actions .new-note-btn {
   width: var(--note-header-action-size);
   min-width: var(--note-header-action-size);
   height: var(--note-header-action-size);
